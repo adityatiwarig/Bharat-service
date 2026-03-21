@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, BriefcaseBusiness, CheckCircle2, Landmark, LockKeyhole, Shield, ShieldCheck, UserCog } from 'lucide-react';
+import { ArrowLeft, BriefcaseBusiness, CheckCircle2, Landmark, LockKeyhole, Shield, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -11,62 +11,100 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 
-const panelCredentials = [
+type InternalRole = 'worker' | 'admin' | 'leader';
+
+type DemoCredential = {
+  name: string;
+  email: string;
+  password: string;
+  note: string;
+};
+
+type RoleSection = {
+  id: InternalRole;
+  label: string;
+  description: string;
+  detailTitle: string;
+  detailText: string;
+  icon: typeof BriefcaseBusiness;
+  accounts: DemoCredential[];
+};
+
+const roleSections: RoleSection[] = [
   {
-    role: 'Rohini Worker',
-    description: 'For Rohini ward complaint handling and status updates.',
-    email: 'worker.rohini@govcrm.demo',
-    password: 'changeme',
+    id: 'worker',
+    label: 'Worker',
+    description: 'Ward-level complaint handling and field status updates.',
+    detailTitle: 'Worker Access',
+    detailText:
+      'Use the assigned ward-level credentials below for complaint handling, updates, and operational follow-up.',
     icon: BriefcaseBusiness,
-    accent: 'bg-[#dcfce7] text-[#166534]',
+    accounts: [
+      {
+        name: 'Rohini Worker',
+        email: 'worker.rohini@govcrm.demo',
+        password: 'changeme',
+        note: 'For Rohini ward complaint handling and status updates.',
+      },
+      {
+        name: 'Dwarka Worker',
+        email: 'worker.dwarka@govcrm.demo',
+        password: 'changeme',
+        note: 'For Dwarka ward complaint handling and status updates.',
+      },
+      {
+        name: 'Saket Worker',
+        email: 'worker.saket@govcrm.demo',
+        password: 'changeme',
+        note: 'For Saket ward complaint handling and status updates.',
+      },
+      {
+        name: 'Laxmi Nagar Worker',
+        email: 'worker.laxmi@govcrm.demo',
+        password: 'changeme',
+        note: 'For Laxmi Nagar ward complaint handling and status updates.',
+      },
+      {
+        name: 'Karol Bagh Worker',
+        email: 'worker.karol@govcrm.demo',
+        password: 'changeme',
+        note: 'For Karol Bagh ward complaint handling and status updates.',
+      },
+    ],
   },
   {
-    role: 'Dwarka Worker',
-    description: 'For Dwarka ward complaint handling and status updates.',
-    email: 'worker.dwarka@govcrm.demo',
-    password: 'changeme',
-    icon: BriefcaseBusiness,
-    accent: 'bg-[#dbeafe] text-[#1d4ed8]',
-  },
-  {
-    role: 'Saket Worker',
-    description: 'For Saket ward complaint handling and status updates.',
-    email: 'worker.saket@govcrm.demo',
-    password: 'changeme',
-    icon: BriefcaseBusiness,
-    accent: 'bg-[#e0f2fe] text-[#0369a1]',
-  },
-  {
-    role: 'Laxmi Nagar Worker',
-    description: 'For Laxmi Nagar ward complaint handling and status updates.',
-    email: 'worker.laxmi@govcrm.demo',
-    password: 'changeme',
-    icon: BriefcaseBusiness,
-    accent: 'bg-[#ede9fe] text-[#6d28d9]',
-  },
-  {
-    role: 'Karol Bagh Worker',
-    description: 'For Karol Bagh ward complaint handling and status updates.',
-    email: 'worker.karol@govcrm.demo',
-    password: 'changeme',
-    icon: BriefcaseBusiness,
-    accent: 'bg-[#fce7f3] text-[#be185d]',
-  },
-  {
-    role: 'Admin Panel',
-    description: 'For queue oversight, analytics, and user management.',
-    email: 'admin@govcrm.demo',
-    password: 'changeme',
+    id: 'admin',
+    label: 'Admin',
+    description: 'Queue oversight, analytics, and user administration.',
+    detailTitle: 'Administrative Access',
+    detailText:
+      'Use the administrative credentials below for queue oversight, analytics review, and user management functions.',
     icon: UserCog,
-    accent: 'bg-[#dbeafe] text-[#1d4ed8]',
+    accounts: [
+      {
+        name: 'Admin Panel',
+        email: 'admin@govcrm.demo',
+        password: 'changeme',
+        note: 'For queue oversight, analytics, and user management.',
+      },
+    ],
   },
   {
-    role: 'Central Dept Head Panel',
-    description: 'For cross-department complaint review, routing oversight, and worker assignment fallback.',
-    email: 'leader@govcrm.demo',
-    password: 'changeme',
+    id: 'leader',
+    label: 'Department Head',
+    description: 'Department-wide review, routing oversight, and fallback assignment.',
+    detailTitle: 'Department Head Access',
+    detailText:
+      'Use the department head credentials below for routing oversight, cross-department review, and assignment fallback.',
     icon: Shield,
-    accent: 'bg-[#ffedd5] text-[#b45309]',
+    accounts: [
+      {
+        name: 'Central Dept Head Panel',
+        email: 'leader@govcrm.demo',
+        password: 'changeme',
+        note: 'For cross-department complaint review, routing oversight, and worker assignment fallback.',
+      },
+    ],
   },
 ];
 
@@ -79,10 +117,13 @@ function getHomeByRole(role: string) {
 
 export default function WorkerLoginPage() {
   const [loading, setLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<InternalRole>('worker');
   const [form, setForm] = useState({
     email: '',
     password: '',
   });
+
+  const selectedSection = roleSections.find((section) => section.id === selectedRole) ?? roleSections[0];
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -114,165 +155,210 @@ export default function WorkerLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#ecf3ff_48%,#f7f8fb_100%)]">
-      <div className="border-b border-slate-200 bg-slate-950 text-white">
+    <div className="min-h-screen bg-[#f8fafc]">
+      <div className="flex h-1.5 w-full">
+        <div className="flex-1 bg-[#ff9933]" />
+        <div className="flex-1 bg-white" />
+        <div className="flex-1 bg-[#138808]" />
+      </div>
+
+      <div className="border-b border-[#cbd5e1] bg-[#0b3d91] text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 text-xs sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
-            <Landmark className="h-3.5 w-3.5 text-amber-300" />
-            <span>Official Department Access</span>
+            <Landmark className="h-4 w-4 text-[#fbbf24]" />
+            <span className="font-semibold tracking-[0.08em] uppercase">Official Department Access</span>
           </div>
-          <div className="text-slate-300">Worker, admin, and dept head access only</div>
+          <div className="text-white/90">Authorized Personnel Only</div>
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1.04fr_0.96fr] lg:px-8 lg:py-16">
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:px-8 lg:py-10">
         <div>
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-slate-950">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-[#334155] transition hover:text-[#0b3d91]">
             <ArrowLeft className="h-4 w-4" />
             Back to citizen home
           </Link>
 
-          <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
-            <LockKeyhole className="h-4 w-4" />
+          <div className="mt-5 inline-flex items-center gap-2 rounded-sm border border-[#cbd5e1] bg-white px-3 py-2 text-sm text-[#334155]">
+            <LockKeyhole className="h-4 w-4 text-[#0b3d91]" />
             Department account sign in
           </div>
 
-          <h1 className="mt-6 text-5xl font-semibold tracking-tight text-slate-950">
+          <h1 className="mt-5 text-4xl font-bold tracking-tight text-[#111827] lg:text-5xl">
             Separate sign in for workers and department users
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-            This page is only for internal users. Citizens should use the public portal to create an account,
-            raise complaints, and track complaint status.
+          <p className="mt-4 max-w-3xl text-base leading-7 text-[#475569]">
+            This page is restricted to internal users. Select the applicable role below and use the listed official
+            credentials for testing. Citizens are advised to use the public portal for complaint registration and
+            status tracking.
           </p>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-sky-700 uppercase">
-                <ShieldCheck className="h-4 w-4" />
-                Internal Use
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Use your assigned department credentials to open the worker, admin, or dept head panel.
+          <div className="mt-7 rounded-sm border border-[#d1d5db] bg-white">
+            <div className="border-b border-[#e5e7eb] px-5 py-4">
+              <div className="text-xs font-semibold tracking-[0.18em] text-[#0b3d91] uppercase">Role Selection</div>
+              <p className="mt-2 text-sm leading-6 text-[#475569]">
+                Choose the relevant role to view its access note and demo credentials.
               </p>
             </div>
-            <div className="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-amber-700 uppercase">
-                <Landmark className="h-4 w-4" />
-                Citizen Guidance
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                If you are a citizen, return to the public portal and create your account first.
-              </p>
-            </div>
-          </div>
 
-          <div className="mt-8 rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold tracking-[0.18em] text-sky-700 uppercase">Department Accounts</div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Select the relevant internal account below. This keeps department access separate from the public citizen portal. Additional seeded accounts follow the pattern leader.department@govcrm.demo and worker.department.ward@govcrm.demo, all with password changeme.
-                </p>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
-                Official access only
-              </div>
-            </div>
+            <div className="p-5">
+              <div className="space-y-3">
+                {roleSections.map((section) => {
+                  const Icon = section.icon;
+                  const isActive = selectedRole === section.id;
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            {panelCredentials.map((panel) => {
-              const Icon = panel.icon;
-
-              return (
-                <div key={panel.role} className="rounded-[1.45rem] border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-[1rem] ${panel.accent}`}>
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold text-slate-950">{panel.role}</div>
-                        <p className="mt-1 text-sm leading-6 text-slate-600">{panel.description}</p>
-                        <div className="mt-3 truncate text-sm text-slate-700">{panel.email}</div>
-                        <div className="text-sm text-slate-700">Password: {panel.password}</div>
-                      </div>
-                    </div>
-                    <Button
+                  return (
+                    <button
+                      key={section.id}
                       type="button"
-                      variant="outline"
-                      className="shrink-0 rounded-full"
-                      onClick={() => setForm({ email: panel.email, password: panel.password })}
+                      onClick={() => setSelectedRole(section.id)}
+                      className={`w-full rounded-sm border px-4 py-4 text-left transition ${
+                        isActive
+                          ? 'border-[#0b3d91] bg-[#eff6ff]'
+                          : 'border-[#e5e7eb] bg-white hover:border-[#93c5fd] hover:bg-[#f8fbff]'
+                      }`}
                     >
-                      Use
-                    </Button>
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border ${
+                            isActive
+                              ? 'border-[#bfdbfe] bg-white text-[#0b3d91]'
+                              : 'border-[#cbd5e1] bg-[#f8fafc] text-[#475569]'
+                          }`}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-semibold text-[#111827]">{section.label}</span>
+                            {isActive ? (
+                              <span className="rounded-sm border border-[#bfdbfe] bg-white px-2 py-0.5 text-[11px] font-medium text-[#0b3d91]">
+                                Selected
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-sm leading-6 text-[#475569]">{section.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 rounded-sm border border-[#e5e7eb] bg-[#f8fafc]">
+                <div className="flex items-center justify-between gap-3 border-b border-[#e5e7eb] px-4 py-3">
+                  <div>
+                    <div className="text-xs font-semibold tracking-[0.18em] text-[#0b3d91] uppercase">
+                      {selectedSection.detailTitle}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#64748b]">Demo Credentials (For Testing Only)</p>
+                  </div>
+                  <div className="rounded-sm border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-medium text-[#334155]">
+                    Official access only
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="px-4 py-4">
+                  <p className="text-sm leading-6 text-[#475569]">{selectedSection.detailText}</p>
+
+                  <div className="mt-4 space-y-3">
+                    {selectedSection.accounts.map((account) => (
+                      <div key={account.email} className="rounded-sm border border-[#e5e7eb] bg-white px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-[#111827]">{account.name}</div>
+                            <p className="mt-1 text-sm leading-6 text-[#475569]">{account.note}</p>
+                            <div className="mt-3 text-sm text-[#334155]">{account.email}</div>
+                            <div className="mt-1 text-xs text-[#64748b]">Password: {account.password}</div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="shrink-0 rounded-sm border-[#cbd5e1] bg-white text-[#0b3d91] hover:bg-[#eff6ff] hover:text-[#0b3d91]"
+                            onClick={() => setForm({ email: account.email, password: account.password })}
+                          >
+                            Use
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-sm border border-[#e5e7eb] bg-white px-4 py-4 text-sm leading-6 text-[#475569]">
+                    Additional seeded accounts follow the internal patterns `leader.department@govcrm.demo` and
+                    `worker.department.ward@govcrm.demo`, all with password `changeme`.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="self-start lg:sticky lg:top-28">
-          <Card className="mx-auto w-full max-w-xl rounded-[2rem] border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-            <CardHeader>
-              <CardDescription>Internal credentials only</CardDescription>
-              <CardTitle className="text-3xl text-slate-950">Department Sign In</CardTitle>
+        <div className="self-start lg:sticky lg:top-24">
+          <Card className="mx-auto w-full max-w-xl rounded-sm border-[#d1d5db] bg-white shadow-none">
+            <CardHeader className="border-b border-[#e5e7eb]">
+              <CardDescription className="text-sm text-[#64748b]">Authorized departmental credentials only</CardDescription>
+              <CardTitle className="text-3xl font-bold text-[#111827]">Department Sign In</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="rounded-[1.3rem] border border-sky-100 bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)] px-4 py-4 text-sm text-slate-600">
-                  Enter the official worker or panel credentials below. Public users should use the citizen portal instead.
+                <div className="rounded-sm border border-[#dbeafe] bg-[#f8fbff] px-4 py-4 text-sm leading-6 text-[#475569]">
+                  Selected role: <span className="font-semibold text-[#0b3d91]">{selectedSection.label}</span>. Enter
+                  the official credentials below. Unauthorized access is strictly prohibited.
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email address</Label>
+                  <Label htmlFor="email" className="text-sm font-medium text-[#111827]">
+                    Email address
+                  </Label>
                   <Input
                     id="email"
                     type="email"
                     value={form.email}
                     onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                    className="h-11"
-                    placeholder="panel email"
+                    className="h-11 rounded-sm border-[#cbd5e1] bg-white text-[#111827] placeholder:text-[#94a3b8] focus-visible:border-[#0b3d91] focus-visible:ring-[#0b3d91]"
+                    placeholder="Enter panel email"
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="text-sm font-medium text-[#111827]">
+                    Password
+                  </Label>
                   <Input
                     id="password"
                     type="password"
                     value={form.password}
                     onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                    className="h-11"
-                    placeholder="panel password"
+                    className="h-11 rounded-sm border-[#cbd5e1] bg-white text-[#111827] placeholder:text-[#94a3b8] focus-visible:border-[#0b3d91] focus-visible:ring-[#0b3d91]"
+                    placeholder="Enter panel password"
                     required
                   />
                 </div>
 
-                <div className="rounded-[1.3rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                  Need citizen access? Use the citizen portal to create your account first and then sign in there.
+                <div className="rounded-sm border border-[#e5e7eb] bg-[#f8fafc] px-4 py-4 text-sm leading-6 text-[#475569]">
+                  Citizens are advised to use the public portal to create an account first and then sign in there.
                 </div>
 
-                <Button type="submit" className="h-12 w-full rounded-full bg-slate-950 text-white hover:bg-slate-800" disabled={loading}>
-                  {loading ? <Spinner label="Signing in..." /> : 'Open Department Panel'}
+                <Button type="submit" className="h-12 w-full rounded-sm bg-[#0b3d91] text-white hover:bg-[#082f6b]" disabled={loading}>
+                  {loading ? <Spinner label="Signing in..." /> : 'Proceed to Secure Login'}
                 </Button>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    <div className="font-semibold text-slate-950">Secure Internal Access</div>
-                    <p className="mt-1 leading-6">Department access is kept separate so public users do not see internal credentials.</p>
+                  <div className="rounded-sm border border-[#e5e7eb] bg-[#f8fafc] px-4 py-4 text-sm text-[#475569]">
+                    <div className="font-semibold text-[#111827]">Secure Internal Access</div>
+                    <p className="mt-1 leading-6">Department access is maintained separately so public users do not see internal credentials.</p>
                   </div>
-                  <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    <div className="font-semibold text-slate-950">Role-Based Login</div>
-                    <p className="mt-1 leading-6">Workers, admin, and dept head users are routed to the correct panel after sign in.</p>
+                  <div className="rounded-sm border border-[#e5e7eb] bg-[#f8fafc] px-4 py-4 text-sm text-[#475569]">
+                    <div className="font-semibold text-[#111827]">Role-Based Login</div>
+                    <p className="mt-1 leading-6">Workers, admin, and department head users are routed to the appropriate panel after sign in.</p>
                   </div>
                 </div>
 
-                <div className="text-center text-sm text-slate-600">
+                <div className="text-center text-sm text-[#475569]">
                   Looking for resident access?{' '}
-                  <Link href="/auth?mode=signup" className="font-semibold text-sky-700 underline-offset-4 hover:underline">
+                  <Link href="/auth?mode=signup" className="font-semibold text-[#0b3d91] underline-offset-4 hover:underline">
                     Go to Citizen Portal
                   </Link>
                 </div>
@@ -285,9 +371,9 @@ export default function WorkerLoginPage() {
               'Official access is limited to department and panel users only.',
               'Use the listed credentials or your assigned internal account to continue.',
             ].map((point) => (
-              <div key={point} className="rounded-[1.35rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm">
+              <div key={point} className="rounded-sm border border-[#e5e7eb] bg-white px-4 py-4 text-sm text-[#475569]">
                 <div className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-[#166534]" />
                   <span>{point}</span>
                 </div>
               </div>
@@ -298,7 +384,3 @@ export default function WorkerLoginPage() {
     </div>
   );
 }
-
-
-
-
