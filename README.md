@@ -1,221 +1,224 @@
-# Government CRM - Complaint Management System
+# GovCRM: PostgreSQL + AI Complaint CRM
 
-A comprehensive, production-ready complaint management platform for municipal governments. Enables citizens to report issues, track status, and allows workers and administrators to manage and resolve complaints efficiently.
+GovCRM is a Next.js 16 complaint management platform for Delhi wards with four role-based workspaces:
 
-## Features
+- `citizen`: signup, submit complaints, track status, rate resolution
+- `worker`: review ward assignments, update complaint lifecycle
+- `admin`: monitor queues, hotspots, categories, and users
+- `leader`: view executive ward summaries and trend snapshots
 
-### For Citizens
-- **Report Complaints**: Submit detailed complaints with category, priority, and location
-- **Track Status**: Real-time status tracking from submission through resolution
-- **View Transparency**: See all submitted complaints and their progress
-- **Dashboard**: Quick overview of all submitted complaints and KPIs
+The system has been refactored away from MongoDB and now uses PostgreSQL-backed services, secure cookie auth, and a rule-based AI triage pipeline.
 
-### For Field Workers
-- **View Assignments**: See all assigned complaints with priority levels
-- **Mobile-First Design**: Fully responsive interface for on-the-go work
-- **Submit Updates**: Update complaint status and add resolution notes
-- **Task Prioritization**: View complaints sorted by urgency
+## Quick Start
 
-### For Administrators
-- **Complaint Management**: View, filter, and manage all complaints
-- **Analytics Dashboard**: Charts showing complaint trends and categories
-- **User Management**: Manage citizens, workers, and other admin users
-- **Advanced Filtering**: Filter by status, priority, ward, and more
+1. Install dependencies
 
-### For Executive Leaders
-- **Performance Dashboard**: High-level KPIs and metrics
-- **Ward Comparison**: Compare performance across all wards
-- **Trend Analysis**: 6-month trend charts and forecasting
-- **Reports**: Generate comprehensive reports for stakeholder communication
-
-## Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **UI Components**: shadcn/ui
-- **Styling**: Tailwind CSS v4
-- **Charts**: Recharts
-- **State Management**: React Hooks + SWR
-- **Icons**: Lucide React
-- **Database**: Mock data (ready for Supabase integration)
-
-## Project Structure
-
-```
-app/
-├── page.tsx                 # Landing page with role selection
-├── citizen/                 # Citizen dashboard routes
-│   ├── page.tsx            # Dashboard
-│   ├── submit/             # Submit complaint
-│   ├── my-complaints/      # View complaints
-│   └── tracker/            # Track status
-├── worker/                  # Field worker routes
-│   ├── page.tsx            # Dashboard
-│   ├── assigned/           # View assignments
-│   └── updates/            # Submit updates
-├── admin/                   # Admin routes
-│   ├── page.tsx            # Dashboard
-│   ├── complaints/         # Manage complaints
-│   ├── users/              # User management
-│   └── analytics/          # Analytics
-├── leader/                  # Executive routes
-│   ├── page.tsx            # Dashboard
-│   ├── reports/            # Reports
-│   ├── trends/             # Trend analysis
-│   └── ward-comparison/    # Ward metrics
-├── layout.tsx              # Root layout
-├── globals.css             # Global styles
-└── not-found.tsx           # 404 page
-
-components/
-├── dashboard-layout.tsx    # Main layout wrapper
-├── header.tsx              # Header component
-├── sidebar.tsx             # Navigation sidebar
-├── kpi-card.tsx            # KPI card component
-├── complaint-card.tsx      # Complaint display card
-└── ui/                     # shadcn/ui components
-
-lib/
-├── types.ts                # TypeScript interfaces
-├── utils.ts                # Utility functions
-└── mock-data.ts            # Sample data
-
-scripts/
-└── setup-db.sql            # Database schema (optional)
+```bash
+npm install
 ```
 
-## Key Components
+2. Create `.env` or `.env.local`
 
-### Dashboard Layout
-Provides consistent header, sidebar navigation, and responsive design across all dashboards.
+```bash
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/govcrm
+DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:5432/govcrm
+SESSION_SECRET=replace-with-a-long-random-secret
+```
 
-### Complaint Card
-Displays complaint information with status badges, priority indicators, and action buttons.
+For Neon or another hosted Postgres, keep `DATABASE_URL` as the pooled runtime URL and set
+`DIRECT_URL` to the direct, non-pooler connection string for Prisma CLI commands.
 
-### KPI Card
-Customizable metric cards with variants for different data types and trends.
+3. Create schema + seed wards
 
-### Sidebar Navigation
-Role-based navigation that shows different menu items for each user type.
+```bash
+psql "$DATABASE_URL" -f scripts/setup-db.sql
+```
 
-## Data Models
+Or use Prisma migrations:
 
-### Users
-- Citizens: Report complaints
-- Workers: Fix and update complaint status
-- Admin: Manage system and users
-- Leader: Strategic oversight
+```bash
+npm run prisma:migrate -- --name init
+```
 
-### Complaints
-- Status: submitted → assigned → in_progress → resolved
-- Priority: low, medium, high, urgent
-- Categories: pothole, streetlight, water, waste, sanitation, other
+4. Start the app
 
-### Wards
-- Geographic divisions of the municipality
-- Each ward has population data and complaint metrics
+```bash
+npm run dev
+```
 
-### KPI Metrics
-- Daily complaint volume
-- Resolution rates
-- Average resolution time
-- Pending complaints count
+5. Open `http://localhost:3000/auth`
 
-## Responsive Design
+## Demo Logins
 
-- Mobile-first approach (320px minimum)
-- Tablet optimization (768px)
-- Desktop full experience (1440px+)
-- Touch-friendly interface
+- Citizen: `citizen@govcrm.demo` / `changeme`
+- Worker: `worker.rohini@govcrm.demo` / `changeme`
+- Admin: `admin@govcrm.demo` / `changeme`
+- Leader: `leader@govcrm.demo` / `changeme`
 
-## Color System
+## Database Output
 
-- **Primary**: Government blue (#205)
-- **Success**: Green (#10b981)
-- **Warning**: Amber (#f59e0b)
-- **Danger**: Red (#ef4444)
-- **Neutral**: Gray scale
+### PostgreSQL schema
 
-## Getting Started
+- SQL schema: [scripts/setup-db.sql](/d:/smartcrm/scripts/setup-db.sql)
+- Prisma schema: [prisma/schema.prisma](/d:/smartcrm/prisma/schema.prisma)
 
-1. **Clone the repository**
-   ```bash
-   git clone <repo-url>
-   cd gov-crm
-   ```
+Core tables:
 
-2. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
+- `users (id, name, email, password, role, ...)`
+- `wards (id, name, city, ...)`
+- `workers (id, user_id, ward_id, ...)`
+- `complaints (id, user_id, ward_id, title, text, category, status, priority, risk_score, ...)`
+- `complaint_updates (id, complaint_id, status, note, updated_at, updated_by_user_id)`
+- `ratings (id, complaint_id, rating, feedback)`
 
-3. **Run the development server**
-   ```bash
-   pnpm dev
-   ```
+Key indexing:
 
-4. **Open in browser**
-   Navigate to http://localhost:3000
+- Composite complaint index on `(ward_id, priority, status, created_at DESC)`
+- Supporting indexes for `user_id`, `assigned_worker_id`, and `complaint_updates`
 
-## Demo Accounts
+## Backend Output
 
-The system includes mock users for testing:
+### API structure
 
-- **Citizen**: citizen@example.com / John Smith
-- **Field Worker**: worker@example.com / Jane Doe
-- **Administrator**: admin@example.com / Alice Johnson
-- **Executive Leader**: leader@example.com / Bob Wilson
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `GET /api/wards`
+- `GET /api/users`
+- `GET /api/dashboard/admin`
+- `GET /api/dashboard/worker`
+- `GET /api/complaints`
+- `POST /api/complaints`
+- `GET /api/complaints/[id]`
+- `PATCH /api/complaints/[id]`
+- `POST /api/complaints/[id]/rating`
+- `GET /api/uploads/[storage]/[id]`
 
-## Database Setup (Optional)
+Primary server modules:
 
-To use real database instead of mock data:
+- DB client: [lib/server/db.ts](/d:/smartcrm/lib/server/db.ts)
+- Auth/session: [lib/server/auth.ts](/d:/smartcrm/lib/server/auth.ts), [lib/server/session.ts](/d:/smartcrm/lib/server/session.ts)
+- Complaint lifecycle: [lib/server/complaints.ts](/d:/smartcrm/lib/server/complaints.ts)
+- Dashboard aggregation: [lib/server/dashboard.ts](/d:/smartcrm/lib/server/dashboard.ts)
+- Ward/user services: [lib/server/wards.ts](/d:/smartcrm/lib/server/wards.ts), [lib/server/users.ts](/d:/smartcrm/lib/server/users.ts)
 
-1. Set up Supabase project
-2. Run the schema migration:
-   ```bash
-   pnpm exec ts-node scripts/setup-db.sql
-   ```
-3. Update `.env.local` with your database credentials
-4. Modify data fetching in components
+## AI Output
 
-## Future Enhancements
+### AI scoring module
 
-- Real-time notifications
-- User authentication with Auth.js
-- Geolocation mapping with Leaflet
-- Image upload with Vercel Blob
-- Email notifications
-- SMS alerts
-- AI-powered complaint categorization
-- Mobile app version
-- API for third-party integrations
+- Rule-based AI module: [lib/server/ai.ts](/d:/smartcrm/lib/server/ai.ts)
 
-## Performance Optimizations
+Implemented logic:
 
-- Image optimization
-- Code splitting
-- Lazy loading of charts
-- Memoized components
-- Efficient data structures
+- Keyword detection
+- Sentiment scoring
+- Risk scoring formula
+- Auto priority classification
+- Fallback to `other`
+- Spam detection for short/repeated/test-like submissions
+- Hotspot detection for repeated ward complaints within 24 hours
+- Auto worker assignment by ward
 
-## Accessibility
+Risk formula:
 
-- WCAG 2.1 AA compliant
-- Keyboard navigation support
-- Screen reader friendly
-- Semantic HTML structure
-- Proper ARIA labels
+```text
+risk_score =
+  (keyword_weight * 0.4) +
+  (sentiment * 0.2) +
+  (location_weight * 0.2) +
+  (frequency * 0.2)
+```
 
-## Browser Support
+## Frontend Output
 
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-- Mobile browsers (iOS Safari, Chrome Mobile)
+### Key frontend components
 
-## License
+- Session-aware dashboard shell: [components/dashboard-layout.tsx](/d:/smartcrm/components/dashboard-layout.tsx)
+- Session provider: [components/session-provider.tsx](/d:/smartcrm/components/session-provider.tsx)
+- Complaint card: [components/complaint-card.tsx](/d:/smartcrm/components/complaint-card.tsx)
+- Status badges: [components/status-badge.tsx](/d:/smartcrm/components/status-badge.tsx)
+- Complaint skeleton loader: [components/complaint-card-skeleton.tsx](/d:/smartcrm/components/complaint-card-skeleton.tsx)
+- Pagination controls: [components/pagination-controls.tsx](/d:/smartcrm/components/pagination-controls.tsx)
 
-MIT License - Feel free to use and modify
+Role pages:
 
-## Support
+- Citizen dashboard and flows: [app/citizen/page.tsx](/d:/smartcrm/app/citizen/page.tsx), [app/citizen/submit/page.tsx](/d:/smartcrm/app/citizen/submit/page.tsx), [app/citizen/my-complaints/page.tsx](/d:/smartcrm/app/citizen/my-complaints/page.tsx), [app/citizen/tracker/page.tsx](/d:/smartcrm/app/citizen/tracker/page.tsx)
+- Worker flows: [app/worker/page.tsx](/d:/smartcrm/app/worker/page.tsx), [app/worker/assigned/page.tsx](/d:/smartcrm/app/worker/assigned/page.tsx), [app/worker/updates/page.tsx](/d:/smartcrm/app/worker/updates/page.tsx)
+- Admin views: [app/admin/page.tsx](/d:/smartcrm/app/admin/page.tsx), [app/admin/complaints/page.tsx](/d:/smartcrm/app/admin/complaints/page.tsx), [app/admin/analytics/page.tsx](/d:/smartcrm/app/admin/analytics/page.tsx), [app/admin/users/page.tsx](/d:/smartcrm/app/admin/users/page.tsx)
+- Leader views: [app/leader/page.tsx](/d:/smartcrm/app/leader/page.tsx), [app/leader/reports/page.tsx](/d:/smartcrm/app/leader/reports/page.tsx), [app/leader/trends/page.tsx](/d:/smartcrm/app/leader/trends/page.tsx), [app/leader/ward-comparison/page.tsx](/d:/smartcrm/app/leader/ward-comparison/page.tsx)
 
-For issues or questions, please create an issue in the repository or contact the development team.
+### Loading spinner component
+
+- Spinner: [components/ui/spinner.tsx](/d:/smartcrm/components/ui/spinner.tsx)
+
+Also used:
+
+- Progress indicator: [components/ui/progress.tsx](/d:/smartcrm/components/ui/progress.tsx)
+- Toasts: [components/ui/sonner.tsx](/d:/smartcrm/components/ui/sonner.tsx)
+
+## Example Queries
+
+### List urgent complaints in a ward
+
+```sql
+SELECT id, tracking_code, title, priority, status, risk_score, created_at
+FROM complaints
+WHERE ward_id = 1
+  AND priority IN ('high', 'critical')
+ORDER BY risk_score DESC, created_at DESC
+LIMIT 10;
+```
+
+### Resolution rate by ward
+
+```sql
+SELECT
+  w.name,
+  COUNT(c.id) AS total_complaints,
+  COUNT(*) FILTER (WHERE c.status = 'resolved') AS resolved_complaints,
+  ROUND(
+    (COUNT(*) FILTER (WHERE c.status = 'resolved')::numeric / NULLIF(COUNT(c.id), 0)) * 100,
+    2
+  ) AS resolution_rate
+FROM wards w
+LEFT JOIN complaints c ON c.ward_id = w.id
+GROUP BY w.id, w.name
+ORDER BY resolution_rate DESC NULLS LAST;
+```
+
+### Hotspot detection in last 24 hours
+
+```sql
+SELECT w.name, COUNT(*) AS complaint_count
+FROM complaints c
+JOIN wards w ON w.id = c.ward_id
+WHERE c.created_at >= NOW() - INTERVAL '24 hours'
+GROUP BY w.id, w.name
+HAVING COUNT(*) >= 3
+ORDER BY complaint_count DESC;
+```
+
+### Worker workload
+
+```sql
+SELECT
+  u.name AS worker_name,
+  w.name AS ward_name,
+  COUNT(c.id) AS open_cases
+FROM workers wk
+JOIN users u ON u.id = wk.user_id
+JOIN wards w ON w.id = wk.ward_id
+LEFT JOIN complaints c
+  ON c.assigned_worker_id = wk.id
+ AND c.status IN ('assigned', 'in_progress')
+GROUP BY u.name, w.name
+ORDER BY open_cases ASC, worker_name ASC;
+```
+
+## Validation
+
+Verified locally in this workspace:
+
+- TypeScript: `node_modules\\.bin\\tsc.cmd --noEmit`
+- Production build: `npm.cmd run build`

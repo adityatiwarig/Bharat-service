@@ -1,7 +1,59 @@
 export type UserRole = 'citizen' | 'worker' | 'admin' | 'leader';
-export type ComplaintStatus = 'submitted' | 'assigned' | 'in_progress' | 'resolved' | 'rejected';
-export type ComplaintPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type ComplaintCategory = 'pothole' | 'streetlight' | 'water' | 'waste' | 'sanitation' | 'other';
+
+export type ComplaintStatus =
+  | 'received'
+  | 'assigned'
+  | 'in_progress'
+  | 'resolved'
+  | 'rejected'
+  | 'submitted';
+
+export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+
+export type ComplaintCategory =
+  | 'pothole'
+  | 'streetlight'
+  | 'water'
+  | 'waste'
+  | 'sanitation'
+  | 'drainage'
+  | 'sewer'
+  | 'encroachment'
+  | 'other';
+
+export interface Ward {
+  id: number;
+  name: string;
+  city: string;
+  code?: string;
+  population?: number;
+  created_at?: string;
+}
+
+export interface UserSession {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  ward_id?: number | null;
+}
+
+export interface User extends UserSession {
+  password?: string;
+  full_name?: string;
+  phone?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Worker {
+  id: string;
+  user_id: string;
+  ward_id: number;
+  created_at: string;
+  user?: User;
+  ward?: Ward;
+}
 
 export interface ComplaintAttachment {
   id: string;
@@ -11,67 +63,106 @@ export interface ComplaintAttachment {
   size: number;
 }
 
-export interface Ward {
-  id: number;
-  name: string;
-  code: string;
-  population: number;
-  created_at: string;
+export interface ComplaintUpdate {
+  id: string;
+  complaint_id: string;
+  status: ComplaintStatus;
+  note?: string | null;
+  updated_at: string;
+  updated_by_user_id?: string | null;
+  updated_by_name?: string | null;
 }
 
-export interface User {
+export interface Rating {
   id: string;
-  email: string;
-  full_name: string;
-  role: UserRole;
-  ward_id?: number;
-  phone?: string;
+  complaint_id: string;
+  rating: number;
+  feedback?: string | null;
+  created_at?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  complaint_id?: string | null;
+  title: string;
+  message: string;
+  href?: string | null;
+  is_read: boolean;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Complaint {
   id: string;
-  tracking_code?: string;
-  citizen_id: string;
-  citizen_name?: string;
-  contact_phone?: string;
+  tracking_code: string;
+  user_id: string;
+  citizen_id?: string;
+  ward_id: number;
   title: string;
-  description: string;
+  text: string;
+  description?: string;
   category: ComplaintCategory;
   status: ComplaintStatus;
   priority: ComplaintPriority;
-  ward_id: number;
-  latitude?: number;
-  longitude?: number;
-  location_address?: string;
-  location_accuracy_meters?: number;
-  image_url?: string;
+  risk_score: number;
+  sentiment_score?: number;
+  frequency_score?: number;
+  hotspot_count?: number;
+  is_hotspot?: boolean;
+  is_spam?: boolean;
+  spam_reasons?: string[];
+  department_message?: string;
+  location_address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   attachments?: ComplaintAttachment[];
-  assigned_to?: string;
+  assigned_worker_id?: string | null;
+  assigned_to?: string | null;
+  ward_name?: string;
+  citizen_name?: string;
   created_at: string;
   updated_at: string;
-  resolved_at?: string;
-  resolution_notes?: string;
+  resolved_at?: string | null;
+  resolution_notes?: string | null;
+  updates?: ComplaintUpdate[];
+  rating?: Rating | null;
 }
 
-export interface ComplaintUpdate {
-  id: string;
-  complaint_id: string;
-  updated_by: string;
-  old_status?: ComplaintStatus;
-  new_status: ComplaintStatus;
-  notes?: string;
-  created_at: string;
+export interface PaginatedResult<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 }
 
-export interface KPIMetrics {
-  id: number;
-  ward_id: number;
-  metric_date: string;
+export interface ComplaintListFilters {
+  page?: number;
+  page_size?: number;
+  q?: string;
+  status?: ComplaintStatus | 'all';
+  priority?: ComplaintPriority | 'all';
+  ward_id?: number;
+  category?: ComplaintCategory | 'all';
+  my_assigned?: boolean;
+  mine?: boolean;
+}
+
+export interface ComplaintAnalyticsSummary {
   total_complaints: number;
-  resolved_complaints: number;
-  avg_resolution_time_hours?: number;
-  pending_complaints: number;
-  created_at: string;
+  high_priority_count: number;
+  resolution_rate: number;
+  category_breakdown: Array<{ category: ComplaintCategory; count: number }>;
+  top_urgent_issues: Complaint[];
+  most_affected_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
+  hotspot_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
+}
+
+export interface WorkerDashboardSummary {
+  assigned_total: number;
+  assigned_open: number;
+  in_progress: number;
+  resolved: number;
+  urgent_queue: number;
+  items: Complaint[];
 }

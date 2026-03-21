@@ -1,6 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Bell, Menu, Sparkles } from 'lucide-react'
 
 import type { UserRole } from '@/lib/types'
@@ -8,6 +10,14 @@ import { roleMeta } from '@/lib/navigation'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface HeaderProps {
   title: string
@@ -18,6 +28,67 @@ interface HeaderProps {
 
 export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) {
   const meta = roleMeta[userRole]
+  const router = useRouter()
+  const [notifications, setNotifications] = useState<
+    Array<{
+      id: string
+      title: string
+      message: string
+      href?: string | null
+      created_at: string
+    }>
+  >([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loadingNotifications, setLoadingNotifications] = useState(false)
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false)
+
+  async function loadNotifications() {
+    if (!['worker', 'admin', 'leader'].includes(userRole) || loadingNotifications) {
+      return
+    }
+
+    setLoadingNotifications(true)
+    try {
+      const response = await fetch('/api/notifications', { cache: 'no-store' })
+      if (!response.ok) {
+        return
+      }
+
+      const data = (await response.json()) as {
+        notifications: typeof notifications
+        unread_count: number
+      }
+
+      setNotifications(data.notifications)
+      setUnreadCount(data.unread_count)
+      setNotificationsLoaded(true)
+    } finally {
+      setLoadingNotifications(false)
+    }
+  }
+
+  async function markNotificationsRead() {
+    if (!unreadCount) {
+      return
+    }
+
+    await fetch('/api/notifications', { method: 'PATCH' })
+    setUnreadCount(0)
+  }
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    window.location.assign('/')
+  }
+
+  async function handleNotificationClick(href?: string | null) {
+    await markNotificationsRead()
+
+    if (href) {
+      router.push(href)
+      router.refresh()
+    }
+  }
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
@@ -49,15 +120,70 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
           </div>
 
           <div className="hidden items-center gap-3 lg:flex">
-            <Button variant="outline" size="icon" className="rounded-full">
-              <Bell className="h-4 w-4" />
-              <span className="sr-only">View notifications</span>
-            </Button>
+            <DropdownMenu
+              onOpenChange={(open) => {
+                if (open && !notificationsLoaded) {
+                  void loadNotifications()
+                }
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="relative rounded-full">
+                  <Bell className="h-4 w-4" />
+                  {unreadCount ? (
+                    <span className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  ) : null}
+                  <span className="sr-only">View notifications</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 rounded-2xl border-slate-200 p-2">
+                <DropdownMenuLabel className="flex items-center justify-between px-3 py-2">
+                  <span>Notifications</span>
+                  {unreadCount ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void markNotificationsRead()
+                      }}
+                      className="text-xs font-medium text-sky-700"
+                    >
+                      Mark all read
+                    </button>
+                  ) : null}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {loadingNotifications ? (
+                  <div className="px-3 py-4 text-sm text-slate-500">Loading notifications...</div>
+                ) : notifications.length ? (
+                  notifications.map((notification) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className="items-start rounded-xl px-3 py-3"
+                      onSelect={() => {
+                        void handleNotificationClick(notification.href)
+                      }}
+                    >
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-slate-900">{notification.title}</div>
+                        <div className="text-xs leading-5 text-slate-500">{notification.message}</div>
+                      </div>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <div className="px-3 py-4 text-sm text-slate-500">No new assignment notifications.</div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Link href="/">
               <Button className="rounded-full bg-slate-950 text-white hover:bg-slate-800">
                 Public site
               </Button>
             </Link>
+            <Button variant="outline" className="rounded-full" onClick={handleLogout}>
+              Logout
+            </Button>
           </div>
         </div>
 

@@ -1,51 +1,53 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Loader2, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 import { ComplaintCard } from '@/components/complaint-card';
+import { ComplaintCardSkeleton } from '@/components/complaint-card-skeleton';
 import { DashboardLayout } from '@/components/dashboard-layout';
+import { PaginationControls } from '@/components/pagination-controls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fetchComplaints } from '@/lib/client/complaints';
-import { demoCitizen } from '@/lib/demo-session';
-import { wards } from '@/lib/mock-data';
 import type { Complaint, ComplaintStatus } from '@/lib/types';
 
-const statuses: ComplaintStatus[] = ['submitted', 'assigned', 'in_progress', 'resolved', 'rejected'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'received', 'assigned', 'in_progress', 'resolved', 'rejected'];
 
-export default function MyComplaints() {
+export default function MyComplaintsPage() {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ComplaintStatus | 'all'>('all');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<ComplaintStatus | 'all'>('all');
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
 
     fetchComplaints({
-      citizenId: demoCitizen.id,
-      status: statusFilter,
-      q: searchQuery,
+      mine: true,
+      page,
+      page_size: 6,
+      q: query,
+      status,
     })
-      .then((items) => {
+      .then((result) => {
         if (mounted) {
-          setComplaints(items);
+          setComplaints(result.items);
+          setTotalPages(result.total_pages);
           setError('');
         }
       })
       .catch((fetchError) => {
         if (mounted) {
-          setError(
-            fetchError instanceof Error
-              ? fetchError.message
-              : 'Unable to load complaints right now.',
-          );
+          setError(fetchError instanceof Error ? fetchError.message : 'Unable to load complaints.');
         }
       })
       .finally(() => {
@@ -57,116 +59,88 @@ export default function MyComplaints() {
     return () => {
       mounted = false;
     };
-  }, [searchQuery, statusFilter]);
-
-  const summary = useMemo(
-    () => ({
-      total: complaints.length,
-    }),
-    [complaints],
-  );
+  }, [page, query, status]);
 
   return (
-    <DashboardLayout
-      title="My Complaints"
-      userRole="citizen"
-      userName={demoCitizen.full_name}
-    >
+    <DashboardLayout title="My Complaints">
       <div className="space-y-6">
-        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">My Complaints</h2>
-            <p className="mt-1 text-muted-foreground">Showing {summary.total} complaints</p>
-          </div>
-          <Link href="/citizen/submit">
-            <Button className="w-full gap-2 sm:w-auto">
-              <FileText className="h-4 w-4" />
-              New Complaint
-            </Button>
-          </Link>
-        </div>
+        <Card className="gov-fade-in rounded-[1.75rem] border-slate-200/80">
+          <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_220px]">
+            <FieldGroup>
+              <Field>
+                <FieldLabel className="flex items-center gap-2">
+                  <Search className="h-4 w-4" />
+                  Search
+                </FieldLabel>
+                <Input
+                  value={query}
+                  onChange={(event) => {
+                    setPage(1);
+                    setQuery(event.target.value);
+                  }}
+                  placeholder="Search by title, text, or tracking code"
+                />
+              </Field>
+            </FieldGroup>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <div className="flex-1">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel className="flex items-center gap-2">
-                      <Search className="h-4 w-4" />
-                      Search
-                    </FieldLabel>
-                    <Input
-                      placeholder="Search by complaint title, description, or tracking code..."
-                      value={searchQuery}
-                      onChange={(event) => {
-                        setLoading(true);
-                        setSearchQuery(event.target.value);
-                      }}
-                    />
-                  </Field>
-                </FieldGroup>
-              </div>
-              <div className="w-full sm:w-56">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Status</FieldLabel>
-                    <Select
-                      value={statusFilter}
-                      onValueChange={(value) => {
-                        setLoading(true);
-                        setStatusFilter(value as ComplaintStatus | 'all');
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        {statuses.map((status) => (
-                          <SelectItem key={status} value={status}>
-                            {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </FieldGroup>
-              </div>
-            </div>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Status</FieldLabel>
+                <Select
+                  value={status}
+                  onValueChange={(value) => {
+                    setPage(1);
+                    setStatus(value as ComplaintStatus | 'all');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statuses.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item === 'all' ? 'All statuses' : item.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
           </CardContent>
         </Card>
 
         {loading ? (
-          <Card>
-            <CardContent className="flex items-center justify-center py-12 text-sm text-slate-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading complaints...
-            </CardContent>
-          </Card>
+          <div className="gov-stagger grid gap-4">
+            <ComplaintCardSkeleton />
+            <ComplaintCardSkeleton />
+            <ComplaintCardSkeleton />
+          </div>
         ) : error ? (
           <Card>
-            <CardContent className="py-12 text-center text-sm text-red-600">
-              {error}
-            </CardContent>
+            <CardContent className="py-10 text-center text-sm text-rose-700">{error}</CardContent>
           </Card>
-        ) : complaints.length > 0 ? (
-          <div className="grid gap-4">
-            {complaints.map((complaint) => (
-              <ComplaintCard
-                key={complaint.id}
-                complaint={complaint}
-                ward={wards.find((ward) => ward.id === complaint.ward_id)}
-              />
-            ))}
-          </div>
+        ) : complaints.length ? (
+          <>
+            <div className="gov-stagger grid gap-4">
+              {complaints.map((complaint) => (
+                <ComplaintCard
+                  key={complaint.id}
+                  complaint={complaint}
+                  ward={complaint.ward_name ? { id: complaint.ward_id, name: complaint.ward_name, city: 'Delhi' } : undefined}
+                />
+              ))}
+            </div>
+            <PaginationControls page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
         ) : (
           <Card>
-            <CardContent className="py-12 text-center">
-              <p className="mb-4 text-muted-foreground">No complaints match your filters.</p>
-              <Link href="/citizen/submit">
-                <Button>Submit a Complaint</Button>
-              </Link>
+            <CardContent className="py-10 text-center text-sm text-slate-500">
+              No complaints yet.
+              <div className="mt-4">
+                <Link href="/citizen/submit">
+                  <Button>Submit your first complaint</Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         )}

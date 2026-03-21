@@ -1,96 +1,92 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-import { createComplaint, listComplaints } from '@/lib/server/complaints-store';
-import type { ComplaintCategory, ComplaintPriority, ComplaintStatus } from '@/lib/types';
+import { AuthError, requireApiUser } from '@/lib/server/auth';
+import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/complaints';
+import { listWards } from '@/lib/server/wards';
 
 export const runtime = 'nodejs';
 
-const validCategories: ComplaintCategory[] = [
-  'pothole',
-  'streetlight',
-  'water',
-  'waste',
-  'sanitation',
-  'other',
-];
-
-const validPriorities: ComplaintPriority[] = ['low', 'medium', 'high', 'urgent'];
-
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-
-  const complaints = await listComplaints({
-    citizenId: searchParams.get('citizenId') || undefined,
-    status: (searchParams.get('status') as ComplaintStatus | 'all' | null) || undefined,
-    query: searchParams.get('q') || undefined,
-    limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
-  });
-
-  return NextResponse.json({ complaints });
+function parseBoolean(value: string | null) {
+  return value === 'true' || value === '1';
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: Request) {
   try {
+    const user = await requireApiUser();
+    const { searchParams } = new URL(request.url);
+
+    const complaints = await listComplaintsForUser(user, {
+      page: searchParams.get('page') ? Number(searchParams.get('page')) : 1,
+      page_size: searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : 10,
+      q: searchParams.get('q') || undefined,
+      status: (searchParams.get('status') as never) || undefined,
+      priority: (searchParams.get('priority') as never) || undefined,
+      category: (searchParams.get('category') as never) || undefined,
+      ward_id: searchParams.get('wardId') ? Number(searchParams.get('wardId')) : undefined,
+      mine: parseBoolean(searchParams.get('mine')),
+      my_assigned: parseBoolean(searchParams.get('myAssigned')),
+    });
+
+    return NextResponse.json(complaints);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    console.error('Failed to list complaints', error);
+    return NextResponse.json({ error: 'Unable to load complaints right now.' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await requireApiUser(['citizen']);
     const formData = await request.formData();
 
     const title = String(formData.get('title') || '').trim();
-    const description = String(formData.get('description') || '').trim();
-    const category = String(formData.get('category') || '').trim() as ComplaintCategory;
-    const priority = String(formData.get('priority') || 'medium').trim() as ComplaintPriority;
-    const citizen_id = String(formData.get('citizen_id') || '').trim();
-    const citizen_name = String(formData.get('citizen_name') || '').trim();
-    const contact_phone = String(formData.get('contact_phone') || '').trim();
+    const text = String(formData.get('text') || formData.get('description') || '').trim();
     const ward_id = Number(formData.get('ward_id') || 0);
+    const location_address = String(formData.get('location_address') || '').trim();
     const latitude = formData.get('latitude') ? Number(formData.get('latitude')) : undefined;
     const longitude = formData.get('longitude') ? Number(formData.get('longitude')) : undefined;
-    const location_address = String(formData.get('location_address') || '').trim();
-    const location_accuracy_meters = formData.get('location_accuracy_meters')
-      ? Number(formData.get('location_accuracy_meters'))
-      : undefined;
-
-    const files = formData
+    const attachments = formData
       .getAll('attachments')
       .filter((value): value is File => value instanceof File && value.size > 0);
 
-    if (!title || !description || !citizen_id || !ward_id) {
+    if (!title || !text || !Number.isFinite(ward_id) || ward_id <= 0) {
       return NextResponse.json(
-        { error: 'Title, description, ward, and citizen information are required.' },
+        { error: 'Title, complaint text, and ward are required.' },
         { status: 400 },
       );
     }
 
-    if (!validCategories.includes(category)) {
-      return NextResponse.json({ error: 'Invalid complaint category.' }, { status: 400 });
+    const wards = await listWards();
+    const wardExists = wards.some((ward) => ward.id === ward_id);
+
+    if (!wardExists) {
+      return NextResponse.json({ error: 'Please choose a valid ward before submitting.' }, { status: 400 });
     }
 
-    if (!validPriorities.includes(priority)) {
-      return NextResponse.json({ error: 'Invalid complaint priority.' }, { status: 400 });
-    }
-
-    const complaint = await createComplaint(
+    const complaint = await createComplaintForUser(
+      user,
       {
-        citizen_id,
-        citizen_name,
-        contact_phone,
         title,
-        description,
-        category,
-        priority,
+        text,
         ward_id,
+        location_address,
         latitude,
         longitude,
-        location_address,
-        location_accuracy_meters,
       },
-      files,
+      attachments,
     );
 
     return NextResponse.json({ complaint }, { status: 201 });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('Failed to create complaint', error);
-    return NextResponse.json(
-      { error: 'Unable to submit complaint at the moment.' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Unable to submit complaint right now.' }, { status: 500 });
   }
 }

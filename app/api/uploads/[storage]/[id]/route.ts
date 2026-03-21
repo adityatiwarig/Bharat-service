@@ -1,58 +1,41 @@
 import { readFile } from 'node:fs/promises';
-import { Readable } from 'node:stream';
+import path from 'node:path';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-import {
-  getGridFsFileInfo,
-  getLocalUploadPath,
-  guessMimeType,
-} from '@/lib/server/complaints-store';
-import { getGridFSBucket } from '@/lib/server/mongodb';
+import { getUploadPath } from '@/lib/server/uploads';
 
-export const runtime = 'nodejs';
+function guessMimeType(fileName: string) {
+  const extension = path.extname(fileName).toLowerCase();
+
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.png') return 'image/png';
+  if (extension === '.webp') return 'image/webp';
+  if (extension === '.pdf') return 'application/pdf';
+  return 'application/octet-stream';
+}
 
 export async function GET(
-  _request: NextRequest,
+  _request: Request,
   context: { params: Promise<{ storage: string; id: string }> },
 ) {
   const { storage, id } = await context.params;
 
+  if (storage !== 'local') {
+    return NextResponse.json({ error: 'Unsupported storage provider.' }, { status: 404 });
+  }
+
   try {
-    if (storage === 'local') {
-      const filePath = getLocalUploadPath(id);
-      const fileBuffer = await readFile(filePath);
+    const safeFileName = path.basename(id);
+    const fileBuffer = await readFile(getUploadPath(safeFileName));
 
-      return new NextResponse(fileBuffer, {
-        headers: {
-          'Content-Type': guessMimeType(id),
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        },
-      });
-    }
-
-    if (storage === 'gridfs') {
-      const bucket = await getGridFSBucket();
-      const fileInfo = await getGridFsFileInfo(id);
-
-      if (!fileInfo) {
-        return NextResponse.json({ error: 'File not found.' }, { status: 404 });
-      }
-
-      const stream = bucket.openDownloadStream(fileInfo._id);
-
-      return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
-        headers: {
-          'Content-Type': fileInfo.contentType || 'application/octet-stream',
-          'Content-Disposition': `inline; filename="${fileInfo.filename}"`,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        },
-      });
-    }
-
-    return NextResponse.json({ error: 'Invalid upload storage type.' }, { status: 400 });
-  } catch (error) {
-    console.error('Failed to serve uploaded file', error);
-    return NextResponse.json({ error: 'Unable to load file.' }, { status: 500 });
+    return new NextResponse(fileBuffer, {
+      headers: {
+        'Content-Type': guessMimeType(safeFileName),
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: 'File not found.' }, { status: 404 });
   }
 }

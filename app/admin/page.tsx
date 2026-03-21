@@ -1,162 +1,121 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { AlertCircle, CheckCircle, MapPinned, TrendingUp } from 'lucide-react';
+
+import { ComplaintCard } from '@/components/complaint-card';
+import { ComplaintCardSkeleton } from '@/components/complaint-card-skeleton';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { KPICard } from '@/components/kpi-card';
-import { ComplaintCard } from '@/components/complaint-card';
-import { Button } from '@/components/ui/button';
+import { KpiCardSkeleton, StatListSkeleton } from '@/components/loading-skeletons';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { complaints, wards, users, kpiMetrics } from '@/lib/mock-data';
-import { AlertCircle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
-import Link from 'next/link';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { fetchAdminDashboard } from '@/lib/client/complaints';
+import type { Complaint } from '@/lib/types';
 
-const currentUser = users[2]; // admin user
-
-export default function AdminDashboard() {
-  // Calculate overall stats
-  const stats = {
-    total: complaints.length,
-    resolved: complaints.filter(c => c.status === 'resolved').length,
-    pending: complaints.filter(c => ['submitted', 'assigned'].includes(c.status)).length,
-    inProgress: complaints.filter(c => c.status === 'in_progress').length,
-  };
-
-  const resolutionRate = Math.round((stats.resolved / stats.total) * 100);
-
-  // Ward-wise complaint breakdown
-  const wardStats = wards.map(ward => {
-    const wardComplaints = complaints.filter(c => c.ward_id === ward.id);
-    return {
-      name: ward.code,
-      total: wardComplaints.length,
-      resolved: wardComplaints.filter(c => c.status === 'resolved').length,
-    };
+export default function AdminDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<{
+    total_complaints: number;
+    high_priority_count: number;
+    resolution_rate: number;
+    top_urgent_issues: Complaint[];
+    most_affected_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
+    hotspot_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
+    category_breakdown: Array<{ category: string; count: number }>;
+  }>({
+    total_complaints: 0,
+    high_priority_count: 0,
+    resolution_rate: 0,
+    top_urgent_issues: [],
+    most_affected_wards: [],
+    hotspot_wards: [],
+    category_breakdown: [],
   });
 
-  // Category breakdown
-  const categoryData = [
-    { name: 'Pothole', value: complaints.filter(c => c.category === 'pothole').length },
-    { name: 'Streetlight', value: complaints.filter(c => c.category === 'streetlight').length },
-    { name: 'Water', value: complaints.filter(c => c.category === 'water').length },
-    { name: 'Waste', value: complaints.filter(c => c.category === 'waste').length },
-    { name: 'Sanitation', value: complaints.filter(c => c.category === 'sanitation').length },
-  ];
-
-  const COLORS = ['#f59e0b', '#3b82f6', '#06b6d4', '#f97316', '#ef4444'];
-
-  const recentComplaints = complaints.slice(-5).reverse();
+  useEffect(() => {
+    fetchAdminDashboard()
+      .then(({ summary }) => setSummary(summary))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <DashboardLayout
-      title="Admin Dashboard"
-      userRole="admin"
-      userName={currentUser.full_name}
-    >
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard
-          title="Total Complaints"
-          value={stats.total}
-          subtitle="All complaints"
-          icon={<AlertCircle className="w-4 h-4" />}
-          variant="default"
-        />
-        <KPICard
-          title="Resolved"
-          value={stats.resolved}
-          subtitle={`${resolutionRate}% resolution rate`}
-          icon={<CheckCircle className="w-4 h-4" />}
-          variant="success"
-        />
-        <KPICard
-          title="In Progress"
-          value={stats.inProgress}
-          subtitle="Being worked on"
-          icon={<Clock className="w-4 h-4" />}
-          variant="warning"
-        />
-        <KPICard
-          title="Pending"
-          value={stats.pending}
-          subtitle="Awaiting assignment"
-          icon={<TrendingUp className="w-4 h-4" />}
-          variant="primary"
-        />
-      </div>
+    <DashboardLayout title="Control Center">
+      <div className="space-y-8">
+        <div className="gov-stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {loading ? (
+            <>
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+            </>
+          ) : (
+            <>
+              <KPICard title="Total Complaints" value={summary.total_complaints} icon={<AlertCircle className="h-4 w-4" />} />
+              <KPICard title="High Priority" value={summary.high_priority_count} variant="danger" icon={<TrendingUp className="h-4 w-4" />} />
+              <KPICard title="Resolution Rate" value={`${summary.resolution_rate}%`} variant="success" icon={<CheckCircle className="h-4 w-4" />} />
+              <KPICard title="Hotspot Wards" value={summary.hotspot_wards.length} variant="warning" icon={<MapPinned className="h-4 w-4" />} />
+            </>
+          )}
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Complaints by Ward */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Complaints by Ward</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={wardStats}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="total" fill="#3b82f6" name="Total" />
-                <Bar dataKey="resolved" fill="#10b981" name="Resolved" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+            <CardHeader>
+              <CardTitle>Top 5 Urgent Issues</CardTitle>
+            </CardHeader>
+            <CardContent className="gov-stagger space-y-4">
+              {loading ? (
+                <>
+                  <ComplaintCardSkeleton compact />
+                  <ComplaintCardSkeleton compact />
+                </>
+              ) : summary.top_urgent_issues.length ? (
+                summary.top_urgent_issues.map((complaint) => (
+                  <ComplaintCard
+                    key={complaint.id}
+                    complaint={complaint}
+                    ward={complaint.ward_name ? { id: complaint.ward_id, name: complaint.ward_name, city: 'Delhi' } : undefined}
+                    compact
+                  />
+                ))
+              ) : (
+                <div className="text-sm text-slate-500">No complaints yet.</div>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Complaints by Category */}
-        <Card>
-          <CardHeader>
-            <CardTitle>By Category</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry) => `${entry.name}: ${entry.value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+          <div className="space-y-6">
+            <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+              <CardHeader>
+                <CardTitle>Most Affected Wards</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {loading ? <StatListSkeleton count={4} /> : summary.most_affected_wards.map((ward) => (
+                  <div key={ward.ward_id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="font-semibold text-slate-900">{ward.ward_name}</div>
+                    <div className="text-sm text-slate-500">{ward.count} complaints</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
 
-      {/* Recent Complaints */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent Complaints</CardTitle>
-          <Link href="/admin/complaints">
-            <Button variant="outline" size="sm">
-              View All
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {recentComplaints.map(complaint => (
-              <ComplaintCard
-                key={complaint.id}
-                complaint={complaint}
-                ward={wards.find(w => w.id === complaint.ward_id)}
-                compact
-              />
-            ))}
+            <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+              <CardHeader>
+                <CardTitle>Category Breakdown</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {loading ? <StatListSkeleton count={5} /> : summary.category_breakdown.map((entry) => (
+                  <div key={entry.category} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <span className="capitalize text-slate-700">{entry.category}</span>
+                    <span className="font-semibold text-slate-950">{entry.count}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </DashboardLayout>
   );
 }

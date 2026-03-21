@@ -1,0 +1,106 @@
+GovCRM Database Notes
+====================
+
+1. Which database is used on this website?
+This website now uses PostgreSQL as its main database.
+The project is connected to a Neon PostgreSQL database, which is a hosted cloud Postgres service.
+That means the website data is not stored in MongoDB anymore. It is stored in Postgres tables such as:
+- users
+- wards
+- workers
+- complaints
+- complaint_updates
+- ratings
+
+2. What Prisma is doing in this project
+Prisma is being used as the database schema and migration layer.
+In this project, Prisma is doing three important jobs:
+- It defines the database structure in prisma/schema.prisma.
+- It creates and applies migrations so tables and enums are created in Neon correctly.
+- It provides the database client adapter used by the app runtime.
+
+Prisma is not the only way the app talks to the database here.
+A lot of the app logic still uses SQL queries directly from the server files.
+So Prisma is mainly helping with setup, migrations, and the DB connection layer.
+
+3. What PostgreSQL is doing in this project
+PostgreSQL is the real database engine.
+It stores:
+- citizen accounts
+- worker/admin/leader accounts
+- ward records
+- complaint records
+- complaint status updates
+- ratings and feedback
+- routing and assignment related data
+
+Whenever a citizen signs up, logs in, files a complaint, or checks complaint history, that data is coming from PostgreSQL.
+
+4. How Prisma and PostgreSQL work together here
+The flow is like this:
+- Prisma schema describes the tables and enum types.
+- Prisma migrations create or update those tables in the Neon PostgreSQL database.
+- The app runtime connects to PostgreSQL using the Prisma adapter.
+- Server-side modules then run SQL queries on those tables.
+
+So in simple words:
+Prisma manages structure.
+PostgreSQL stores the actual data.
+The app reads and writes that data through the server code.
+
+5. Important files in this project
+- prisma/schema.prisma
+  This defines the Prisma models and enum mappings.
+
+- prisma.config.ts
+  This loads environment variables and tells Prisma which database URL to use.
+
+- lib/prisma.ts
+  This creates the Prisma database client used by the app.
+
+- lib/server/db.ts
+  This is the query layer used by server modules to run SQL.
+
+- lib/server/auth.ts
+  This handles citizen signup, login, and user lookup from the Postgres database.
+
+- lib/server/complaints.ts
+  This handles complaint creation, listing, tracking, and status updates.
+
+- scripts/setup-db.sql
+  This contains SQL for base setup and demo seed data.
+
+6. What is stored in the database right now
+The current demo database includes:
+- ward records used in citizen complaint area selection
+- citizen demo account
+- worker demo accounts
+- admin demo account
+- leader demo account
+- worker-to-ward assignment rows
+
+This supports:
+- citizen signup/login
+- complaint filing by ward
+- optional location capture with complaint storage
+- worker/admin/leader demo panels
+
+7. Citizen side after the latest changes
+The citizen portal is now separated from the internal seeded panels.
+That means:
+- citizen signup/signin page does not show worker/admin/leader demo credentials
+- internal seeded credentials are shown only on the separate worker-login page
+- citizens create their own account using their own email and password
+- complaint area selection is shown from the ward list already present in the database
+- real-time location is optional during complaint filing
+
+8. Internal panels after the latest changes
+The worker login page now contains the seeded demo credentials for:
+- worker
+- admin
+- leader
+
+This is useful for presentation and judge demos while keeping the public portal clean.
+
+9. Summary in one line
+Neon PostgreSQL is the actual database, Prisma manages its schema and migrations, and the app uses server-side SQL queries to run the complaint management system.

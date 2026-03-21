@@ -1,111 +1,141 @@
 'use client';
 
-import { useState } from 'react';
-import { DashboardLayout } from '@/components/dashboard-layout';
+import { useEffect, useState } from 'react';
+
 import { ComplaintCard } from '@/components/complaint-card';
+import { ComplaintCardSkeleton } from '@/components/complaint-card-skeleton';
+import { DashboardLayout } from '@/components/dashboard-layout';
+import { PaginationControls } from '@/components/pagination-controls';
 import { Card, CardContent } from '@/components/ui/card';
-import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { complaints, wards, users } from '@/lib/mock-data';
-import { ComplaintStatus, ComplaintPriority } from '@/lib/types';
+import { fetchComplaints } from '@/lib/client/complaints';
+import type { Complaint, ComplaintPriority, ComplaintStatus } from '@/lib/types';
 
-const currentUser = users[1]; // worker user
-const statuses: ComplaintStatus[] = ['assigned', 'in_progress', 'resolved'];
-const priorities: ComplaintPriority[] = ['low', 'medium', 'high', 'urgent'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'assigned', 'in_progress', 'resolved'];
+const priorities: Array<ComplaintPriority | 'all'> = ['all', 'critical', 'high', 'medium', 'low'];
 
-export default function WorkerAssignedTasks() {
-  const [statusFilter, setStatusFilter] = useState<ComplaintStatus | 'all'>('all');
-  const [priorityFilter, setPriorityFilter] = useState<ComplaintPriority | 'all'>('all');
+export default function WorkerAssignedPage() {
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [status, setStatus] = useState<ComplaintStatus | 'all'>('all');
+  const [priority, setPriority] = useState<ComplaintPriority | 'all'>('all');
+  const [loading, setLoading] = useState(true);
+  const openCount = complaints.filter((item) => item.status !== 'resolved').length;
+  const urgentCount = complaints.filter((item) => ['critical', 'urgent'].includes(item.priority)).length;
 
-  let filtered = complaints.filter(c => c.assigned_to === currentUser.id);
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
 
-  if (statusFilter !== 'all') {
-    filtered = filtered.filter(c => c.status === statusFilter);
-  }
+    fetchComplaints({
+      my_assigned: true,
+      page,
+      page_size: 6,
+      status,
+      priority,
+    })
+      .then((result) => {
+        if (mounted) {
+          setComplaints(result.items);
+          setTotalPages(result.total_pages);
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
-  if (priorityFilter !== 'all') {
-    filtered = filtered.filter(c => c.priority === priorityFilter);
-  }
-
-  // Sort by priority
-  const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
-  filtered.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+    return () => {
+      mounted = false;
+    };
+  }, [page, priority, status]);
 
   return (
-    <DashboardLayout
-      title="Assigned Tasks"
-      userRole="worker"
-      userName={currentUser.full_name}
-    >
+    <DashboardLayout title="Assigned Tasks">
       <div className="space-y-6">
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>Status</FieldLabel>
-                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {statuses.map(status => (
-                        <SelectItem key={status} value={status}>
-                          {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </FieldGroup>
+        <div className="gov-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Card className="rounded-[1.5rem] border-slate-200/80">
+            <CardContent className="pt-6">
+              <div className="text-sm text-slate-500">Visible tasks</div>
+              <div className="mt-2 text-3xl font-semibold text-slate-950">{loading ? '...' : complaints.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-[1.5rem] border-slate-200/80">
+            <CardContent className="pt-6">
+              <div className="text-sm text-slate-500">Still open</div>
+              <div className="mt-2 text-3xl font-semibold text-slate-950">{loading ? '...' : openCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-[1.5rem] border-slate-200/80">
+            <CardContent className="pt-6">
+              <div className="text-sm text-slate-500">Urgent in view</div>
+              <div className="mt-2 text-3xl font-semibold text-slate-950">{loading ? '...' : urgentCount}</div>
+            </CardContent>
+          </Card>
+        </div>
 
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>Priority</FieldLabel>
-                  <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as any)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Priorities</SelectItem>
-                      {priorities.map(p => (
-                        <SelectItem key={p} value={p}>
-                          {p.charAt(0).toUpperCase() + p.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </FieldGroup>
-            </div>
+        <Card className="gov-fade-in rounded-[1.75rem] border-slate-200/80">
+          <CardContent className="grid gap-4 pt-6 md:grid-cols-2">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Status</FieldLabel>
+                <Select value={status} onValueChange={(value) => { setPage(1); setStatus(value as ComplaintStatus | 'all'); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {statuses.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item === 'all' ? 'All statuses' : item.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
+
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Priority</FieldLabel>
+                <Select value={priority} onValueChange={(value) => { setPage(1); setPriority(value as ComplaintPriority | 'all'); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {priorities.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item === 'all' ? 'All priorities' : item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
           </CardContent>
         </Card>
 
-        {/* Tasks List */}
-        <div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Showing {filtered.length} tasks
-          </p>
-          {filtered.length > 0 ? (
-            <div className="grid gap-4">
-              {filtered.map(complaint => (
+        {loading ? (
+          <div className="gov-stagger grid gap-4">
+            <ComplaintCardSkeleton />
+            <ComplaintCardSkeleton />
+            <ComplaintCardSkeleton />
+          </div>
+        ) : complaints.length ? (
+          <>
+            <div className="gov-stagger grid gap-4 xl:grid-cols-2">
+              {complaints.map((complaint) => (
                 <ComplaintCard
                   key={complaint.id}
                   complaint={complaint}
-                  ward={wards.find(w => w.id === complaint.ward_id)}
+                  ward={complaint.ward_name ? { id: complaint.ward_id, name: complaint.ward_name, city: 'Delhi' } : undefined}
+                  compact
                 />
               ))}
             </div>
-          ) : (
-            <Card>
-              <CardContent className="text-center py-12">
-                <p className="text-muted-foreground">No tasks match your filters</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+            <PaginationControls page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
+        ) : (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-slate-500">No complaints yet.</CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -41,11 +41,11 @@ export function KPICard({
   }
 
   return (
-    <Card className={cn('rounded-[1.5rem] shadow-[0_18px_40px_rgba(15,23,42,0.05)]', variantStyles[variant])}>
+    <Card className={cn('gov-fade-in rounded-[1.5rem] shadow-[0_18px_40px_rgba(15,23,42,0.05)]', variantStyles[variant])}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-slate-600">{title}</CardTitle>
         {icon ? (
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
             {icon}
           </div>
         ) : null}

@@ -1,146 +1,127 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { AlertCircle, CheckCircle, Clock, FolderKanban } from 'lucide-react';
+
+import { ComplaintCard } from '@/components/complaint-card';
+import { ComplaintCardSkeleton } from '@/components/complaint-card-skeleton';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { KPICard } from '@/components/kpi-card';
-import { ComplaintCard } from '@/components/complaint-card';
+import { KpiCardSkeleton } from '@/components/loading-skeletons';
+import { useSession } from '@/components/session-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { complaints, wards, users } from '@/lib/mock-data';
-import { AlertCircle, CheckCircle, Clock, MapPin } from 'lucide-react';
-import Link from 'next/link';
+import { fetchWorkerDashboard } from '@/lib/client/complaints';
+import type { Complaint } from '@/lib/types';
 
-const currentUser = users[1]; // worker user
+export default function WorkerDashboardPage() {
+  const session = useSession();
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [stats, setStats] = useState({
+    assigned_total: 0,
+    assigned_open: 0,
+    in_progress: 0,
+    resolved: 0,
+    urgent_queue: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
-export default function WorkerDashboard() {
-  // Get complaints assigned to this worker
-  const assignedComplaints = complaints.filter(c => c.assigned_to === currentUser.id);
-  
-  const stats = {
-    assigned: assignedComplaints.length,
-    completed: assignedComplaints.filter(c => c.status === 'resolved').length,
-    inProgress: assignedComplaints.filter(c => c.status === 'in_progress').length,
-    pending: assignedComplaints.filter(c => c.status === 'assigned').length,
-  };
-
-  // Group by priority
-  const byPriority = {
-    urgent: assignedComplaints.filter(c => c.priority === 'urgent').length,
-    high: assignedComplaints.filter(c => c.priority === 'high').length,
-    medium: assignedComplaints.filter(c => c.priority === 'medium').length,
-  };
-
-  const todoComplaints = assignedComplaints
-    .filter(c => ['assigned', 'in_progress'].includes(c.status))
-    .sort((a, b) => {
-      const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
-      return priorityOrder[a.priority] - priorityOrder[b.priority];
-    })
-    .slice(0, 5);
+  useEffect(() => {
+    fetchWorkerDashboard()
+      .then(({ summary }) => {
+        setComplaints(summary.items);
+        setStats(summary);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <DashboardLayout
-      title="Field Worker Portal"
-      userRole="worker"
-      userName={currentUser.full_name}
-    >
-      {/* Welcome Section */}
-      <div className="mb-8">
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border border-primary/20 p-6">
-          <h2 className="text-2xl font-bold text-foreground mb-2">
-            Welcome back, {currentUser.full_name}!
-          </h2>
-          <p className="text-muted-foreground">
-            You have {stats.pending} new assignments in Ward {currentUser.ward_id}
-          </p>
+    <DashboardLayout title="Field Operations">
+      <div className="space-y-8">
+        <div className="gov-hero gov-fade-in rounded-[2rem] p-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-3xl font-semibold text-slate-950">Welcome, {session?.name}</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                Your queue is auto-assigned by ward. Move cases from assigned to in progress to resolved, and keep citizens updated with concise notes.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm shadow-sm">
+                <div className="text-slate-500">Open queue</div>
+                <div className="mt-1 text-xl font-semibold text-slate-950">{loading ? '...' : stats.assigned_open}</div>
+              </div>
+              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm shadow-sm">
+                <div className="text-slate-500">Urgent</div>
+                <div className="mt-1 text-xl font-semibold text-slate-950">{loading ? '...' : stats.urgent_queue}</div>
+              </div>
+              <div className="col-span-2 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm shadow-sm sm:col-span-1">
+                <div className="text-slate-500">Resolved</div>
+                <div className="mt-1 text-xl font-semibold text-slate-950">{loading ? '...' : stats.resolved}</div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/worker/assigned">
+              <Button className="rounded-full">View assignments</Button>
+            </Link>
+            <Link href="/worker/updates">
+              <Button variant="outline" className="rounded-full">Post update</Button>
+            </Link>
+          </div>
         </div>
-      </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard
-          title="Total Assigned"
-          value={stats.assigned}
-          icon={<AlertCircle className="w-4 h-4" />}
-          variant="default"
-        />
-        <KPICard
-          title="Completed"
-          value={stats.completed}
-          icon={<CheckCircle className="w-4 h-4" />}
-          variant="success"
-        />
-        <KPICard
-          title="In Progress"
-          value={stats.inProgress}
-          icon={<Clock className="w-4 h-4" />}
-          variant="warning"
-        />
-        <KPICard
-          title="Pending Review"
-          value={stats.pending}
-          subtitle={`${byPriority.urgent} urgent`}
-          icon={<MapPin className="w-4 h-4" />}
-          variant="primary"
-        />
-      </div>
+        <div className="gov-stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {loading ? (
+            <>
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+            </>
+          ) : (
+            <>
+              <KPICard title="Assigned" value={stats.assigned_total} icon={<FolderKanban className="h-4 w-4" />} />
+              <KPICard title="Open" value={stats.assigned_open} variant="warning" icon={<AlertCircle className="h-4 w-4" />} />
+              <KPICard title="In Progress" value={stats.in_progress} variant="primary" icon={<Clock className="h-4 w-4" />} />
+              <KPICard title="Resolved" value={stats.resolved} variant="success" icon={<CheckCircle className="h-4 w-4" />} />
+              <KPICard title="Urgent Queue" value={stats.urgent_queue} variant="danger" icon={<AlertCircle className="h-4 w-4" />} />
+            </>
+          )}
+        </div>
 
-      {/* Tasks by Priority */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-red-600">🔴 {byPriority.urgent}</div>
-              <p className="text-sm text-muted-foreground mt-2">Urgent</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-orange-600">🟠 {byPriority.high}</div>
-              <p className="text-sm text-muted-foreground mt-2">High Priority</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-600">🟡 {byPriority.medium}</div>
-              <p className="text-sm text-muted-foreground mt-2">Medium Priority</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Today's Tasks */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Action Items</CardTitle>
-          <Link href="/worker/assigned">
-            <Button variant="outline" size="sm">
-              View All
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent>
-          {todoComplaints.length > 0 ? (
-            <div className="space-y-3">
-              {todoComplaints.map(complaint => (
+        <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Priority Queue</CardTitle>
+            <Link href="/worker/assigned">
+              <Button variant="outline">Manage queue</Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="gov-stagger space-y-4">
+            {loading ? (
+              <>
+                <ComplaintCardSkeleton compact />
+                <ComplaintCardSkeleton compact />
+              </>
+            ) : complaints.length ? (
+              complaints.map((complaint) => (
                 <ComplaintCard
                   key={complaint.id}
                   complaint={complaint}
-                  ward={wards.find(w => w.id === complaint.ward_id)}
+                  ward={complaint.ward_name ? { id: complaint.ward_id, name: complaint.ward_name, city: 'Delhi' } : undefined}
                   compact
                 />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Great work! All tasks completed</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ))
+            ) : (
+              <div className="gov-fade-in rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center text-sm text-slate-500">
+                No complaints yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </DashboardLayout>
   );
 }

@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  citizen
+  worker
+  admin
+  leader
+
+  @@map("user_role")
+}
+
+enum ComplaintStatus {
+  received
+  assigned
+  in_progress
+  resolved
+  rejected
+
+  @@map("complaint_status")
+}
+
+enum ComplaintPriority {
+  low
+  medium
+  high
+  critical
+
+  @@map("complaint_priority")
+}
+
+enum ComplaintCategory {
+  pothole
+  streetlight
+  water
+  waste
+  sanitation
+  drainage
+  sewer
+  encroachment
+  other
+
+  @@map("complaint_category")
+}
+
+model User {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  email             String            @unique
+  password          String
+  role              UserRole          @default(citizen)
+  phone             String?
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
+  complaints        Complaint[]
+  worker_profile    Worker?
+  complaint_updates ComplaintUpdate[]
+
+  @@map("users")
+}
+
+model Ward {
+  id         Int         @id @default(autoincrement())
+  name       String      @unique
+  city       String      @default("Delhi")
+  created_at DateTime    @default(now()) @db.Timestamptz(6)
+  workers    Worker[]
+  complaints Complaint[]
+
+  @@map("wards")
+}
+
+model Worker {
+  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id            String      @unique @db.Uuid
+  ward_id            Int
+  created_at         DateTime    @default(now()) @db.Timestamptz(6)
+  user               User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ward               Ward        @relation(fields: [ward_id], references: [id], onDelete: Cascade)
+  assignedComplaints Complaint[] @relation("ComplaintAssignment")
+
+  @@index([ward_id])
+  @@map("workers")
+}
+
+model Complaint {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tracking_code      String            @unique
+  user_id            String            @db.Uuid
+  ward_id            Int
+  assigned_worker_id String?           @db.Uuid
+  title              String
+  text               String
+  category           ComplaintCategory @default(other)
+  status             ComplaintStatus   @default(received)
+  priority           ComplaintPriority @default(medium)
+  risk_score         Decimal           @default(0) @db.Decimal(6, 2)
+  sentiment_score    Decimal           @default(0) @db.Decimal(6, 2)
+  frequency_score    Decimal           @default(0) @db.Decimal(6, 2)
+  hotspot_count      Int               @default(0)
+  is_hotspot         Boolean           @default(false)
+  is_spam            Boolean           @default(false)
+  spam_reasons       Json              @default("[]")
+  attachments        Json              @default("[]")
+  department_message String?
+  location_address   String?
+  latitude           Decimal?          @db.Decimal(10, 7)
+  longitude          Decimal?          @db.Decimal(10, 7)
+  resolved_at        DateTime?         @db.Timestamptz(6)
+  resolution_notes   String?
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
+  user               User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ward               Ward              @relation(fields: [ward_id], references: [id], onDelete: Restrict)
+  assigned_worker    Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id], onDelete: SetNull)
+  updates            ComplaintUpdate[]
+  rating             Rating?
+
+  @@index([ward_id, priority, status, created_at(sort: Desc)])
+  @@index([status, created_at(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("complaints")
+}
+
+model ComplaintUpdate {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id       String          @db.Uuid
+  status             ComplaintStatus
+  note               String?
+  updated_by_user_id String?         @db.Uuid
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  complaint          Complaint       @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+  updated_by         User?           @relation(fields: [updated_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([complaint_id, updated_at(sort: Desc)])
+  @@map("complaint_updates")
+}
+
+model Rating {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id String    @unique @db.Uuid
+  rating       Int
+  feedback     String?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  complaint    Complaint @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@map("ratings")
+}

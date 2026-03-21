@@ -4,6 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --font-plus-jakarta: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  --font-ibm-plex-mono: 'Consolas', 'Courier New', monospace;
   --background: 210 40% 98%;
   --foreground: 222 47% 11%;
   --card: 0 0% 100%;
@@ -134,5 +136,81 @@
   ::selection {
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
+  }
+}
+
+@layer utilities {
+  @keyframes gov-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes gov-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .gov-shell {
+    background:
+      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 20%),
+      radial-gradient(circle at top right, rgba(14, 116, 144, 0.08), transparent 22%),
+      linear-gradient(180deg, #f7fbff 0%, #eef4fb 48%, #f9fbff 100%);
+  }
+
+  .gov-surface {
+    border-color: rgba(148, 163, 184, 0.2);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.92) 100%);
+    box-shadow:
+      0 20px 55px rgba(15, 23, 42, 0.06),
+      0 1px 0 rgba(255, 255, 255, 0.7) inset;
+    backdrop-filter: blur(12px);
+  }
+
+  .gov-hero {
+    border: 1px solid rgba(125, 211, 252, 0.4);
+    background:
+      linear-gradient(135deg, rgba(239, 246, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 58%, rgba(239, 246, 255, 0.92) 100%);
+    box-shadow: 0 22px 60px rgba(15, 23, 42, 0.07);
+  }
+
+  .gov-fade-in {
+    animation: gov-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .gov-stagger > * {
+    animation: gov-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .gov-stagger > :nth-child(1) {
+    animation-delay: 0.03s;
+  }
+
+  .gov-stagger > :nth-child(2) {
+    animation-delay: 0.09s;
+  }
+
+  .gov-stagger > :nth-child(3) {
+    animation-delay: 0.15s;
+  }
+
+  .gov-stagger > :nth-child(4) {
+    animation-delay: 0.21s;
+  }
+
+  .gov-stagger > :nth-child(5) {
+    animation-delay: 0.27s;
+  }
+
+  .gov-stagger > :nth-child(6) {
+    animation-delay: 0.33s;
   }
 }
