@@ -1,4 +1,4 @@
-import type { ComplaintCategory, ComplaintPriority, ComplaintStatus, Ward } from '@/lib/types';
+import type { ComplaintCategory, ComplaintDepartment, ComplaintPriority, ComplaintStatus, Ward } from '@/lib/types';
 
 export const DELHI_WARDS: Ward[] = [
   { id: 1, name: 'Rohini', city: 'Delhi' },
@@ -20,6 +20,17 @@ export const COMPLAINT_CATEGORIES: Array<{ value: ComplaintCategory; label: stri
   { value: 'other', label: 'Other Civic Issue' },
 ];
 
+export const COMPLAINT_DEPARTMENTS: Array<{ value: ComplaintDepartment; label: string }> = [
+  { value: 'electricity', label: 'Electricity' },
+  { value: 'water', label: 'Water' },
+  { value: 'sanitation', label: 'Sanitation' },
+  { value: 'roads', label: 'Roads' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'drainage', label: 'Drainage' },
+  { value: 'garbage', label: 'Garbage' },
+  { value: 'streetlight', label: 'Streetlight' },
+];
+
 export const COMPLAINT_PRIORITIES: Array<{ value: ComplaintPriority; label: string }> = [
   { value: 'critical', label: 'Critical' },
   { value: 'high', label: 'High' },
@@ -28,9 +39,11 @@ export const COMPLAINT_PRIORITIES: Array<{ value: ComplaintPriority; label: stri
 ];
 
 export const COMPLAINT_STATUSES: Array<{ value: ComplaintStatus; label: string }> = [
+  { value: 'submitted', label: 'Submitted' },
   { value: 'received', label: 'Received' },
   { value: 'assigned', label: 'Assigned' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'resolved', label: 'Resolved' },
+  { value: 'closed', label: 'Closed' },
   { value: 'rejected', label: 'Rejected' },
 ];

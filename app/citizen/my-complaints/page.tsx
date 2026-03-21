@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { fetchComplaints } from '@/lib/client/complaints';
 import type { Complaint, ComplaintStatus } from '@/lib/types';
 
-const statuses: Array<ComplaintStatus | 'all'> = ['all', 'received', 'assigned', 'in_progress', 'resolved', 'rejected'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'submitted', 'received', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected'];
 
 export default function MyComplaintsPage() {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -78,7 +78,7 @@ export default function MyComplaintsPage() {
                     setPage(1);
                     setQuery(event.target.value);
                   }}
-                  placeholder="Search by title, text, or tracking code"
+                  placeholder="Search by title, text, or complaint ID"
                 />
               </Field>
             </FieldGroup>
@@ -148,3 +148,4 @@ export default function MyComplaintsPage() {
     </DashboardLayout>
   );
 }
+

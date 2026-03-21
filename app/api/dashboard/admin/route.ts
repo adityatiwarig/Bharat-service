@@ -5,8 +5,8 @@ import { getAdminDashboardSummary } from '@/lib/server/dashboard';
 
 export async function GET() {
   try {
-    await requireApiUser(['admin', 'leader']);
-    const summary = await getAdminDashboardSummary();
+    const user = await requireApiUser(['admin', 'leader']);
+    const summary = await getAdminDashboardSummary(user);
     return NextResponse.json({ summary });
   } catch (error) {
     if (error instanceof AuthError) {

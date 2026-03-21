@@ -50,9 +50,9 @@ export default function CitizenDashboard() {
   const stats = useMemo(
     () => ({
       total: complaints.length,
-      resolved: complaints.filter((item) => item.status === 'resolved').length,
+      resolved: complaints.filter((item) => item.status === 'resolved' || item.status === 'closed').length,
       in_progress: complaints.filter((item) => item.status === 'in_progress').length,
-      open: complaints.filter((item) => ['received', 'assigned', 'in_progress'].includes(item.status)).length,
+      open: complaints.filter((item) => ['submitted', 'received', 'assigned', 'in_progress'].includes(item.status)).length,
     }),
     [complaints],
   );
@@ -133,3 +133,5 @@ export default function CitizenDashboard() {
     </DashboardLayout>
   );
 }
+
+

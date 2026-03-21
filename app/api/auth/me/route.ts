@@ -16,6 +16,7 @@ export async function GET() {
       email: user.email,
       role: user.role,
       ward_id: user.ward_id,
+      department: user.department,
     },
   });
 }

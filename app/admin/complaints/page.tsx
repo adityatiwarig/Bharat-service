@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { fetchComplaints, fetchWards } from '@/lib/client/complaints';
 import type { Complaint, ComplaintPriority, ComplaintStatus, Ward } from '@/lib/types';
 
-const statuses: Array<ComplaintStatus | 'all'> = ['all', 'received', 'assigned', 'in_progress', 'resolved', 'rejected'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'submitted', 'received', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected'];
 const priorities: Array<ComplaintPriority | 'all'> = ['all', 'critical', 'high', 'medium', 'low'];
 
 export default function AdminComplaintsPage() {
@@ -143,3 +143,4 @@ export default function AdminComplaintsPage() {
     </DashboardLayout>
   );
 }
+

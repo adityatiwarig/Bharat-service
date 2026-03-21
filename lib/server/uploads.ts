@@ -17,27 +17,31 @@ export function getUploadPath(fileName: string) {
   return path.join(UPLOADS_DIR, fileName);
 }
 
+async function persistUpload(file: File, prefix: string) {
+  await mkdir(UPLOADS_DIR, { recursive: true });
+
+  const attachmentId = randomUUID();
+  const storedName = `${prefix}-${attachmentId}-${sanitizeFilename(file.name || 'attachment.bin')}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await writeFile(getUploadPath(storedName), buffer);
+
+  return {
+    id: attachmentId,
+    name: file.name,
+    url: `/api/uploads/local/${storedName}`,
+    content_type: file.type || 'application/octet-stream',
+    size: file.size,
+  } satisfies ComplaintAttachment;
+}
+
 export async function saveAttachments(files: File[], complaintId: string) {
   if (!files.length) {
     return [] as ComplaintAttachment[];
   }
 
-  await mkdir(UPLOADS_DIR, { recursive: true });
+  return Promise.all(files.map((file) => persistUpload(file, complaintId)));
+}
 
-  return Promise.all(
-    files.map(async (file) => {
-      const attachmentId = randomUUID();
-      const storedName = `${complaintId}-${attachmentId}-${sanitizeFilename(file.name || 'attachment.bin')}`;
-      const buffer = Buffer.from(await file.arrayBuffer());
-      await writeFile(getUploadPath(storedName), buffer);
-
-      return {
-        id: attachmentId,
-        name: file.name,
-        url: `/api/uploads/local/${storedName}`,
-        content_type: file.type || 'application/octet-stream',
-        size: file.size,
-      };
-    }),
-  );
+export async function saveProofImage(file: File, complaintId: string) {
+  return persistUpload(file, `${complaintId}-proof`);
 }

@@ -6,6 +6,145 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  email             String            @unique
+  password          String
+  role              UserRole          @default(citizen)
+  phone             String?
+  department        DepartmentName?
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
+  complaint_updates ComplaintUpdate[]
+  complaints        Complaint[]
+  notifications     notifications[]
+  worker_profile    Worker?
+
+  @@index([role, department], map: "idx_users_role_department")
+  @@map("users")
+}
+
+model Ward {
+  id         Int         @id @default(autoincrement())
+  name       String      @unique
+  city       String      @default("Delhi")
+  created_at DateTime    @default(now()) @db.Timestamptz(6)
+  complaints Complaint[]
+  workers    Worker[]
+
+  @@map("wards")
+}
+
+model Worker {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id            String         @unique @db.Uuid
+  ward_id            Int
+  department         DepartmentName @default(roads)
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  assignedComplaints Complaint[]    @relation("ComplaintAssignment")
+  user               User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ward               Ward           @relation(fields: [ward_id], references: [id], onDelete: Cascade)
+
+  @@index([ward_id])
+  @@index([ward_id], map: "idx_workers_ward_id")
+  @@index([ward_id, department], map: "idx_workers_ward_department")
+  @@map("workers")
+}
+
+model Complaint {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tracking_code      String            @unique
+  user_id            String            @db.Uuid
+  ward_id            Int
+  department         DepartmentName    @default(roads)
+  assigned_worker_id String?           @db.Uuid
+  title              String
+  text               String
+  category           ComplaintCategory @default(other)
+  status             ComplaintStatus   @default(submitted)
+  priority           ComplaintPriority @default(medium)
+  risk_score         Decimal           @default(0) @db.Decimal(6, 2)
+  sentiment_score    Decimal           @default(0) @db.Decimal(6, 2)
+  frequency_score    Decimal           @default(0) @db.Decimal(6, 2)
+  hotspot_count      Int               @default(0)
+  is_hotspot         Boolean           @default(false)
+  is_spam            Boolean           @default(false)
+  spam_reasons       Json              @default("[]")
+  attachments        Json              @default("[]")
+  proof_image        Json?
+  proof_text         String?
+  department_message String?
+  location_address   String?
+  latitude           Decimal?          @db.Decimal(10, 7)
+  longitude          Decimal?          @db.Decimal(10, 7)
+  resolved_at        DateTime?         @db.Timestamptz(6)
+  resolution_notes   String?
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
+  complaint_id       String            @unique(map: "idx_complaints_complaint_id")
+  progress           String            @default("pending")
+  dept_head_viewed   Boolean           @default(false)
+  worker_assigned    Boolean           @default(false)
+  updates            ComplaintUpdate[]
+  assigned_worker    Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id])
+  user               User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ward               Ward              @relation(fields: [ward_id], references: [id])
+  notifications      notifications[]
+  rating             Rating?
+
+  @@index([ward_id, priority, status, created_at(sort: Desc)])
+  @@index([status, created_at(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([assigned_worker_id, status, priority], map: "idx_complaints_assigned_worker")
+  @@index([status, created_at(sort: Desc)], map: "idx_complaints_status_created")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_complaints_user_created")
+  @@index([ward_id, priority, status, created_at(sort: Desc)], map: "idx_complaints_ward_priority_status_created")
+  @@index([department, ward_id, status, created_at(sort: Desc)], map: "idx_complaints_department_ward_status_created")
+  @@map("complaints")
+}
+
+model ComplaintUpdate {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id       String          @db.Uuid
+  status             ComplaintStatus
+  note               String?
+  updated_by_user_id String?         @db.Uuid
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  complaint          Complaint       @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+  updated_by         User?           @relation(fields: [updated_by_user_id], references: [id])
+
+  @@index([complaint_id, updated_at(sort: Desc)])
+  @@index([complaint_id, updated_at(sort: Desc)], map: "idx_complaint_updates_complaint")
+  @@map("complaint_updates")
+}
+
+model Rating {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id String    @unique @db.Uuid
+  rating       Int
+  feedback     String?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  complaint    Complaint @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@map("ratings")
+}
+
+model notifications {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String     @db.Uuid
+  complaint_id String?    @db.Uuid
+  title        String
+  message      String
+  href         String?
+  is_read      Boolean    @default(false)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  complaints   Complaint? @relation(fields: [complaint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        User       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, is_read, created_at(sort: Desc)], map: "idx_notifications_user_read_created")
+}
+
 enum UserRole {
   citizen
   worker
@@ -16,10 +155,12 @@ enum UserRole {
 }
 
 enum ComplaintStatus {
+  submitted
   received
   assigned
   in_progress
   resolved
+  closed
   rejected
 
   @@map("complaint_status")
@@ -48,106 +189,15 @@ enum ComplaintCategory {
   @@map("complaint_category")
 }
 
-model User {
-  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String
-  email             String            @unique
-  password          String
-  role              UserRole          @default(citizen)
-  phone             String?
-  created_at        DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
-  complaints        Complaint[]
-  worker_profile    Worker?
-  complaint_updates ComplaintUpdate[]
+enum DepartmentName {
+  electricity
+  water
+  sanitation
+  roads
+  fire
+  drainage
+  garbage
+  streetlight
 
-  @@map("users")
-}
-
-model Ward {
-  id         Int         @id @default(autoincrement())
-  name       String      @unique
-  city       String      @default("Delhi")
-  created_at DateTime    @default(now()) @db.Timestamptz(6)
-  workers    Worker[]
-  complaints Complaint[]
-
-  @@map("wards")
-}
-
-model Worker {
-  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id            String      @unique @db.Uuid
-  ward_id            Int
-  created_at         DateTime    @default(now()) @db.Timestamptz(6)
-  user               User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  ward               Ward        @relation(fields: [ward_id], references: [id], onDelete: Cascade)
-  assignedComplaints Complaint[] @relation("ComplaintAssignment")
-
-  @@index([ward_id])
-  @@map("workers")
-}
-
-model Complaint {
-  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tracking_code      String            @unique
-  user_id            String            @db.Uuid
-  ward_id            Int
-  assigned_worker_id String?           @db.Uuid
-  title              String
-  text               String
-  category           ComplaintCategory @default(other)
-  status             ComplaintStatus   @default(received)
-  priority           ComplaintPriority @default(medium)
-  risk_score         Decimal           @default(0) @db.Decimal(6, 2)
-  sentiment_score    Decimal           @default(0) @db.Decimal(6, 2)
-  frequency_score    Decimal           @default(0) @db.Decimal(6, 2)
-  hotspot_count      Int               @default(0)
-  is_hotspot         Boolean           @default(false)
-  is_spam            Boolean           @default(false)
-  spam_reasons       Json              @default("[]")
-  attachments        Json              @default("[]")
-  department_message String?
-  location_address   String?
-  latitude           Decimal?          @db.Decimal(10, 7)
-  longitude          Decimal?          @db.Decimal(10, 7)
-  resolved_at        DateTime?         @db.Timestamptz(6)
-  resolution_notes   String?
-  created_at         DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
-  user               User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  ward               Ward              @relation(fields: [ward_id], references: [id], onDelete: Restrict)
-  assigned_worker    Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id], onDelete: SetNull)
-  updates            ComplaintUpdate[]
-  rating             Rating?
-
-  @@index([ward_id, priority, status, created_at(sort: Desc)])
-  @@index([status, created_at(sort: Desc)])
-  @@index([user_id, created_at(sort: Desc)])
-  @@map("complaints")
-}
-
-model ComplaintUpdate {
-  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  complaint_id       String          @db.Uuid
-  status             ComplaintStatus
-  note               String?
-  updated_by_user_id String?         @db.Uuid
-  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
-  complaint          Complaint       @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
-  updated_by         User?           @relation(fields: [updated_by_user_id], references: [id], onDelete: SetNull)
-
-  @@index([complaint_id, updated_at(sort: Desc)])
-  @@map("complaint_updates")
-}
-
-model Rating {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  complaint_id String    @unique @db.Uuid
-  rating       Int
-  feedback     String?
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  complaint    Complaint @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
-
-  @@map("ratings")
+  @@map("department_name")
 }

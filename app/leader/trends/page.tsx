@@ -18,7 +18,7 @@ export default function LeaderTrendsPage() {
   }, []);
 
   return (
-    <DashboardLayout title="Trends">
+    <DashboardLayout title="Dept Head Trends">
       <div className="space-y-4">
         {loading ? <LoadingSummary label="Loading trend snapshot" description="Summarizing category activity across recent complaints." /> : null}
         <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">

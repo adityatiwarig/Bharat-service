@@ -1,7 +1,7 @@
 import { AlertCircle, Clock, MapPin } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { PriorityBadge, StatusBadge } from '@/components/status-badge'
+import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/status-badge'
 import type { Complaint, Ward } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -41,6 +41,7 @@ export function ComplaintCard({
   const createdDate = new Date(complaint.created_at)
   const now = new Date()
   const daysAgo = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+  const hasWorkProof = Boolean(complaint.proof_image || complaint.proof_text)
 
   if (compact) {
     return (
@@ -56,6 +57,7 @@ export function ComplaintCard({
                   {complaint.category}
                 </span>
                 <StatusBadge status={complaint.status} />
+                {hasWorkProof ? <WorkCompletedBadge /> : null}
               </div>
               <h3 className="truncate font-semibold text-slate-950">{complaint.title}</h3>
               <p className="mt-1 text-xs text-slate-500">
@@ -78,7 +80,7 @@ export function ComplaintCard({
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <CardTitle className="text-lg text-slate-950">{complaint.title}</CardTitle>
-            <p className="mt-1 text-sm text-slate-500">ID: {complaint.id.slice(0, 8)}</p>
+            <p className="mt-1 text-sm text-slate-500">Complaint ID: {complaint.complaint_id}</p>
           </div>
         </div>
       </CardHeader>
@@ -89,8 +91,12 @@ export function ComplaintCard({
           <span className={cn('rounded-full px-3 py-1 text-xs font-medium capitalize', categoryColors[complaint.category])}>
             {complaint.category}
           </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs capitalize text-slate-600">
+            {complaint.department.replace('_', ' ')}
+          </span>
           <StatusBadge status={complaint.status} />
           <PriorityBadge priority={complaint.priority} />
+          {hasWorkProof ? <WorkCompletedBadge /> : null}
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
             Risk {Math.round(complaint.risk_score)}
           </span>

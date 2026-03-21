@@ -2,6 +2,7 @@ import { fetchJson } from '@/lib/client/api';
 import type {
   Complaint,
   ComplaintCategory,
+  ComplaintDepartment,
   ComplaintListFilters,
   ComplaintPriority,
   ComplaintStatus,
@@ -33,6 +34,7 @@ export async function fetchComplaints(options: ComplaintListFilters = {}) {
     status: options.status,
     priority: options.priority,
     category: options.category,
+    department: options.department,
     wardId: options.ward_id,
     mine: options.mine,
     myAssigned: options.my_assigned,
@@ -54,6 +56,27 @@ export async function updateComplaintStatus(id: string, input: { status: Complai
   return data.complaint;
 }
 
+export async function submitComplaintResolutionProof(
+  id: string,
+  input: { proof_text: string; note?: string; proof_image: File },
+) {
+  const body = new FormData();
+  body.set('status', 'resolved');
+  body.set('proof_text', input.proof_text);
+  body.set('proof_image', input.proof_image);
+
+  if (input.note?.trim()) {
+    body.set('note', input.note.trim());
+  }
+
+  const data = await fetchJson<{ complaint: Complaint }>(`/api/complaints/${id}`, {
+    method: 'PATCH',
+    body,
+  });
+
+  return data.complaint;
+}
+
 export async function rateComplaint(id: string, input: { rating: number; feedback?: string }) {
   const data = await fetchJson<{ rating: Rating }>(`/api/complaints/${id}/rating`, {
     method: 'POST',
@@ -62,6 +85,26 @@ export async function rateComplaint(id: string, input: { rating: number; feedbac
   });
 
   return data.rating;
+}
+
+export async function closeComplaintLifecycle(id: string, note?: string) {
+  const data = await fetchJson<{ complaint: Complaint }>(`/api/complaints/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'close', note }),
+  });
+
+  return data.complaint;
+}
+
+export async function reopenComplaintLifecycle(id: string, note?: string) {
+  const data = await fetchJson<{ complaint: Complaint }>(`/api/complaints/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reopen', note }),
+  });
+
+  return data.complaint;
 }
 
 export async function fetchWards() {
@@ -97,6 +140,35 @@ export async function fetchWorkerDashboard() {
 }
 
 export async function fetchUsers() {
-  const data = await fetchJson<{ users: Array<{ id: string; name: string; email: string; role: string; ward_id?: number | null; created_at: string }> }>('/api/users');
+  const data = await fetchJson<{ users: Array<{ id: string; name: string; email: string; role: string; ward_id?: number | null; ward_name?: string | null; department?: ComplaintDepartment | null; created_at: string }> }>('/api/users');
   return data.users;
 }
+
+export async function fetchAssignableWorkers(complaintId: string) {
+  const data = await fetchJson<{ workers: Array<{ id: string; ward_id: number; department: ComplaintDepartment; user_id?: string; user_name?: string; user_email?: string }> }>(
+    `/api/complaints/${complaintId}/assignment`,
+  );
+
+  return data.workers;
+}
+
+export async function markComplaintViewed(complaintId: string) {
+  const data = await fetchJson<{ complaint: Complaint }>(`/api/complaints/${complaintId}/assignment`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'mark_viewed' }),
+  });
+
+  return data.complaint;
+}
+
+export async function assignComplaintWorker(complaintId: string, worker_id: string) {
+  const data = await fetchJson<{ complaint: Complaint }>(`/api/complaints/${complaintId}/assignment`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'assign_worker', worker_id }),
+  });
+
+  return data.complaint;
+}
+

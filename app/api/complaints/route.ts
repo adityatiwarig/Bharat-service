@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
+import { COMPLAINT_DEPARTMENTS } from '@/lib/constants';
 import { AuthError, requireApiUser } from '@/lib/server/auth';
+import { detectDepartment } from '@/lib/server/ai';
 import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/complaints';
 import { listWards } from '@/lib/server/wards';
 
@@ -18,10 +20,11 @@ export async function GET(request: Request) {
     const complaints = await listComplaintsForUser(user, {
       page: searchParams.get('page') ? Number(searchParams.get('page')) : 1,
       page_size: searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : 10,
-      q: searchParams.get('q') || undefined,
+      q: searchParams.get('complaintId') || searchParams.get('q') || undefined,
       status: (searchParams.get('status') as never) || undefined,
       priority: (searchParams.get('priority') as never) || undefined,
       category: (searchParams.get('category') as never) || undefined,
+      department: (searchParams.get('department') as never) || undefined,
       ward_id: searchParams.get('wardId') ? Number(searchParams.get('wardId')) : undefined,
       mine: parseBoolean(searchParams.get('mine')),
       my_assigned: parseBoolean(searchParams.get('myAssigned')),
@@ -46,6 +49,9 @@ export async function POST(request: Request) {
     const title = String(formData.get('title') || '').trim();
     const text = String(formData.get('text') || formData.get('description') || '').trim();
     const ward_id = Number(formData.get('ward_id') || 0);
+    const submittedDepartment = String(formData.get('department') || '').trim().toLowerCase();
+    const detectedDepartment = detectDepartment(`${title} ${text}`);
+    const resolvedDepartment = submittedDepartment || detectedDepartment;
     const location_address = String(formData.get('location_address') || '').trim();
     const latitude = formData.get('latitude') ? Number(formData.get('latitude')) : undefined;
     const longitude = formData.get('longitude') ? Number(formData.get('longitude')) : undefined;
@@ -62,9 +68,14 @@ export async function POST(request: Request) {
 
     const wards = await listWards();
     const wardExists = wards.some((ward) => ward.id === ward_id);
+    const departmentExists = COMPLAINT_DEPARTMENTS.some((item) => item.value === resolvedDepartment);
 
     if (!wardExists) {
       return NextResponse.json({ error: 'Please choose a valid ward before submitting.' }, { status: 400 });
+    }
+
+    if (!departmentExists) {
+      return NextResponse.json({ error: 'Unable to detect a valid department for this complaint.' }, { status: 400 });
     }
 
     const complaint = await createComplaintForUser(
@@ -72,6 +83,7 @@ export async function POST(request: Request) {
       {
         title,
         text,
+        department: resolvedDepartment as never,
         ward_id,
         location_address,
         latitude,

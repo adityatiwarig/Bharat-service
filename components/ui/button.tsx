@@ -10,15 +10,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(214_82%_36%)_100%)] text-primary-foreground shadow-[0_14px_28px_rgba(15,59,130,0.22)] hover:shadow-[0_18px_34px_rgba(15,59,130,0.28)] hover:brightness-[1.03]',
+          'bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(214_82%_36%)_100%)] text-primary-foreground shadow-[0_14px_28px_rgba(15,59,130,0.22)] hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(15,59,130,0.28)] hover:brightness-[1.03]',
         destructive:
           'bg-destructive text-white shadow-[0_14px_28px_rgba(220,38,38,0.16)] hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
-          'border border-slate-300 bg-background/95 text-slate-800 shadow-[0_10px_22px_rgba(15,23,42,0.05)] hover:border-slate-400 hover:bg-white hover:text-slate-950 dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'border border-slate-300 bg-background/95 text-slate-800 shadow-[0_10px_22px_rgba(15,23,42,0.05)] hover:-translate-y-0.5 hover:border-slate-400 hover:bg-white hover:text-slate-950 dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
         secondary:
-          'bg-[linear-gradient(135deg,hsl(var(--secondary))_0%,hsl(37_92%_58%)_100%)] text-secondary-foreground shadow-[0_14px_28px_rgba(245,158,11,0.18)] hover:brightness-[1.03]',
+          'bg-[linear-gradient(135deg,hsl(var(--secondary))_0%,hsl(37_92%_58%)_100%)] text-secondary-foreground shadow-[0_14px_28px_rgba(245,158,11,0.18)] hover:-translate-y-0.5 hover:brightness-[1.03]',
         ghost:
-          'text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-accent/50',
+          'text-slate-700 hover:-translate-y-0.5 hover:bg-slate-100 hover:text-slate-950 dark:hover:bg-accent/50',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
@@ -59,3 +59,4 @@ function Button({
 }
 
 export { Button, buttonVariants }
+

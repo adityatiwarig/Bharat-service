@@ -1,12 +1,24 @@
 export type UserRole = 'citizen' | 'worker' | 'admin' | 'leader';
 
 export type ComplaintStatus =
+  | 'submitted'
   | 'received'
   | 'assigned'
   | 'in_progress'
   | 'resolved'
-  | 'rejected'
-  | 'submitted';
+  | 'closed'
+  | 'rejected';
+
+export type ComplaintProgress = 'pending' | 'in_progress' | 'resolved';
+export type ComplaintDepartment =
+  | 'electricity'
+  | 'water'
+  | 'sanitation'
+  | 'roads'
+  | 'fire'
+  | 'drainage'
+  | 'garbage'
+  | 'streetlight';
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
 
@@ -36,12 +48,14 @@ export interface UserSession {
   email: string;
   role: UserRole;
   ward_id?: number | null;
+  department?: ComplaintDepartment | null;
 }
 
 export interface User extends UserSession {
   password?: string;
   full_name?: string;
   phone?: string | null;
+  ward_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +64,7 @@ export interface Worker {
   id: string;
   user_id: string;
   ward_id: number;
+  department: ComplaintDepartment;
   created_at: string;
   user?: User;
   ward?: Ward;
@@ -94,15 +109,20 @@ export interface AppNotification {
 
 export interface Complaint {
   id: string;
+  complaint_id: string;
   tracking_code: string;
   user_id: string;
   citizen_id?: string;
   ward_id: number;
+  department: ComplaintDepartment;
   title: string;
   text: string;
   description?: string;
   category: ComplaintCategory;
   status: ComplaintStatus;
+  progress: ComplaintProgress;
+  dept_head_viewed: boolean;
+  worker_assigned: boolean;
   priority: ComplaintPriority;
   risk_score: number;
   sentiment_score?: number;
@@ -116,6 +136,8 @@ export interface Complaint {
   latitude?: number | null;
   longitude?: number | null;
   attachments?: ComplaintAttachment[];
+  proof_image?: ComplaintAttachment | null;
+  proof_text?: string | null;
   assigned_worker_id?: string | null;
   assigned_to?: string | null;
   ward_name?: string;
@@ -144,6 +166,7 @@ export interface ComplaintListFilters {
   priority?: ComplaintPriority | 'all';
   ward_id?: number;
   category?: ComplaintCategory | 'all';
+  department?: ComplaintDepartment | 'all';
   my_assigned?: boolean;
   mine?: boolean;
 }

@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiUser } from '@/lib/server/auth';
-import { getComplaintByIdForUser, updateComplaintStatusForUser } from '@/lib/server/complaints';
+import {
+  closeComplaintByDeptHead,
+  getComplaintByIdForUser,
+  reopenComplaintByDeptHead,
+  updateComplaintStatusForUser,
+} from '@/lib/server/complaints';
 
 export const runtime = 'nodejs';
 
@@ -34,17 +39,69 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireApiUser(['worker', 'admin']);
+    const user = await requireApiUser(['worker', 'leader', 'admin']);
     const { id } = await context.params;
-    const body = (await request.json()) as { status?: string; note?: string };
+    const contentType = request.headers.get('content-type') || '';
 
-    if (!body.status) {
+    if (contentType.includes('multipart/form-data')) {
+      if (user.role !== 'worker' && user.role !== 'admin') {
+        return NextResponse.json({ error: 'Only workers can submit proof uploads.' }, { status: 403 });
+      }
+
+      const formData = await request.formData();
+      const status = String(formData.get('status') || '').trim();
+      const note = String(formData.get('note') || '').trim() || undefined;
+      const proof_text = String(formData.get('proof_text') || '').trim() || undefined;
+      const file = formData.get('proof_image');
+      const proof_image = file instanceof File && file.size > 0 ? file : undefined;
+
+      if (!status) {
+        return NextResponse.json({ error: 'Status is required.' }, { status: 400 });
+      }
+
+      const complaint = await updateComplaintStatusForUser(user, id, {
+        status: status as never,
+        note,
+        proof_text,
+        proof_image,
+      });
+
+      return NextResponse.json({ complaint });
+    }
+
+    const body = (await request.json()) as {
+      action?: string;
+      status?: string;
+      note?: string;
+      proof_text?: string;
+    };
+
+    if (body.action === 'close') {
+      const complaint = await closeComplaintByDeptHead(user, id, body.note);
+      return NextResponse.json({ complaint });
+    }
+
+    if (body.action === 'reopen') {
+      const complaint = await reopenComplaintByDeptHead(user, id, body.note);
+      return NextResponse.json({ complaint });
+    }
+
+    if (user.role !== 'worker' && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Only workers can update complaint execution status.' }, { status: 403 });
+    }
+
+    const status = String(body.status || '').trim();
+    const note = body.note?.trim() || undefined;
+    const proof_text = body.proof_text?.trim() || undefined;
+
+    if (!status) {
       return NextResponse.json({ error: 'Status is required.' }, { status: 400 });
     }
 
     const complaint = await updateComplaintStatusForUser(user, id, {
-      status: body.status as never,
-      note: body.note,
+      status: status as never,
+      note,
+      proof_text,
     });
 
     return NextResponse.json({ complaint });

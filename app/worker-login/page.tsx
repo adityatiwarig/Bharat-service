@@ -61,8 +61,8 @@ const panelCredentials = [
     accent: 'bg-[#dbeafe] text-[#1d4ed8]',
   },
   {
-    role: 'Leader Panel',
-    description: 'For executive reporting, ward trends, and high-level monitoring.',
+    role: 'Central Dept Head Panel',
+    description: 'For cross-department complaint review, routing oversight, and worker assignment fallback.',
     email: 'leader@govcrm.demo',
     password: 'changeme',
     icon: Shield,
@@ -121,7 +121,7 @@ export default function WorkerLoginPage() {
             <Landmark className="h-3.5 w-3.5 text-amber-300" />
             <span>Official Department Access</span>
           </div>
-          <div className="text-slate-300">Worker, admin, and leadership access only</div>
+          <div className="text-slate-300">Worker, admin, and dept head access only</div>
         </div>
       </div>
 
@@ -152,7 +152,7 @@ export default function WorkerLoginPage() {
                 Internal Use
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Use your assigned department credentials to open the worker, admin, or leader panel.
+                Use your assigned department credentials to open the worker, admin, or dept head panel.
               </p>
             </div>
             <div className="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
@@ -171,7 +171,7 @@ export default function WorkerLoginPage() {
               <div>
                 <div className="text-sm font-semibold tracking-[0.18em] text-sky-700 uppercase">Department Accounts</div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Select the relevant internal account below. This keeps department access separate from the public citizen portal.
+                  Select the relevant internal account below. This keeps department access separate from the public citizen portal. Additional seeded accounts follow the pattern leader.department@govcrm.demo and worker.department.ward@govcrm.demo, all with password changeme.
                 </p>
               </div>
               <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
@@ -266,7 +266,7 @@ export default function WorkerLoginPage() {
                   </div>
                   <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                     <div className="font-semibold text-slate-950">Role-Based Login</div>
-                    <p className="mt-1 leading-6">Workers, admin, and leadership users are routed to the correct panel after sign in.</p>
+                    <p className="mt-1 leading-6">Workers, admin, and dept head users are routed to the correct panel after sign in.</p>
                   </div>
                 </div>
 
@@ -298,3 +298,7 @@ export default function WorkerLoginPage() {
     </div>
   );
 }
+
+
+
+

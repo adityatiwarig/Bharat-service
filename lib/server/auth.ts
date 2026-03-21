@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { query } from '@/lib/server/db';
 import { hashPassword, verifyPassword } from '@/lib/server/password';
 import { getSessionPayload } from '@/lib/server/session';
-import type { User, UserRole, UserSession } from '@/lib/types';
+import type { ComplaintDepartment, User, UserRole, UserSession } from '@/lib/types';
 
 export class AuthError extends Error {
   status: number;
@@ -25,6 +25,7 @@ type UserRow = {
   role: UserRole;
   phone: string | null;
   ward_id: number | null;
+  department: ComplaintDepartment | null;
   created_at: string;
   updated_at: string;
 };
@@ -61,6 +62,7 @@ function mapUser(row: UserRow): User {
     role: row.role,
     phone: row.phone,
     ward_id: row.ward_id,
+    department: row.department,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -73,6 +75,7 @@ export function toSessionUser(user: User): UserSession {
     email: user.email,
     role: user.role,
     ward_id: user.ward_id,
+    department: user.department,
   };
 }
 
@@ -87,6 +90,7 @@ export async function getUserById(id: string) {
         u.role,
         u.phone,
         w.ward_id,
+        COALESCE(w.department, u.department) AS department,
         u.created_at,
         u.updated_at
       FROM users u
@@ -111,6 +115,7 @@ export async function getUserByEmail(email: string) {
         u.role,
         u.phone,
         w.ward_id,
+        COALESCE(w.department, u.department) AS department,
         u.created_at,
         u.updated_at
       FROM users u
@@ -149,6 +154,7 @@ export async function signupCitizen(input: {
         password,
         role,
         phone,
+        NULL::text AS department,
         NULL::integer AS ward_id,
         created_at,
         updated_at

@@ -18,7 +18,7 @@ export default function LeaderWardComparisonPage() {
   }, []);
 
   return (
-    <DashboardLayout title="Ward Comparison">
+    <DashboardLayout title="Dept Head Ward Comparison">
       <div className="space-y-4">
         {loading ? <LoadingSummary label="Loading ward comparison" description="Reviewing the highest-pressure service areas." /> : null}
         <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">

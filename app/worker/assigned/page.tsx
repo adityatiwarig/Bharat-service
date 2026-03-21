@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { fetchComplaints } from '@/lib/client/complaints';
 import type { Complaint, ComplaintPriority, ComplaintStatus } from '@/lib/types';
 
-const statuses: Array<ComplaintStatus | 'all'> = ['all', 'assigned', 'in_progress', 'resolved'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'assigned', 'in_progress', 'resolved', 'closed'];
 const priorities: Array<ComplaintPriority | 'all'> = ['all', 'critical', 'high', 'medium', 'low'];
 
 export default function WorkerAssignedPage() {
@@ -22,7 +22,7 @@ export default function WorkerAssignedPage() {
   const [status, setStatus] = useState<ComplaintStatus | 'all'>('all');
   const [priority, setPriority] = useState<ComplaintPriority | 'all'>('all');
   const [loading, setLoading] = useState(true);
-  const openCount = complaints.filter((item) => item.status !== 'resolved').length;
+  const openCount = complaints.filter((item) => item.status !== 'resolved' && item.status !== 'closed').length;
   const urgentCount = complaints.filter((item) => ['critical', 'urgent'].includes(item.priority)).length;
 
   useEffect(() => {
@@ -140,3 +140,5 @@ export default function WorkerAssignedPage() {
     </DashboardLayout>
   );
 }
+
+

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { query } from '@/lib/server/db';
-import type { User } from '@/lib/types';
+import type { ComplaintDepartment, User } from '@/lib/types';
 
 type UserRow = {
   id: string;
@@ -10,6 +10,8 @@ type UserRow = {
   role: User['role'];
   phone: string | null;
   ward_id: number | null;
+  ward_name: string | null;
+  department: ComplaintDepartment | null;
   created_at: string;
   updated_at: string;
 };
@@ -24,10 +26,13 @@ export async function listUsersForAdmin() {
         u.role,
         u.phone,
         w.ward_id,
+        wd.name AS ward_name,
+        COALESCE(w.department, u.department) AS department,
         u.created_at,
         u.updated_at
       FROM users u
       LEFT JOIN workers w ON w.user_id = u.id
+      LEFT JOIN wards wd ON wd.id = w.ward_id
       ORDER BY
         CASE u.role
           WHEN 'admin' THEN 0
@@ -47,6 +52,8 @@ export async function listUsersForAdmin() {
     role: row.role,
     phone: row.phone,
     ward_id: row.ward_id,
+    ward_name: row.ward_name,
+    department: row.department,
     created_at: row.created_at,
     updated_at: row.updated_at,
   })) as User[];

@@ -21,7 +21,7 @@ export default function LeaderReportsPage() {
   }, []);
 
   return (
-    <DashboardLayout title="Reports">
+    <DashboardLayout title="Dept Head Reports">
       <div className="space-y-4">
         {loading ? <LoadingSummary label="Loading reports" description="Gathering ward pressure and escalation trends." /> : null}
         <div className="grid gap-6 xl:grid-cols-2">
