@@ -38,6 +38,25 @@ export async function createNotificationForUser(
     href?: string | null;
   },
 ) {
+  const duplicateResult = await client.query<{ id: string }>(
+    `
+      SELECT id
+      FROM notifications
+      WHERE user_id = $1
+        AND complaint_id IS NOT DISTINCT FROM $2
+        AND title = $3
+        AND message = $4
+        AND href IS NOT DISTINCT FROM $5
+        AND created_at >= NOW() - INTERVAL '2 minutes'
+      LIMIT 1
+    `,
+    [input.user_id, input.complaint_id || null, input.title, input.message, input.href || null],
+  );
+
+  if (duplicateResult.rows[0]) {
+    return;
+  }
+
   await client.query(
     `
       INSERT INTO notifications (user_id, complaint_id, title, message, href)
@@ -47,7 +66,7 @@ export async function createNotificationForUser(
   );
 }
 
-export async function listNotificationsForUser(user: User, limit = 8) {
+export async function listNotificationsForUser(user: User, limit = 12) {
   const result = await query<NotificationRow>(
     `
       SELECT id, user_id, complaint_id, title, message, href, is_read, created_at
@@ -84,5 +103,22 @@ export async function markNotificationsReadForUser(user: User) {
         AND is_read = FALSE
     `,
     [user.id],
+  );
+}
+
+export async function markSelectedNotificationsReadForUser(user: User, ids: string[]) {
+  if (!ids.length) {
+    return;
+  }
+
+  await query(
+    `
+      UPDATE notifications
+      SET is_read = TRUE
+      WHERE user_id = $1
+        AND id = ANY($2::uuid[])
+        AND is_read = FALSE
+    `,
+    [user.id, ids],
   );
 }

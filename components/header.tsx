@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Bell, Menu, Sparkles } from 'lucide-react'
@@ -35,6 +35,7 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
       title: string
       message: string
       href?: string | null
+      is_read?: boolean
       created_at: string
     }>
   >([])
@@ -43,7 +44,7 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
   const [notificationsLoaded, setNotificationsLoaded] = useState(false)
 
   async function loadNotifications() {
-    if (!['worker', 'admin', 'leader'].includes(userRole) || loadingNotifications) {
+    if (loadingNotifications) {
       return
     }
 
@@ -72,8 +73,26 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
       return
     }
 
-    await fetch('/api/notifications', { method: 'PATCH' })
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    setNotifications((current) => current.map((item) => ({ ...item, is_read: true })))
     setUnreadCount(0)
+  }
+
+  async function markSingleNotificationRead(notificationId: string) {
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [notificationId] }),
+    })
+
+    setNotifications((current) =>
+      current.map((item) => (item.id === notificationId ? { ...item, is_read: true } : item)),
+    )
+    setUnreadCount((current) => Math.max(0, current - 1))
   }
 
   async function handleLogout() {
@@ -81,13 +100,51 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
     window.location.assign('/')
   }
 
-  async function handleNotificationClick(href?: string | null) {
-    await markNotificationsRead()
+  async function handleNotificationClick(notification: {
+    id: string
+    href?: string | null
+    is_read?: boolean
+  }) {
+    if (!notification.is_read) {
+      await markSingleNotificationRead(notification.id)
+    }
 
-    if (href) {
-      router.push(href)
+    if (notification.href) {
+      router.push(notification.href)
       router.refresh()
     }
+  }
+
+  useEffect(() => {
+    void loadNotifications()
+
+    const intervalId = window.setInterval(() => {
+      void loadNotifications()
+    }, 30000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [userRole])
+
+  function formatNotificationTime(value: string) {
+    const createdAt = new Date(value)
+    const diffMs = Date.now() - createdAt.getTime()
+    const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)))
+
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60)
+    if (diffHours < 24) {
+      return `${diffHours}h ago`
+    }
+
+    return createdAt.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+    })
   }
 
   return (
@@ -160,19 +217,29 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
                   notifications.map((notification) => (
                     <DropdownMenuItem
                       key={notification.id}
-                      className="items-start rounded-xl px-3 py-3"
+                      className={`items-start rounded-xl px-3 py-3 ${notification.is_read ? 'opacity-75' : 'bg-sky-50/70'}`}
                       onSelect={() => {
-                        void handleNotificationClick(notification.href)
+                        void handleNotificationClick(notification)
                       }}
                     >
                       <div className="space-y-1">
-                        <div className="text-sm font-semibold text-slate-900">{notification.title}</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-slate-900">{notification.title}</div>
+                          <div className="flex items-center gap-2">
+                            {!notification.is_read ? (
+                              <span className="h-2 w-2 rounded-full bg-sky-600" />
+                            ) : null}
+                            <div className="text-[11px] font-medium text-slate-400">
+                              {formatNotificationTime(notification.created_at)}
+                            </div>
+                          </div>
+                        </div>
                         <div className="text-xs leading-5 text-slate-500">{notification.message}</div>
                       </div>
                     </DropdownMenuItem>
                   ))
                 ) : (
-                  <div className="px-3 py-4 text-sm text-slate-500">No new assignment notifications.</div>
+                  <div className="px-3 py-4 text-sm text-slate-500">No recent notifications.</div>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

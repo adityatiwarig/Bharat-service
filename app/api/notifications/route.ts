@@ -4,11 +4,12 @@ import { AuthError, requireApiUser } from '@/lib/server/auth';
 import {
   listNotificationsForUser,
   markNotificationsReadForUser,
+  markSelectedNotificationsReadForUser,
 } from '@/lib/server/notifications';
 
 export async function GET() {
   try {
-    const user = await requireApiUser(['worker', 'admin', 'leader']);
+    const user = await requireApiUser();
     const data = await listNotificationsForUser(user);
     return NextResponse.json(data);
   } catch (error) {
@@ -21,10 +22,17 @@ export async function GET() {
   }
 }
 
-export async function PATCH() {
+export async function PATCH(request: Request) {
   try {
-    const user = await requireApiUser(['worker', 'admin', 'leader']);
-    await markNotificationsReadForUser(user);
+    const user = await requireApiUser();
+    const body = (await request.json().catch(() => ({}))) as { ids?: string[] };
+
+    if (Array.isArray(body.ids) && body.ids.length) {
+      await markSelectedNotificationsReadForUser(user, body.ids);
+    } else {
+      await markNotificationsReadForUser(user);
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof AuthError) {

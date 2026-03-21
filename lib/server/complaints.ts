@@ -301,6 +301,18 @@ async function appendComplaintUpdate(
   );
 }
 
+async function listAdminUserIds(client: DbTransactionClient) {
+  const result = await client.query<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE role = 'admin'
+    `,
+  );
+
+  return result.rows.map((row) => row.id);
+}
+
 export async function listComplaintsForUser(
   user: User,
   filters: ComplaintListFilters = {},
@@ -568,6 +580,14 @@ export async function createComplaintForUser(
       updated_by_user_id: user.id,
     });
 
+    await createNotificationForUser(client, {
+      user_id: user.id,
+      complaint_id: complaintId,
+      title: 'Complaint submitted',
+      message: `${input.title.trim()} has been submitted successfully and is awaiting department review.`,
+      href: `/citizen/tracker?id=${complaintReference}`,
+    });
+
     return mapComplaintRow(result.rows[0]);
   });
 
@@ -683,6 +703,31 @@ export async function updateComplaintStatusForUser(
           : note || 'Worker started work on the complaint.',
       updated_by_user_id: user.id,
     });
+
+    await createNotificationForUser(client, {
+      user_id: complaint.user_id,
+      complaint_id: complaint.id,
+      title: nextStatus === 'resolved' ? 'Work completed' : 'Work started',
+      message:
+        nextStatus === 'resolved'
+          ? `${complaint.title} has been marked resolved and is ready for your review.`
+          : `${complaint.title} is now in progress with the assigned worker.`,
+      href: `/citizen/tracker?id=${complaint.complaint_id}`,
+    });
+
+    if (nextStatus === 'resolved') {
+      const adminIds = await listAdminUserIds(client);
+
+      for (const adminId of adminIds) {
+        await createNotificationForUser(client, {
+          user_id: adminId,
+          complaint_id: complaint.id,
+          title: 'Complaint resolved',
+          message: `${complaint.title} has been resolved by the assigned worker and is awaiting review.`,
+          href: '/admin/complaints',
+        });
+      }
+    }
   });
 
   revalidateTag('complaints', 'max');
@@ -751,6 +796,18 @@ export async function addComplaintRatingForUser(
         title: 'Citizen feedback received',
         message: `${complaint.title} received a ${input.rating}/5 citizen rating for closure review.`,
         href: '/leader',
+      });
+    }
+
+    const adminIds = await listAdminUserIds(client);
+
+    for (const adminId of adminIds) {
+      await createNotificationForUser(client, {
+        user_id: adminId,
+        complaint_id: complaint.id,
+        title: 'Citizen feedback received',
+        message: `${complaint.title} received citizen feedback and can now move through final review.`,
+        href: '/admin/complaints',
       });
     }
   });
@@ -927,6 +984,14 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
       note: 'Complaint reviewed by the department head.',
       updated_by_user_id: user.id,
     });
+
+    await createNotificationForUser(client, {
+      user_id: complaint.user_id,
+      complaint_id: complaint.id,
+      title: 'Complaint reviewed',
+      message: `${complaint.title} has been reviewed by the department and is moving toward worker assignment.`,
+      href: `/citizen/tracker?id=${complaint.complaint_id}`,
+    });
   });
 
   revalidateTag('complaints', 'max');
@@ -1050,6 +1115,14 @@ export async function assignComplaintToWorkerByDeptHead(
       title: 'New ward complaint assigned',
       message: `${complaint.title} has been assigned to you for ${complaint.ward_name}.`,
       href: '/worker/assigned',
+    });
+
+    await createNotificationForUser(client, {
+      user_id: complaint.user_id,
+      complaint_id: complaint.id,
+      title: 'Worker assigned',
+      message: `${complaint.title} has been assigned to a field worker for ${complaint.ward_name}.`,
+      href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
     await appendComplaintUpdate(client, {
@@ -1231,6 +1304,18 @@ async function processComplaintPipeline(complaintId: string) {
         title: 'New department complaint received',
         message: `${complaint.title} has been routed to your department for ${complaint.ward_name}.`,
         href: '/leader',
+      });
+    }
+
+    const adminIds = await listAdminUserIds(client);
+
+    for (const adminId of adminIds) {
+      await createNotificationForUser(client, {
+        user_id: adminId,
+        complaint_id: complaint.id,
+        title: 'New complaint routed',
+        message: `${complaint.title} has been routed to ${resolvedDepartment.replace('_', ' ')} for ${complaint.ward_name}.`,
+        href: '/admin/complaints',
       });
     }
 
