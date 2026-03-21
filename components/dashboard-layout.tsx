@@ -24,23 +24,26 @@ export function DashboardLayout({
   const session = useSession()
   const resolvedRole = userRole ?? session?.role ?? 'citizen'
   const resolvedName = userName ?? session?.name ?? 'GovCRM User'
+  const showSidebar = resolvedRole !== 'citizen'
 
   return (
-    <div className="gov-shell flex min-h-screen">
-      <Sidebar
-        userRole={resolvedRole}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <div className="flex min-h-screen flex-1 flex-col">
+    <div className="gov-shell flex min-h-screen w-full">
+      {showSidebar ? (
+        <Sidebar
+          userRole={resolvedRole}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+      ) : null}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <Header
           title={title}
           userRole={resolvedRole}
           userName={resolvedName}
-          onMenuClick={() => setSidebarOpen((open) => !open)}
+          onMenuClick={showSidebar ? () => setSidebarOpen((open) => !open) : undefined}
         />
-        <main className="flex-1 overflow-auto">
-          <div className="gov-fade-in mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className="flex-1 overflow-x-hidden">
+          <div className="gov-fade-in mx-auto w-full max-w-[96rem] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-5">
             {children}
           </div>
         </main>

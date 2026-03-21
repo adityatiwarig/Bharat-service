@@ -34,10 +34,10 @@ export interface RoleMeta {
 export const roleMeta: Record<UserRole, RoleMeta> = {
   citizen: {
     label: 'Citizen',
-    workspace: 'Citizen Service Desk',
-    summary: 'Submit issues, monitor progress, and follow every update in one place.',
-    accentClass: 'from-sky-500/20 via-cyan-500/10 to-transparent',
-    signal: 'Public-facing',
+    workspace: 'Citizen Grievance Portal',
+    summary: 'Submit civic issues, monitor department action, and follow every status update in one trusted workspace.',
+    accentClass: 'from-orange-400/25 via-white to-emerald-400/25',
+    signal: 'Public service desk',
   },
   worker: {
     label: 'Field Worker',
@@ -173,24 +173,28 @@ export const legacyNavigation: Record<UserRole, NavItem[]> = {
       label: 'Dashboard',
       description: 'Overview of your requests and service status.',
       icon: LayoutDashboard,
+      badge: 'Overview',
     },
     {
       href: '/citizen/submit',
       label: 'Report Issue',
       description: 'Create a new complaint with location and priority.',
       icon: FilePlus2,
+      badge: '24x7',
     },
     {
       href: '/citizen/my-complaints',
       label: 'My Complaints',
       description: 'Review all complaints and current statuses.',
       icon: ClipboardList,
+      badge: 'History',
     },
     {
       href: '/citizen/tracker',
       label: 'Tracker',
       description: 'Follow the lifecycle of each complaint.',
       icon: FileSearch,
+      badge: 'Live',
     },
   ],
   worker: [

@@ -136,7 +136,6 @@ export default function SubmitComplaintPage() {
       toast.success('Complaint submitted successfully.');
       setTimeout(() => {
         router.push(`/citizen/tracker?id=${data.complaint?.complaint_id || data.complaint?.id}`);
-        router.refresh();
       }, 700);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to submit complaint.');
@@ -148,8 +147,8 @@ export default function SubmitComplaintPage() {
   return (
     <DashboardLayout title="Raise Complaint">
       <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-        <Card className="rounded-[1.9rem] border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
-          <CardHeader>
+        <Card className="gov-citizen-panel rounded-[1.15rem] border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
+          <CardHeader className="border-b border-slate-200/80 pb-6">
             <CardTitle className="flex items-center gap-2 text-2xl text-slate-950">
               <FileText className="h-5 w-5 text-primary" />
               Citizen Complaint Submission
@@ -159,7 +158,7 @@ export default function SubmitComplaintPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4 transition-all duration-200">
+            <div className="rounded-[1rem] border border-slate-200 bg-slate-50 p-4 transition-all duration-200">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Submission readiness</div>
@@ -178,107 +177,126 @@ export default function SubmitComplaintPage() {
             ) : null}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Citizen name</FieldLabel>
-                    <Input value={session?.name || ''} disabled />
-                  </Field>
-                </FieldGroup>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Email</FieldLabel>
-                    <Input value={session?.email || ''} disabled />
-                  </Field>
-                </FieldGroup>
+              <div className="rounded-[1rem] border border-slate-200 bg-white p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-950">Citizen account details</div>
+                    <div className="text-xs text-slate-500">These details are pulled from your verified portal profile.</div>
+                  </div>
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] text-emerald-700 uppercase">
+                    Verified profile
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel>Citizen name</FieldLabel>
+                      <Input value={session?.name || ''} disabled />
+                    </Field>
+                  </FieldGroup>
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel>Email</FieldLabel>
+                      <Input value={session?.email || ''} disabled />
+                    </Field>
+                  </FieldGroup>
+                </div>
               </div>
 
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>Complaint title</FieldLabel>
-                  <Input
-                    value={form.title}
-                    onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                    placeholder="Example: Overflowing garbage near Rohini market"
-                    required
-                  />
-                </Field>
-              </FieldGroup>
+              <div className="rounded-[1rem] border border-slate-200 bg-white p-5">
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-slate-950">Complaint details</div>
+                  <div className="text-xs text-slate-500">Write the issue in a way that helps the department act without follow-up calls.</div>
+                </div>
+                <div className="space-y-6">
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel>Complaint title</FieldLabel>
+                      <Input
+                        value={form.title}
+                        onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                        placeholder="Example: Overflowing garbage near Rohini market"
+                        required
+                      />
+                    </Field>
+                  </FieldGroup>
 
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>Complaint text</FieldLabel>
-                  <Textarea
-                    value={form.text}
-                    onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))}
-                    placeholder="Describe what happened, the public impact, whether it is recurring, and why the issue needs attention."
-                    rows={6}
-                    required
-                  />
-                </Field>
-              </FieldGroup>
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel>Complaint text</FieldLabel>
+                      <Textarea
+                        value={form.text}
+                        onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))}
+                        placeholder="Describe what happened, the public impact, whether it is recurring, and why the issue needs attention."
+                        rows={6}
+                        required
+                      />
+                    </Field>
+                  </FieldGroup>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Department</FieldLabel>
-                    <Select
-                      value={effectiveDepartment}
-                      onValueChange={(value) => setForm((current) => ({ ...current, department: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="AI will suggest a department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COMPLAINT_DEPARTMENTS.map((department) => (
-                          <SelectItem key={department.value} value={department.value}>
-                            {department.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                      <Sparkles className="h-3.5 w-3.5 text-sky-700" />
-                      AI suggestion: {COMPLAINT_DEPARTMENTS.find((item) => item.value === aiSuggestedDepartment)?.label || 'Roads'}.
-                      You can still change it manually.
-                    </div>
-                  </Field>
-                </FieldGroup>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel>Department</FieldLabel>
+                        <Select
+                          value={effectiveDepartment}
+                          onValueChange={(value) => setForm((current) => ({ ...current, department: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="AI will suggest a department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COMPLAINT_DEPARTMENTS.map((department) => (
+                              <SelectItem key={department.value} value={department.value}>
+                                {department.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                          <Sparkles className="h-3.5 w-3.5 text-sky-700" />
+                          AI suggestion: {COMPLAINT_DEPARTMENTS.find((item) => item.value === aiSuggestedDepartment)?.label || 'Roads'}.
+                          You can still change it manually.
+                        </div>
+                      </Field>
+                    </FieldGroup>
 
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Area / ward</FieldLabel>
-                    <Select
-                      value={form.ward_id}
-                      onValueChange={(value) => setForm((current) => ({ ...current, ward_id: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={loadingWards ? 'Loading wards...' : 'Select your area from portal list'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {wards.map((ward) => (
-                          <SelectItem key={ward.id} value={String(ward.id)}>
-                            {ward.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </FieldGroup>
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel>Area / ward</FieldLabel>
+                        <Select
+                          value={form.ward_id}
+                          onValueChange={(value) => setForm((current) => ({ ...current, ward_id: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={loadingWards ? 'Loading wards...' : 'Select your area from portal list'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {wards.map((ward) => (
+                              <SelectItem key={ward.id} value={String(ward.id)}>
+                                {ward.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </FieldGroup>
 
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>Nearest landmark</FieldLabel>
-                    <Input
-                      value={form.location_address}
-                      onChange={(event) => setForm((current) => ({ ...current, location_address: event.target.value }))}
-                      placeholder="Street, market, gate number, school, or nearby point"
-                    />
-                  </Field>
-                </FieldGroup>
+                    <FieldGroup className="md:col-span-2">
+                      <Field>
+                        <FieldLabel>Nearest landmark</FieldLabel>
+                        <Input
+                          value={form.location_address}
+                          onChange={(event) => setForm((current) => ({ ...current, location_address: event.target.value }))}
+                          placeholder="Street, market, gate number, school, or nearby point"
+                        />
+                      </Field>
+                    </FieldGroup>
+                  </div>
+                </div>
               </div>
 
-              <div className="rounded-[1.5rem] border border-slate-200 bg-[linear-gradient(180deg,#eff6ff_0%,#ffffff_100%)] p-4 transition-all duration-200">
+              <div className="rounded-[1rem] border border-slate-200 bg-[linear-gradient(180deg,#eff6ff_0%,#ffffff_100%)] p-4 transition-all duration-200">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
@@ -292,7 +310,7 @@ export default function SubmitComplaintPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-full"
+                    className="rounded-lg"
                     onClick={handleCaptureLocation}
                     disabled={capturingLocation}
                   >
@@ -301,28 +319,34 @@ export default function SubmitComplaintPage() {
                 </div>
 
                 {form.latitude && form.longitude ? (
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                     Coordinates captured: {form.latitude}, {form.longitude}
                   </div>
                 ) : null}
               </div>
 
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>Attachments</FieldLabel>
-                  <Input
-                    type="file"
-                    multiple
-                    onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 4))}
-                  />
-                  {files.length ? (
-                    <div className="mt-2 text-xs text-slate-500">{files.length} attachment{files.length > 1 ? 's' : ''} selected.</div>
-                  ) : null}
-                </Field>
-              </FieldGroup>
+              <div className="rounded-[1rem] border border-slate-200 bg-white p-5">
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-slate-950">Supporting evidence</div>
+                  <div className="text-xs text-slate-500">Attach up to four files if photos or documents will help the field team verify the issue faster.</div>
+                </div>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>Attachments</FieldLabel>
+                    <Input
+                      type="file"
+                      multiple
+                      onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 4))}
+                    />
+                    {files.length ? (
+                      <div className="mt-2 text-xs text-slate-500">{files.length} attachment{files.length > 1 ? 's' : ''} selected.</div>
+                    ) : null}
+                  </Field>
+                </FieldGroup>
+              </div>
 
               {submitted ? (
-                <div className="rounded-[1.4rem] border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+                <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
                   <div className="flex items-center gap-2 font-semibold">
                     <CheckCircle2 className="h-4 w-4" />
                     Complaint submitted successfully
@@ -331,7 +355,7 @@ export default function SubmitComplaintPage() {
                 </div>
               ) : null}
 
-              <Button type="submit" className="w-full rounded-full" disabled={submitting || loadingWards}>
+              <Button type="submit" className="w-full rounded-lg" disabled={submitting || loadingWards}>
                 {submitting ? <Spinner label="Submitting complaint..." /> : <><Send className="h-4 w-4" /> Submit Complaint</>}
               </Button>
             </form>
@@ -339,8 +363,8 @@ export default function SubmitComplaintPage() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="rounded-[1.8rem] border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]">
-            <CardHeader>
+          <Card className="gov-citizen-panel rounded-[1.1rem] border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]">
+            <CardHeader className="border-b border-slate-200/80 pb-6">
               <CardTitle className="flex items-center gap-2 text-slate-950">
                 <MapPin className="h-5 w-5 text-primary" />
                 Area Routing
@@ -350,14 +374,24 @@ export default function SubmitComplaintPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-600">
-              {loadingWards ? <StatListSkeleton count={5} /> : wards.length ? wards.map((ward) => (
-                <div
-                  key={ward.id}
-                  className={cn(`rounded-2xl border px-4 py-3 shadow-sm transition-all duration-200 ${selectedWard?.id === ward.id ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`)}
-                >
-                  {ward.name}, {ward.city}
+              {selectedWard ? (
+                <div className="rounded-[1rem] border border-sky-200 bg-sky-50 px-4 py-4">
+                  <div className="text-xs font-semibold tracking-[0.14em] text-sky-700 uppercase">Selected ward</div>
+                  <div className="mt-2 text-sm font-semibold text-sky-950">{selectedWard.name}, {selectedWard.city}</div>
                 </div>
-              )) : (
+              ) : null}
+              {loadingWards ? <StatListSkeleton count={5} /> : wards.length ? (
+                <div className="gov-scrollbar max-h-[24rem] space-y-3 overflow-y-auto pr-1">
+                  {wards.map((ward) => (
+                    <div
+                      key={ward.id}
+                      className={cn(`rounded-[0.95rem] border px-4 py-3 shadow-sm transition-all duration-200 ${selectedWard?.id === ward.id ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`)}
+                    >
+                      {ward.name}, {ward.city}
+                    </div>
+                  ))}
+                </div>
+              ) : (
                 <EmptyState
                   title="No wards available yet"
                   description="Ward mapping has not been seeded in the portal database yet."
@@ -366,18 +400,18 @@ export default function SubmitComplaintPage() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-[1.8rem] border-slate-200">
-            <CardHeader>
+          <Card className="gov-citizen-panel rounded-[1.1rem] border-slate-200">
+            <CardHeader className="border-b border-slate-200/80 pb-6">
               <CardTitle className="text-slate-950">What happens next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-600">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
                 Your complaint is stored immediately with status <strong>submitted</strong> and progress <strong>pending</strong>.
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
                 The AI layer suggests the department, scores urgency, flags spam-like submissions, and detects ward hotspots before department review.
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
                 If you capture live location, it supports field identification. If not, the complaint still works normally.
               </div>
             </CardContent>
