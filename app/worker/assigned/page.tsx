@@ -25,30 +25,26 @@ export default function WorkerAssignedPage() {
   const openCount = complaints.filter((item) => item.status !== 'resolved' && item.status !== 'closed').length;
   const urgentCount = complaints.filter((item) => ['critical', 'urgent'].includes(item.priority)).length;
 
-  useEffect(() => {
-    let mounted = true;
+  async function loadComplaints(activePage = page, activePriority = priority, activeStatus = status) {
     setLoading(true);
-
-    fetchComplaints({
+    return fetchComplaints({
       my_assigned: true,
-      page,
+      page: activePage,
       page_size: 6,
-      status,
-      priority,
+      status: activeStatus,
+      priority: activePriority,
     })
       .then((result) => {
-        if (mounted) {
-          setComplaints(result.items);
-          setTotalPages(result.total_pages);
-        }
+        setComplaints(result.items);
+        setTotalPages(result.total_pages);
       })
       .finally(() => {
-        if (mounted) setLoading(false);
+        setLoading(false);
       });
+  }
 
-    return () => {
-      mounted = false;
-    };
+  useEffect(() => {
+    void loadComplaints();
   }, [page, priority, status]);
 
   return (

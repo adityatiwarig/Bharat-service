@@ -111,8 +111,10 @@ export default function TrackerPage() {
     }
   }
 
-  const canRateResolution = complaint?.status === 'resolved' || (complaint?.status === 'closed' && !complaint?.rating);
-  const showFeedbackSummary = Boolean(complaint?.rating);
+  const isClosedComplaint = complaint?.status === 'closed';
+  const canRateResolution = complaint?.status === 'resolved';
+  const showFeedbackSummary = Boolean(complaint?.rating) && !isClosedComplaint;
+  const showProofSection = Boolean(complaint?.proof_image || complaint?.proof_text) && !isClosedComplaint;
 
   return (
     <DashboardLayout title="Complaint Tracker">
@@ -161,7 +163,7 @@ export default function TrackerPage() {
                     <div className="flex flex-wrap gap-2">
                       <StatusBadge status={complaint.status} />
                       <PriorityBadge priority={complaint.priority} />
-                      {complaint.proof_image || complaint.proof_text ? <WorkCompletedBadge /> : null}
+                      {showProofSection ? <WorkCompletedBadge /> : null}
                     </div>
                   </div>
                   <div className="mt-3 text-sm text-slate-600">
@@ -190,7 +192,7 @@ export default function TrackerPage() {
                   {complaint.text}
                 </div>
 
-                {complaint.proof_image || complaint.proof_text ? (
+                {showProofSection ? (
                   <div className="rounded-[1.45rem] border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
                       <ImageIcon className="h-4 w-4" />
@@ -224,6 +226,12 @@ export default function TrackerPage() {
                         Submitted on {new Date(complaint.rating.created_at).toLocaleString()}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {isClosedComplaint ? (
+                  <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    This complaint has been closed by the department. Only the status history is shown below.
                   </div>
                 ) : null}
 

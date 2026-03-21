@@ -86,6 +86,14 @@ type WorkerRow = {
   user_email?: string;
 };
 
+const UNIVERSAL_WARD_WORKER_EMAILS = [
+  'worker.rohini@govcrm.demo',
+  'worker.dwarka@govcrm.demo',
+  'worker.saket@govcrm.demo',
+  'worker.laxmi@govcrm.demo',
+  'worker.karol@govcrm.demo',
+];
+
 function normalizeStatus(status: string) {
   return status;
 }
@@ -96,6 +104,10 @@ function normalizePriority(priority: string) {
 
 function normalizeDepartment(department: string) {
   return department.toLowerCase().replace(/\s+/g, '_') as ComplaintDepartment;
+}
+
+function isUniversalWardWorkerEmail(email?: string) {
+  return email ? UNIVERSAL_WARD_WORKER_EMAILS.includes(email.toLowerCase()) : false;
 }
 
 function mapCategoryToDepartment(category: Complaint['category']): ComplaintDepartment {
@@ -692,7 +704,7 @@ export async function addComplaintRatingForUser(
 
   const currentStatus = normalizeStatus(complaint.status);
 
-  if (currentStatus !== 'resolved' && currentStatus !== 'closed') {
+  if (currentStatus !== 'resolved') {
     throw new AuthError('Ratings can only be submitted after resolution.', 400);
   }
 
@@ -717,7 +729,7 @@ export async function addComplaintRatingForUser(
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
-      status: currentStatus === 'closed' ? 'closed' : 'resolved',
+      status: 'resolved',
       note: feedbackNote,
       updated_by_user_id: user.id,
     });
@@ -946,10 +958,13 @@ export async function listAssignableWorkersForComplaint(user: User, complaintId:
       FROM workers w
       INNER JOIN users u ON u.id = w.user_id
       WHERE w.ward_id = $1
-        AND w.department = $2
+        AND (
+          w.department = $2
+          OR LOWER(u.email) = ANY($3::text[])
+        )
       ORDER BY u.name ASC
     `,
-    [complaint.ward_id, complaint.department],
+    [complaint.ward_id, complaint.department, UNIVERSAL_WARD_WORKER_EMAILS],
   );
 
   return result.rows;
@@ -985,7 +1000,9 @@ export async function assignComplaintToWorkerByDeptHead(
         u.email AS user_email
       FROM workers w
       INNER JOIN users u ON u.id = w.user_id
-      WHERE w.id = $1
+      WHERE w.id::text = $1
+         OR w.user_id::text = $1
+         OR LOWER(u.email) = LOWER($1)
       LIMIT 1
     `,
     [workerId],
@@ -1003,7 +1020,10 @@ export async function assignComplaintToWorkerByDeptHead(
 
   const workerUserId = worker.user_id
 
-  if (worker.ward_id !== complaint.ward_id || worker.department !== complaint.department) {
+  if (
+    worker.ward_id !== complaint.ward_id ||
+    (worker.department !== complaint.department && !isUniversalWardWorkerEmail(worker.user_email))
+  ) {
     throw new AuthError('Only workers from the same ward and department can be assigned.', 400);
   }
 
@@ -1014,10 +1034,10 @@ export async function assignComplaintToWorkerByDeptHead(
         SET
           assigned_worker_id = $2,
           status = 'assigned',
-          progress = 'in_progress',
+          progress = 'pending',
           dept_head_viewed = TRUE,
           worker_assigned = TRUE,
-          department_message = 'Complaint reviewed by the department and assigned to the ward worker.',
+          department_message = 'Complaint reviewed by the department and assigned to the selected worker. Work will begin once the worker starts the task.',
           updated_at = NOW()
         WHERE id = $1
       `,
@@ -1035,7 +1055,7 @@ export async function assignComplaintToWorkerByDeptHead(
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'assigned',
-      note: `Assigned by dept head to ${worker.user_name || 'selected worker'}.`,
+      note: `Assigned by dept head to ${worker.user_name || 'selected worker'}. Waiting for worker start.`,
       updated_by_user_id: user.id,
     });
   });

@@ -35,15 +35,21 @@ export async function PATCH(
   try {
     const user = await requireApiUser(['leader', 'admin'])
     const { id } = await context.params
-    const body = (await request.json()) as { action?: 'mark_viewed' | 'assign_worker'; worker_id?: string }
+    const body = (await request.json()) as {
+      action?: 'mark_viewed' | 'assign_worker'
+      worker_id?: string
+      user_id?: string
+      worker_email?: string
+    }
+    const workerIdentifier = body.worker_id || body.user_id || body.worker_email
 
     if (body.action === 'mark_viewed') {
       const complaint = await markComplaintViewedByDeptHead(user, id)
       return NextResponse.json({ complaint })
     }
 
-    if (body.action === 'assign_worker' && body.worker_id) {
-      const complaint = await assignComplaintToWorkerByDeptHead(user, id, body.worker_id)
+    if (body.action === 'assign_worker' && workerIdentifier) {
+      const complaint = await assignComplaintToWorkerByDeptHead(user, id, workerIdentifier)
       return NextResponse.json({ complaint })
     }
 

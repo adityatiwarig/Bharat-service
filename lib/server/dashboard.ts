@@ -206,14 +206,23 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
           SELECT id FROM workers WHERE user_id = $1 LIMIT 1
         )
         ORDER BY
+          CASE c.status
+            WHEN 'assigned' THEN 0
+            WHEN 'in_progress' THEN 1
+            WHEN 'received' THEN 2
+            WHEN 'resolved' THEN 3
+            WHEN 'closed' THEN 4
+            ELSE 5
+          END,
           CASE c.priority
             WHEN 'critical' THEN 0
             WHEN 'high' THEN 1
             WHEN 'medium' THEN 2
             ELSE 3
           END,
+          c.updated_at DESC,
           c.created_at DESC
-        LIMIT 6
+        LIMIT 8
       `,
       [user.id],
     ),
