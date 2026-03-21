@@ -1,0 +1,67 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#090E18"/>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <ellipse cx="800" cy="776" rx="640" ry="86" fill="url(#groundGlow)" opacity="0.38"/>
+  <g opacity="0.5">
+    <circle cx="182" cy="188" r="4" fill="#FFD8A8"/>
+    <circle cx="1334" cy="162" r="5" fill="#FFE3BD"/>
+    <circle cx="1226" cy="248" r="3" fill="#FFF2D8"/>
+    <circle cx="294" cy="112" r="3" fill="#FFF2D8"/>
+  </g>
+  <g opacity="0.85">
+    <rect x="694" y="186" width="212" height="22" fill="#8D633A"/>
+    <rect x="664" y="208" width="272" height="34" fill="#8A5A32"/>
+    <rect x="622" y="242" width="356" height="88" fill="#7A4D2A"/>
+    <rect x="552" y="330" width="496" height="58" fill="#724727"/>
+    <path d="M540 388H1060V766H540V388Z" fill="url(#stone)"/>
+    <path d="M655 454H945V766H655V454Z" fill="#AD7C4D"/>
+    <path d="M695 488H905V766H695V488Z" fill="url(#innerStone)"/>
+    <path d="M720 516C720 425.425 793.425 352 884 352H716C806.575 352 880 425.425 880 516V766H720V516Z" fill="#B98A55"/>
+    <path d="M744 516C744 438.68 806.68 376 884 376H716C793.32 376 856 438.68 856 516V766H744V516Z" fill="#3B2418"/>
+    <rect x="744" y="516" width="112" height="250" fill="#110E10"/>
+    <rect x="610" y="414" width="68" height="352" fill="#9F7245"/>
+    <rect x="922" y="414" width="68" height="352" fill="#9F7245"/>
+    <rect x="580" y="390" width="92" height="24" fill="#C09363"/>
+    <rect x="928" y="390" width="92" height="24" fill="#C09363"/>
+    <rect x="596" y="476" width="24" height="230" fill="#B38452"/>
+    <rect x="980" y="476" width="24" height="230" fill="#B38452"/>
+    <rect x="538" y="766" width="524" height="22" fill="#070B11"/>
+  </g>
+  <g filter="url(#lamp)">
+    <circle cx="454" cy="446" r="7" fill="#FFC982"/>
+    <circle cx="1146" cy="446" r="7" fill="#FFC982"/>
+    <circle cx="532" cy="474" r="5" fill="#FFD8A8"/>
+    <circle cx="1068" cy="474" r="5" fill="#FFD8A8"/>
+  </g>
+  <path d="M0 0H1600V900H0V0Z" fill="url(#overlay)"/>
+  <defs>
+    <linearGradient id="sky" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#120D0B"/>
+      <stop offset="0.46" stop-color="#24150F"/>
+      <stop offset="1" stop-color="#080C14"/>
+    </linearGradient>
+    <linearGradient id="stone" x1="800" y1="388" x2="800" y2="766" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D4AB74"/>
+      <stop offset="0.45" stop-color="#B98450"/>
+      <stop offset="1" stop-color="#8E603A"/>
+    </linearGradient>
+    <linearGradient id="innerStone" x1="800" y1="488" x2="800" y2="766" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C79A62"/>
+      <stop offset="1" stop-color="#6D452C"/>
+    </linearGradient>
+    <radialGradient id="groundGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 776) rotate(90) scale(86 640)">
+      <stop stop-color="#E8C394"/>
+      <stop offset="1" stop-color="#E8C394" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="overlay" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1A34" stop-opacity="0.3"/>
+      <stop offset="0.52" stop-color="#11152A" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#08101D" stop-opacity="0.54"/>
+    </linearGradient>
+    <filter id="lamp" x="427" y="419" width="746" height="82" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="10" result="effect1_foregroundBlur_0_1"/>
+    </filter>
+  </defs>
+</svg>
