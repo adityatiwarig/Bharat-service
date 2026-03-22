@@ -1,5 +1,6 @@
 'use client'
 
+<<<<<<< Updated upstream
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -12,6 +13,12 @@ import {
   Menu,
   Sparkles,
 } from 'lucide-react'
+=======
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Bell, Landmark, Menu, ShieldCheck, Sparkles } from 'lucide-react'
+>>>>>>> Stashed changes
 
 import type { UserRole } from '@/lib/types'
 import { legacyNavigation, roleMeta } from '@/lib/navigation'
@@ -35,6 +42,7 @@ interface HeaderProps {
 
 export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) {
   const meta = roleMeta[userRole]
+  const isAdmin = userRole === 'admin'
   const router = useRouter()
   const pathname = usePathname()
   const nav = legacyNavigation[userRole]
@@ -173,11 +181,174 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
     })
   }
 
+<<<<<<< Updated upstream
   const today = new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   }).format(new Date())
+=======
+  const notificationsMenu = (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open && !notificationsLoaded) {
+          void loadNotifications()
+        }
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          className={
+            isAdmin
+              ? 'relative h-11 w-11 rounded-lg border-[#d7dfe7] bg-white text-[#1e3a5f] shadow-[0_8px_20px_rgba(30,58,95,0.06)] hover:bg-[#f8fafc]'
+              : 'relative rounded-full'
+          }
+        >
+          <Bell className="h-4 w-4" />
+          {unreadCount ? (
+            <span
+              className={
+                isAdmin
+                  ? 'absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#ff9933] px-1 text-[10px] font-semibold text-[#1e293b]'
+                  : 'absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold text-white'
+              }
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          ) : null}
+          <span className="sr-only">View notifications</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className={isAdmin ? 'w-80 rounded-lg border-[#d7dfe7] bg-white p-2 shadow-[0_20px_50px_rgba(30,58,95,0.12)]' : 'w-80 rounded-2xl border-slate-200 p-2'}
+      >
+        <DropdownMenuLabel className="flex items-center justify-between px-3 py-2">
+          <span>Notifications</span>
+          {unreadCount ? (
+            <button
+              type="button"
+              onClick={() => {
+                void markNotificationsRead()
+              }}
+              className={isAdmin ? 'text-xs font-medium text-[#9a3412]' : 'text-xs font-medium text-sky-700'}
+            >
+              Mark all read
+            </button>
+          ) : null}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {loadingNotifications ? (
+          <div className="px-3 py-4 text-sm text-slate-500">Loading notifications...</div>
+        ) : notifications.length ? (
+          notifications.map((notification) => (
+            <DropdownMenuItem
+              key={notification.id}
+              className={`items-start px-3 py-3 ${isAdmin ? 'rounded-lg' : 'rounded-xl'} ${notification.is_read ? 'opacity-75' : isAdmin ? 'bg-[#fff4e8]' : 'bg-sky-50/70'}`}
+              onSelect={() => {
+                void handleNotificationClick(notification)
+              }}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-slate-900">{notification.title}</div>
+                  <div className="flex items-center gap-2">
+                    {!notification.is_read ? (
+                      <span className={isAdmin ? 'h-2 w-2 rounded-full bg-[#ff9933]' : 'h-2 w-2 rounded-full bg-sky-600'} />
+                    ) : null}
+                    <div className="text-[11px] font-medium text-slate-400">
+                      {formatNotificationTime(notification.created_at)}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs leading-5 text-slate-500">{notification.message}</div>
+              </div>
+            </DropdownMenuItem>
+          ))
+        ) : (
+          <div className="px-3 py-4 text-sm text-slate-500">No recent notifications.</div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  if (isAdmin) {
+    return (
+      <header className="sticky top-0 z-20 border-b border-[#d7dfe7] bg-[#f4f6f8]/95 backdrop-blur">
+        <div className="px-4 py-2.5 sm:px-6 lg:px-10">
+          <div className="rounded-[18px] border border-[#dce3ea] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,250,252,0.98)_100%)] px-3.5 py-2.5 shadow-[0_10px_22px_rgba(30,58,95,0.05)] sm:px-4">
+            <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex items-start gap-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={onMenuClick}
+                  className="h-9 w-9 rounded-lg border-[#d7dfe7] bg-white text-[#1e3a5f] shadow-[0_6px_14px_rgba(30,58,95,0.05)] md:hidden"
+                >
+                  <Menu className="h-4.5 w-4.5" />
+                  <span className="sr-only">Toggle menu</span>
+                </Button>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#d7dfe7] bg-[linear-gradient(135deg,#ffffff_0%,#eef4f8_100%)] text-[#1e3a5f] shadow-[0_6px_16px_rgba(30,58,95,0.06)]">
+                  <Landmark className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[9px] font-semibold tracking-[0.2em] text-[#9a6a1f] uppercase">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#f3d6a8] bg-[#fff6ea] text-[#8d5a13]">
+                      <ShieldCheck className="h-2.5 w-2.5" />
+                    </span>
+                    National Civic Control System
+                  </div>
+                  <h1 className="mt-1 text-[clamp(1.2rem,1.55vw,1.8rem)] font-semibold tracking-tight text-[#1e3a5f]">
+                    {title}
+                  </h1>
+                  <p className="mt-1 text-[12px] text-[#64788b]">
+                    District Operations &amp; Complaint Monitoring System
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                    <span className="rounded-full border border-[#f4ddb6] bg-[#fff5e8] px-2.5 py-1 font-semibold uppercase tracking-[0.14em] text-[#8d5a13]">
+                      Administrator - Control Authority
+                    </span>
+                    <span className="rounded-full border border-[#dfe7ef] bg-[#fdfefe] px-2.5 py-1 text-[#5f7286] shadow-[0_4px_12px_rgba(30,58,95,0.04)]">
+                      {userName}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 self-start xl:self-auto">
+                <div className="hidden rounded-xl border border-[#dce9df] bg-[linear-gradient(135deg,#ffffff_0%,#eef8f1_100%)] px-3.5 py-2 text-right shadow-[0_8px_18px_rgba(30,58,95,0.04)] xl:block">
+                  <div className="flex items-center justify-end gap-2 text-[9px] font-semibold tracking-[0.16em] text-[#6c7f71] uppercase">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#2e7d32] shadow-[0_0_0_4px_rgba(46,125,50,0.12)]" />
+                    Control Status
+                  </div>
+                  <div className="mt-1 text-[12px] font-semibold text-[#1e3a5f]">Live Monitoring Active</div>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {notificationsMenu}
+                  <Link href="/">
+                    <Button className="h-10 rounded-md bg-[linear-gradient(135deg,#1e3a5f_0%,#225fb1_100%)] px-3.5 text-white shadow-[0_10px_20px_rgba(30,58,95,0.16)] hover:brightness-105">
+                      Public site
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    className="h-10 rounded-md border-[#d7dfe7] bg-white px-3.5 text-[#1e3a5f] shadow-[0_6px_14px_rgba(30,58,95,0.04)] hover:bg-[#f8fafc]"
+                    onClick={handleLogout}
+                  >
+                    Logout
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+    )
+  }
+>>>>>>> Stashed changes
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 backdrop-blur">
@@ -225,6 +396,7 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
                 </p>
               </div>
 
+<<<<<<< Updated upstream
               <div className="flex shrink-0 items-center gap-2">
                 <DropdownMenu
                   onOpenChange={(open) => {
@@ -413,6 +585,20 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
                 </DropdownMenu>
               </div>
             </div>
+=======
+          <div className="hidden items-center gap-3 lg:flex">
+            {notificationsMenu}
+            <Link href="/">
+              <Button className="rounded-full bg-slate-950 text-white hover:bg-slate-800">
+                Public site
+              </Button>
+            </Link>
+            <Button variant="outline" className="rounded-full" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
+        </div>
+>>>>>>> Stashed changes
 
             {!isCitizen ? (
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
