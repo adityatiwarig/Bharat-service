@@ -212,10 +212,6 @@ const COMPLAINT_DETAIL_SELECT_COLUMNS = `
   w.name AS ward_name,
   ''::text AS citizen_name
 `;
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
 const COMPLAINT_APPLICANT_COLUMNS = [
   'applicant_name',
   'applicant_mobile',
