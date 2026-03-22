@@ -4,6 +4,7 @@ import { AuthError, requireApiUser } from '@/lib/server/auth';
 import {
   closeComplaintByDeptHead,
   getComplaintByIdForUser,
+  getComplaintSummaryForUser,
   reopenComplaintByDeptHead,
   updateComplaintStatusForUser,
 } from '@/lib/server/complaints';
@@ -11,19 +12,30 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await requireApiUser();
     const { id } = await context.params;
-    const complaint = await getComplaintByIdForUser(user, id);
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view') === 'full' ? 'full' : 'summary';
+    const complaint = view === 'full'
+      ? await getComplaintByIdForUser(user, id, { view: 'full' })
+      : await getComplaintSummaryForUser(user, id);
 
     if (!complaint) {
       return NextResponse.json({ error: 'Complaint not found.' }, { status: 404 });
     }
 
-    return NextResponse.json({ complaint });
+    return NextResponse.json(
+      { complaint },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+        },
+      },
+    );
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

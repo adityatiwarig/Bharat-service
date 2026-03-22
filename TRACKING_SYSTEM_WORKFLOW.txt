@@ -1,0 +1,550 @@
+SMARTCRM TRACKING SYSTEM WORKFLOW
+
+Yeh document website ke complaint tracking system ka actual workflow samjhata hai, based on current codebase.
+
+--------------------------------------------------
+1. Tracking System ka Main Purpose
+--------------------------------------------------
+
+System ka goal hai:
+
+- citizen complaint submit kare
+- system us complaint ko trackable ID de
+- complaint department tak route ho
+- dept head usko review kare
+- worker ko assign kiya jaye
+- worker field update/proof submit kare
+- citizen tracker par live status dekhe
+- citizen feedback de
+- dept head complaint ko close ya reopen kare
+
+Is system me tracking sirf ek status label nahi hai. Tracking ke andar ye sab aata hai:
+
+- complaint ID generation
+- complaint timeline / update log
+- department routing
+- dept head review
+- worker assignment
+- progress state
+- proof upload
+- citizen rating
+- notifications
+
+--------------------------------------------------
+2. Main Roles
+--------------------------------------------------
+
+1. Citizen
+- complaint submit karta hai
+- apni complaint ko tracker me dekh sakta hai
+- resolved complaint par rating/feedback de sakta hai
+
+2. Leader (dept head)
+- apne department ki complaints dekh sakta hai
+- complaint ko viewed mark karta hai
+- ward aur department ke hisaab se worker assign karta hai
+- resolved complaint ko close ya reopen karta hai
+
+3. Worker
+- sirf assigned complaints dekh sakta hai
+- assigned se in_progress me move karta hai
+- work complete karke proof image + proof text submit karta hai
+
+4. Admin
+- broader monitoring karta hai
+- kuch leader-level actions jaise close/reopen/assignment me allowed hai
+
+--------------------------------------------------
+3. Main Data Fields Jo Tracking Ko Control Karte Hain
+--------------------------------------------------
+
+Complaint record me tracking ke liye important fields:
+
+- id = internal UUID
+- complaint_id = public complaint reference
+- tracking_code = tracking reference
+- status = submitted / assigned / in_progress / resolved / closed etc.
+- progress = pending / in_progress / resolved
+- dept_head_viewed = department head ne review kiya ya nahi
+- worker_assigned = worker assign hua ya nahi
+- assigned_worker_id = kaunsa worker assigned hai
+- department_message = citizen ko dikhne wala current message
+- updates = complaint_updates table ka timeline log
+- rating = citizen closure feedback
+- proof_image / proof_text = work complete hone ka proof
+
+Important note:
+Current code me complaint create time par `complaint_id` aur `tracking_code` dono same value se set ho rahe hain. Matlab practical use me dono abhi same tracking reference jaise behave kar rahe hain.
+
+--------------------------------------------------
+4. Complaint Submit Hone Ka Flow
+--------------------------------------------------
+
+Entry screen:
+- `/citizen/submit`
+
+API:
+- `POST /api/complaints`
+
+Process:
+
+1. Citizen title, text, ward, optional department, location, attachments submit karta hai.
+2. Frontend text ke basis par AI department suggestion dikhata hai.
+3. Backend request validate karta hai:
+- title required
+- complaint text required
+- ward valid hona chahiye
+- department valid hona chahiye
+4. `createComplaintForUser()` naya complaint banata hai.
+5. System ek public tracking reference generate karta hai, format roughly:
+- `DL-YYYYMMDD-XXXXXX`
+6. Attachments `data/uploads` me save hote hain.
+7. Complaint DB me insert hoti hai initial values ke sath:
+- status = `submitted`
+- progress = `pending`
+- dept_head_viewed = `false`
+- worker_assigned = `false`
+- category = `other`
+- default priority/risk = base values
+8. Complaint ke sath pehla update log insert hota hai:
+- "Complaint submitted and waiting for department review."
+9. Citizen ko notification milti hai ki complaint submit ho gayi hai.
+10. Submit success ke baad citizen tracker page par redirect hota hai:
+- `/citizen/tracker?id=<complaint_id>`
+
+Is point par complaint trackable ho chuki hoti hai, chahe department routing background me abhi chal rahi ho.
+
+--------------------------------------------------
+5. Post-Submit AI Routing Pipeline
+--------------------------------------------------
+
+Complaint create hone ke baad system background me `processComplaintPipeline()` chalata hai.
+Yeh immediate blocking step nahi hai, async post-processing hai.
+
+Yeh pipeline kya karti hai:
+
+1. Complaint title + text ko analyze karti hai.
+2. Category detect karti hai.
+3. Department detect/map karti hai.
+4. Risk score calculate karti hai.
+5. Priority decide karti hai.
+6. Spam check karti hai.
+7. Last 24 hours complaint frequency dekh kar hotspot detect karti hai.
+
+Pipeline ke baad complaint update hoti hai:
+
+- department set hota hai
+- category set hoti hai
+- priority set hoti hai
+- risk_score set hota hai
+- sentiment_score set hota hai
+- frequency_score set hota hai
+- hotspot_count set hota hai
+- is_hotspot set hota hai
+- is_spam set hota hai
+- spam_reasons save hote hain
+- assignment reset rehta hai
+- status abhi bhi `submitted` hi rehta hai
+- dept_head_viewed = false
+- worker_assigned = false
+- department_message update hota hai
+
+Citizen-facing message case ke hisaab se change hota hai:
+
+- spam ho to verification message
+- hotspot ho to fast review message
+- high/critical ho to elevated priority message
+- warna normal routing message
+
+Iske baad:
+
+- concerned department ke leader(s) ko notification jati hai
+- admins ko notification jati hai
+- complaint_updates me ek routing note add hota hai
+
+Example note:
+- complaint routed to concerned department after automated review
+
+--------------------------------------------------
+6. Citizen Tracker Ka Actual Working
+--------------------------------------------------
+
+Entry screen:
+- `/citizen/tracker`
+
+Data load behavior:
+
+1. Agar URL me `id` diya gaya hai to system usi complaint ko load karta hai.
+2. Agar `id` nahi diya gaya to citizen ki latest complaint load hoti hai.
+
+API:
+- `GET /api/complaints/:id`
+
+Lookup behavior:
+
+System complaint ko in identifiers se dhoondh sakta hai:
+
+- internal UUID
+- complaint_id
+- tracking_code
+
+Search priority:
+- agar complaint_id match hota hai to usko pehle prefer kiya jata hai
+
+Citizen tracker me dikhne wali main cheezein:
+
+- complaint title
+- department_message
+- complaint ID
+- tracking code
+- department
+- last updated time
+- ward
+- category
+- risk score
+- tracking stages
+- full complaint text
+- proof image / proof text (agar available ho)
+- recent update log
+- rating section (resolved state par)
+
+--------------------------------------------------
+7. Tracker Timeline Ka Logic
+--------------------------------------------------
+
+Tracker UI me 3 major stages dikhte hain:
+
+1. Dept Head Viewed
+- `dept_head_viewed`
+
+2. Worker Assigned
+- `worker_assigned`
+
+3. Progress
+- `progress`
+
+Progress ka meaning:
+
+- `pending` = work start nahi hua
+- `in_progress` = worker ne kaam start kar diya
+- `resolved` = worker ne work complete karke proof submit kar diya
+
+Iske alawa detailed timeline `complaint_updates` table se aati hai.
+Har important lifecycle event ek update log create karta hai.
+
+--------------------------------------------------
+8. Dept Head Review Flow
+--------------------------------------------------
+
+Leader dashboard:
+- `/leader`
+
+Leader ko sirf apne department ki complaints milti hain.
+
+Step 1: Complaint review
+- leader complaint kholta hai
+- `mark_viewed` action trigger hota hai
+
+API:
+- `PATCH /api/complaints/:id/assignment`
+
+Body:
+- `{ action: "mark_viewed" }`
+
+Result:
+- `dept_head_viewed = true`
+- citizen-facing message update hota hai:
+  "Complaint reviewed by the department and awaiting worker assignment."
+- complaint_updates me note add hota hai
+- citizen ko notification milti hai
+
+Important rule:
+- worker assign karne se pehle complaint ko viewed mark karna mandatory hai
+
+--------------------------------------------------
+9. Worker Assignment Flow
+--------------------------------------------------
+
+Assignment ke liye leader assignable workers load karta hai.
+
+API:
+- `GET /api/complaints/:id/assignment`
+
+Worker filtering rules:
+
+- same ward hona chahiye
+- same department hona chahiye
+- demo setup me kuch universal ward workers ko exception diya gaya hai
+
+Assignment action:
+- `PATCH /api/complaints/:id/assignment`
+
+Body:
+- `{ action: "assign_worker", worker_id: "..." }`
+
+Assignment ke baad complaint update hoti hai:
+
+- `assigned_worker_id` set hota hai
+- `status = assigned`
+- `progress = pending`
+- `dept_head_viewed = true`
+- `worker_assigned = true`
+- department_message update hota hai
+
+Timeline note add hota hai:
+- assigned by dept head to selected worker
+
+Notifications:
+
+- assigned worker ko notification
+- citizen ko notification
+
+Citizen ko is stage par pata chal jata hai ki ab complaint field worker tak pahunch gayi hai.
+
+--------------------------------------------------
+10. Worker Execution Flow
+--------------------------------------------------
+
+Worker screens:
+- `/worker/assigned`
+- `/worker/updates`
+
+Worker sirf wahi complaint access kar sakta hai jo usko assigned ho.
+
+Allowed transition rules worker ke liye:
+
+- `assigned -> in_progress`
+- `in_progress -> resolved`
+
+Worker random status jump nahi kar sakta.
+
+Step A: Start work
+
+API:
+- `PATCH /api/complaints/:id`
+
+Body:
+- `{ status: "in_progress", note?: "..." }`
+
+Result:
+- status = `in_progress`
+- progress = `in_progress`
+- department_message citizen ke liye update hota hai:
+  "The assigned worker has started work on your complaint."
+- complaint_updates me note add hota hai
+- citizen ko notification milti hai
+
+Step B: Complete work
+
+API:
+- `PATCH /api/complaints/:id`
+- multipart/form-data ke sath
+
+Required for resolve:
+
+- `status = resolved`
+- `proof_text` required
+- `proof_image` required
+
+Result:
+
+- status = `resolved`
+- progress = `resolved`
+- proof_text save hota hai
+- proof_image upload hoti hai
+- resolution_notes save hote hain
+- resolved_at set hota hai
+- department_message update hota hai:
+  "The complaint has been resolved and work proof has been submitted."
+- complaint_updates me resolved note add hota hai
+
+Notifications:
+
+- citizen ko notification ki work completed
+- admins ko notification ki complaint resolved and awaiting review
+
+--------------------------------------------------
+11. Citizen Feedback / Rating Flow
+--------------------------------------------------
+
+Citizen tracker par resolved complaint ko rate kar sakta hai.
+
+API:
+- `POST /api/complaints/:id/rating`
+
+Rules:
+
+- rating 1 se 5 ke beech honi chahiye
+- complaint status `resolved` hona chahiye
+
+Result:
+
+- rating table me rating save/update hoti hai
+- complaint_updates me feedback note add hota hai
+- leader ko notification milti hai
+- admins ko notification milti hai
+
+Yeh step important hai kyunki final close ke liye citizen feedback required hai.
+
+--------------------------------------------------
+12. Final Close Flow
+--------------------------------------------------
+
+Leader/admin resolved complaint ko final close kar sakta hai.
+
+API:
+- `PATCH /api/complaints/:id`
+
+Body:
+- `{ action: "close", note?: "..." }`
+
+Close karne ke rules:
+
+- user leader ya admin hona chahiye
+- complaint status `resolved` hona chahiye
+- citizen rating required hai
+
+Close ke baad:
+
+- `status = closed`
+- `progress = resolved`
+- `dept_head_viewed = true`
+- department_message close review message ban jata hai
+- complaint_updates me close note add hota hai
+- citizen ko notification milti hai
+
+Yeh complaint lifecycle ka normal final end state hai.
+
+--------------------------------------------------
+13. Reopen Flow
+--------------------------------------------------
+
+Agar dept head ko lage ki kaam sahi nahi hua ya rework chahiye, to complaint reopen ki ja sakti hai.
+
+API:
+- `PATCH /api/complaints/:id`
+
+Body:
+- `{ action: "reopen", note?: "..." }`
+
+Allowed when status:
+
+- `resolved`
+- `closed`
+
+Reopen ke baad:
+
+- `status = in_progress`
+- `progress = in_progress`
+- `assigned_worker_id = null`
+- `worker_assigned = false`
+- proof_image clear ho jati hai
+- proof_text clear ho jata hai
+- resolved_at clear ho jata hai
+- resolution_notes clear ho jate hain
+- dept_head_viewed = true
+- department_message rework wala ho jata hai
+- complaint_updates me reopen note add hota hai
+- citizen ko notification milti hai
+
+Practical meaning:
+- complaint fir se department workflow me aa jati hai
+- fresh assignment / rework ho sakta hai
+
+--------------------------------------------------
+14. Notifications Ka Role
+--------------------------------------------------
+
+Har major stage par notification create hoti hai:
+
+- complaint submitted
+- department routed
+- complaint reviewed
+- worker assigned
+- work started
+- work completed
+- citizen feedback received
+- complaint closed
+- complaint reopened
+
+System duplicate spam avoid karne ke liye same notification ko 2 minute ke andar dedupe bhi karta hai.
+
+--------------------------------------------------
+15. Files / Attachments / Proof Kahan Store Hota Hai
+--------------------------------------------------
+
+Citizen attachments aur worker proof image local storage me save hote hain:
+
+- `data/uploads`
+
+Response me file reference direct disk path nahi, balki served URL ke form me rakha jata hai:
+- `/api/uploads/local/<stored-file>`
+
+--------------------------------------------------
+16. Search, Access Control aur Security
+--------------------------------------------------
+
+Tracking system me role-based access important hai:
+
+- citizen sirf apni complaint dekh sakta hai
+- worker sirf assigned complaint dekh sakta hai
+- leader sirf apne department ki complaint dekh sakta hai
+- admin broader access rakhta hai
+
+Tracker open karne ke liye sirf complaint ID enough nahi hai.
+User ka role aur ownership bhi validate hota hai.
+
+--------------------------------------------------
+17. Current Practical Status Lifecycle
+--------------------------------------------------
+
+Current active flow mostly yeh hai:
+
+1. submitted
+2. viewed by dept head
+3. assigned
+4. in_progress
+5. resolved
+6. citizen rating
+7. closed
+
+Alternative path:
+
+resolved/closed -> reopen -> in_progress -> reassign/rework
+
+Note:
+- `received` aur `rejected` status types system me defined hain, lekin current primary workflow me actively use hote hue nahi dikh rahe.
+
+--------------------------------------------------
+18. End-to-End Short Summary
+--------------------------------------------------
+
+Short me pura tracking flow:
+
+1. Citizen complaint submit karta hai.
+2. System complaint ID generate karta hai aur tracker par redirect karta hai.
+3. Background AI routing complaint ko correct department, category, priority aur hotspot/spam context ke sath enrich karta hai.
+4. Dept head complaint review karta hai.
+5. Dept head same ward/department ke worker ko assign karta hai.
+6. Worker work start karta hai.
+7. Worker proof image + proof text ke sath complaint resolve karta hai.
+8. Citizen tracker par proof dekhta hai aur rating deta hai.
+9. Dept head citizen feedback review karke complaint close karta hai.
+10. Zarurat ho to complaint reopen bhi ho sakti hai.
+
+--------------------------------------------------
+19. Most Important Technical Observations
+--------------------------------------------------
+
+1. Tracking reference generation complaint creation ke time hoti hai, isliye submit ke turant baad complaint trackable hoti hai.
+
+2. AI routing async hai, isliye submission aur routing do separate phases hain.
+
+3. Tracker sirf status show nahi karta; woh department review, worker assignment, progress, proof aur feedback sab combine karta hai.
+
+4. Current code me `complaint_id` aur `tracking_code` same generated reference use kar rahe hain.
+
+5. Final closure citizen rating ke bina allowed nahi hai.
+
+6. Reopen flow proof aur assignment reset karta hai, yani complaint practically dobara execution cycle me chali jati hai.
+

@@ -4,6 +4,18 @@ import { randomUUID } from 'node:crypto';
 
 import { revalidateTag } from 'next/cache';
 
+import {
+  cacheComplaintProof,
+  cacheComplaintSummary,
+  cacheComplaintTimeline,
+  cacheWorkerInfo,
+  getCachedComplaintAlias,
+  getCachedComplaintProof,
+  getCachedComplaintSummary,
+  getCachedComplaintTimeline,
+  getCachedWorkerInfoByUserId,
+  invalidateComplaintCache,
+} from '@/lib/server/complaint-cache';
 import { analyzeComplaint } from '@/lib/server/ai';
 import { AuthError } from '@/lib/server/auth';
 import type { DbTransactionClient } from '@/lib/server/db';
@@ -15,7 +27,9 @@ import type {
   ComplaintAttachment,
   ComplaintDepartment,
   ComplaintListFilters,
+  ComplaintProofData,
   ComplaintStatus,
+  ComplaintTimelineData,
   PaginatedResult,
   Rating,
   User,
@@ -92,6 +106,15 @@ type WorkerRow = {
   user_email?: string;
 };
 
+type ComplaintProofRow = {
+  proof_image: ComplaintAttachment | null;
+  proof_text: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+};
+
+type ComplaintDetailView = 'summary' | 'full';
+
 const UNIVERSAL_WARD_WORKER_EMAILS = [
   'worker.rohini@govcrm.demo',
   'worker.dwarka@govcrm.demo',
@@ -102,11 +125,61 @@ const UNIVERSAL_WARD_WORKER_EMAILS = [
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const COMPLAINT_SELECT_COLUMNS = `
+const COMPLAINT_SUMMARY_SELECT_COLUMNS = `
   c.id,
   c.complaint_id,
   c.tracking_code,
   c.user_id,
+  NULL::text AS applicant_name,
+  NULL::text AS applicant_mobile,
+  NULL::text AS applicant_email,
+  NULL::text AS applicant_address,
+  NULL::text AS applicant_gender,
+  NULL::text AS previous_complaint_id,
+  c.ward_id,
+  c.department,
+  c.assigned_worker_id,
+  c.title,
+  c.text,
+  c.category,
+  c.status,
+  c.progress,
+  c.dept_head_viewed,
+  c.worker_assigned,
+  c.priority,
+  c.risk_score,
+  c.sentiment_score,
+  c.frequency_score,
+  c.hotspot_count,
+  c.is_hotspot,
+  c.is_spam,
+  c.spam_reasons,
+  '[]'::jsonb AS attachments,
+  NULL::jsonb AS proof_image,
+  NULL::text AS proof_text,
+  c.department_message,
+  c.location_address,
+  c.latitude,
+  c.longitude,
+  c.resolved_at,
+  NULL::text AS resolution_notes,
+  c.created_at,
+  c.updated_at,
+  w.name AS ward_name,
+  ''::text AS citizen_name
+`;
+
+const COMPLAINT_DETAIL_SELECT_COLUMNS = `
+  c.id,
+  c.complaint_id,
+  c.tracking_code,
+  c.user_id,
+  NULL::text AS applicant_name,
+  NULL::text AS applicant_mobile,
+  NULL::text AS applicant_email,
+  NULL::text AS applicant_address,
+  NULL::text AS applicant_gender,
+  NULL::text AS previous_complaint_id,
   c.ward_id,
   c.department,
   c.assigned_worker_id,
@@ -137,9 +210,12 @@ const COMPLAINT_SELECT_COLUMNS = `
   c.created_at,
   c.updated_at,
   w.name AS ward_name,
-  u.name AS citizen_name
+  ''::text AS citizen_name
 `;
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 const COMPLAINT_APPLICANT_COLUMNS = [
   'applicant_name',
   'applicant_mobile',
@@ -360,10 +436,37 @@ async function getComplaintRating(complaintId: string) {
   return result.rows[0] || null;
 }
 
+async function assertComplaintAccess(user: User, complaint: Complaint) {
+  const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
+
+  if (
+    (user.role === 'citizen' && complaint.user_id !== user.id) ||
+    (user.role === 'worker' && complaint.assigned_worker_id !== worker?.id) ||
+    (user.role === 'leader' && user.department && complaint.department !== user.department)
+  ) {
+    throw new AuthError('You are not allowed to view this complaint.', 403);
+  }
+
+  return complaint;
+}
+
 async function getComplaintWorkerRow(userId: string) {
+  const cachedWorker = await getCachedWorkerInfoByUserId(userId);
+
+  if (cachedWorker) {
+    return {
+      id: cachedWorker.id,
+      ward_id: cachedWorker.ward_id,
+      department: cachedWorker.department as ComplaintDepartment,
+      user_id: cachedWorker.user_id,
+      user_name: cachedWorker.user_name,
+      user_email: cachedWorker.user_email,
+    };
+  }
+
   const result = await query<WorkerRow>(
     `
-      SELECT id, ward_id, department
+      SELECT id, ward_id, department, user_id
       FROM workers
       WHERE user_id = $1
       LIMIT 1
@@ -371,7 +474,13 @@ async function getComplaintWorkerRow(userId: string) {
     [userId],
   );
 
-  return result.rows[0] || null;
+  const worker = result.rows[0] || null;
+
+  if (worker) {
+    await cacheWorkerInfo(worker);
+  }
+
+  return worker;
 }
 
 async function appendComplaintUpdate(
@@ -402,6 +511,10 @@ async function listAdminUserIds(client: DbTransactionClient) {
   );
 
   return result.rows.map((row) => row.id);
+}
+
+async function invalidateComplaintReadCaches(complaint: Pick<Complaint, 'id' | 'complaint_id' | 'tracking_code'>) {
+  await invalidateComplaintCache(complaint.complaint_id, [complaint.id, complaint.tracking_code]);
 }
 
 export async function listComplaintsForUser(
@@ -486,24 +599,28 @@ export async function listComplaintsForUser(
   };
 }
 
-async function getComplaintCoreByIdForUser(user: User, complaintId: string) {
+async function getComplaintCoreByIdForUser(
+  user: User,
+  complaintId: string,
+  options: { view?: ComplaintDetailView } = {},
+) {
   const identifier = complaintId.trim();
+  const view = options.view || 'full';
+  const selectColumns = view === 'summary' ? COMPLAINT_SUMMARY_SELECT_COLUMNS : COMPLAINT_DETAIL_SELECT_COLUMNS;
   const lookupQuery = isUuid(identifier)
     ? `
       SELECT
-        ${COMPLAINT_SELECT_COLUMNS}
+        ${selectColumns}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
-      INNER JOIN users u ON u.id = c.user_id
       WHERE c.id = $1::uuid
       LIMIT 1
     `
     : `
       SELECT
-        ${COMPLAINT_SELECT_COLUMNS}
+        ${selectColumns}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
-      INNER JOIN users u ON u.id = c.user_id
       WHERE c.complaint_id = $1 OR c.tracking_code = $1
       ORDER BY CASE WHEN c.complaint_id = $1 THEN 0 ELSE 1 END
       LIMIT 1
@@ -521,33 +638,136 @@ async function getComplaintCoreByIdForUser(user: User, complaintId: string) {
   }
 
   const complaint = mapComplaintRow(row);
-  const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
+  await assertComplaintAccess(user, complaint);
+  return complaint;
+}
 
-  if (
-    (user.role === 'citizen' && complaint.user_id !== user.id) ||
-    (user.role === 'worker' && complaint.assigned_worker_id !== worker?.id) ||
-    (user.role === 'leader' && user.department && complaint.department !== user.department)
-  ) {
-    throw new AuthError('You are not allowed to view this complaint.', 403);
+export async function getComplaintSummaryForUser(
+  user: User,
+  complaintId: string,
+) {
+  const identifier = complaintId.trim();
+  const cachedComplaintId = isUuid(identifier)
+    ? await getCachedComplaintAlias(identifier)
+    : identifier;
+
+  if (cachedComplaintId) {
+    const cachedComplaint = await getCachedComplaintSummary(cachedComplaintId);
+
+    if (cachedComplaint) {
+      await assertComplaintAccess(user, cachedComplaint);
+      return cachedComplaint;
+    }
+  }
+
+  const complaint = await getComplaintCoreByIdForUser(user, identifier, { view: 'summary' });
+
+  if (complaint) {
+    await cacheComplaintSummary(complaint, [identifier]);
   }
 
   return complaint;
 }
 
-export async function getComplaintByIdForUser(user: User, complaintId: string) {
-  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
+export async function getComplaintTimelineForUser(
+  user: User,
+  complaintId: string,
+): Promise<ComplaintTimelineData | null> {
+  const complaint = await getComplaintSummaryForUser(user, complaintId);
 
   if (!complaint) {
     return null;
   }
 
-  const [updates, rating] = await Promise.all([
-    getComplaintUpdates(complaint.id),
+  const cachedTimeline = await getCachedComplaintTimeline(complaint.complaint_id);
+
+  if (cachedTimeline) {
+    return cachedTimeline;
+  }
+
+  const timeline = {
+    complaint_id: complaint.complaint_id,
+    updates: await getComplaintUpdates(complaint.id),
+  };
+
+  await cacheComplaintTimeline(timeline);
+  return timeline;
+}
+
+export async function getComplaintProofForUser(
+  user: User,
+  complaintId: string,
+): Promise<ComplaintProofData | null> {
+  const complaint = await getComplaintSummaryForUser(user, complaintId);
+
+  if (!complaint) {
+    return null;
+  }
+
+  const cachedProof = await getCachedComplaintProof(complaint.complaint_id);
+
+  if (cachedProof) {
+    return cachedProof;
+  }
+
+  const [proofResult, rating] = await Promise.all([
+    query<ComplaintProofRow>(
+      `
+        SELECT
+          proof_image,
+          proof_text,
+          resolved_at,
+          resolution_notes
+        FROM complaints
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [complaint.id],
+    ),
     getComplaintRating(complaint.id),
   ]);
 
-  complaint.updates = updates;
-  complaint.rating = rating;
+  const proofRow = proofResult.rows[0];
+  const proof: ComplaintProofData = {
+    complaint_id: complaint.complaint_id,
+    proof_image: proofRow?.proof_image || null,
+    proof_text: proofRow?.proof_text || null,
+    resolved_at: proofRow?.resolved_at || null,
+    resolution_notes: proofRow?.resolution_notes || null,
+    rating,
+  };
+
+  await cacheComplaintProof(proof);
+  return proof;
+}
+
+export async function getComplaintByIdForUser(
+  user: User,
+  complaintId: string,
+  options: { view?: ComplaintDetailView } = {},
+) {
+  const complaint = await getComplaintSummaryForUser(user, complaintId);
+
+  if (!complaint) {
+    return null;
+  }
+
+  if (options.view === 'summary') {
+    return complaint;
+  }
+
+  const [timeline, proof] = await Promise.all([
+    getComplaintTimelineForUser(user, complaint.complaint_id),
+    getComplaintProofForUser(user, complaint.complaint_id),
+  ]);
+
+  complaint.updates = timeline?.updates || [];
+  complaint.proof_image = proof?.proof_image || null;
+  complaint.proof_text = proof?.proof_text || null;
+  complaint.resolved_at = proof?.resolved_at || null;
+  complaint.resolution_notes = proof?.resolution_notes || null;
+  complaint.rating = proof?.rating || null;
+
   return complaint;
 }
 
@@ -806,6 +1026,7 @@ export async function createComplaintForUser(
 
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  await cacheComplaintSummary(complaint);
 
   void processComplaintPipeline(complaint.id).catch((error) => {
     console.error('Complaint post-processing failed', error);
@@ -943,6 +1164,7 @@ export async function updateComplaintStatusForUser(
     }
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
@@ -1025,6 +1247,7 @@ export async function addComplaintRatingForUser(
     }
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
   return getComplaintRating(complaint.id);
@@ -1089,6 +1312,7 @@ export async function closeComplaintByDeptHead(
     });
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
@@ -1158,6 +1382,7 @@ export async function reopenComplaintByDeptHead(
     });
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
@@ -1207,6 +1432,7 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
     });
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
@@ -1296,6 +1522,8 @@ export async function assignComplaintToWorkerByDeptHead(
     throw new AuthError('Selected worker is missing a linked user account.', 400);
   }
 
+  await cacheWorkerInfo(worker);
+
   const workerUserId = worker.user_id
 
   if (
@@ -1346,6 +1574,7 @@ export async function assignComplaintToWorkerByDeptHead(
     });
   });
 
+  await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
@@ -1539,6 +1768,11 @@ async function processComplaintPipeline(complaintId: string) {
     });
   });
 
+  await invalidateComplaintReadCaches({
+    id: complaint.id,
+    complaint_id: complaint.complaint_id,
+    tracking_code: complaint.tracking_code,
+  });
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 }

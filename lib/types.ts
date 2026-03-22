@@ -97,6 +97,20 @@ export interface Rating {
   created_at?: string;
 }
 
+export interface ComplaintTimelineData {
+  complaint_id: string;
+  updates: ComplaintUpdate[];
+}
+
+export interface ComplaintProofData {
+  complaint_id: string;
+  proof_image?: ComplaintAttachment | null;
+  proof_text?: string | null;
+  resolved_at?: string | null;
+  resolution_notes?: string | null;
+  rating?: Rating | null;
+}
+
 export interface AppNotification {
   id: string;
   user_id: string;
