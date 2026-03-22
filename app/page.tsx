@@ -227,13 +227,17 @@ export default async function Home() {
           </div>
         </section>
 
-        <section id="services" className="bg-[#f7fafc] py-16">
+        <section id="services" className="relative bg-[#f7fafc] py-16">
+          <div id="yojana" className="absolute -top-28" aria-hidden="true" />
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="max-w-3xl">
-              <p className="text-sm font-semibold tracking-[0.24em] text-[#0b3c5d] uppercase">Citizen Service Categories</p>
+              <p className="text-sm font-semibold tracking-[0.24em] text-[#0b3c5d] uppercase">Yojana and Citizen Service Categories</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-                Report civic issues under the relevant municipal category
+                Explore public service areas before you register a complaint
               </h2>
+              <p className="mt-4 text-base leading-7 text-slate-600">
+                This section helps citizens quickly understand the municipal services and assistance areas available on the portal.
+              </p>
             </div>
 
             <div className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
