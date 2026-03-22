@@ -113,7 +113,7 @@ function CitizenAuthContent() {
   useEffect(() => {
     const nextPath = getSafeNextPath(searchParams.get('next'), '/citizen');
 
-    fetch('/api/auth/me', { cache: 'no-store' })
+    fetch('/api/session/me', { cache: 'no-store' })
       .then(async (response) => {
         if (!response.ok) {
           return null;
@@ -148,7 +148,7 @@ function CitizenAuthContent() {
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/auth/${mode}`, {
+      const response = await fetch(`/api/session/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, phone: formatCitizenPhone(form.phone), portal: 'citizen' }),

@@ -1,17 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  LabelList,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from 'recharts';
 import { AlertTriangle, MapPinned, ShieldAlert } from 'lucide-react';
 
+import { useAdminWorkspace } from '@/components/admin-workspace';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { ChartCardSkeleton, LoadingSummary } from '@/components/loading-skeletons';
 import {
@@ -43,14 +36,14 @@ const INITIAL_SUMMARY: AnalyticsSummary = {
 const categoryChartConfig = {
   count: {
     label: 'Complaints',
-    color: '#3157d3',
+    color: '#12385b',
   },
 } satisfies ChartConfig;
 
 const wardChartConfig = {
   count: {
     label: 'Ward Pressure',
-    color: '#ff9f0a',
+    color: '#ff9933',
   },
 } satisfies ChartConfig;
 
@@ -71,10 +64,10 @@ function InsightChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+      className={`rounded-sm border px-3 py-2 text-xs font-semibold transition ${
         active
-          ? 'border-[#cfdcfb] bg-[#edf2ff] text-[#23408e] shadow-[0_8px_18px_rgba(49,87,211,0.10)]'
-          : 'border-[#dfe7ef] bg-white text-[#60758a] hover:border-[#cfdcfb] hover:bg-[#f8fbff]'
+          ? 'border-[#c8d4e0] bg-[#f4f8fc] text-[#12385b]'
+          : 'border-[#d7e0e8] bg-white text-[#60758a] hover:border-[#c8d4e0] hover:bg-[#f8fafc]'
       }`}
     >
       {children}
@@ -82,7 +75,26 @@ function InsightChip({
   );
 }
 
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a3412]">{eyebrow}</div>
+      <h2 className="mt-2 text-[1.45rem] font-semibold tracking-tight text-[#12385b]">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-[#5d7287]">{description}</p>
+    </div>
+  );
+}
+
 export default function AdminAnalyticsPage() {
+  const { activateFocusMode } = useAdminWorkspace();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AnalyticsSummary>(INITIAL_SUMMARY);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -117,8 +129,7 @@ export default function AdminAnalyticsPage() {
       rank: index + 1,
     }));
 
-  const currentWardSource =
-    wardView === 'affected' ? summary.most_affected_wards : summary.hotspot_wards;
+  const currentWardSource = wardView === 'affected' ? summary.most_affected_wards : summary.hotspot_wards;
   const wardTotal = currentWardSource.reduce((total, item) => total + item.count, 0);
   const wardData = currentWardSource.slice().sort((a, b) => b.count - a.count).map((item, index) => ({
     ...item,
@@ -133,34 +144,44 @@ export default function AdminAnalyticsPage() {
 
   const quickInsights = [
     {
-      title: 'Category pressure',
+      title: 'Category Pressure',
       value: topCategory ? topCategory.label : 'No report data',
-      detail: topCategory ? `${topCategory.count} complaints, ${topCategory.share}% of visible load` : 'Reports will surface here once complaints arrive.',
+      detail: topCategory ? `${topCategory.count} complaints, ${topCategory.share}% of visible load` : 'Reports will appear here once more complaints are registered.',
       icon: ShieldAlert,
-      tone: 'text-[#3157d3] bg-[#edf2ff]',
+      tone: 'bg-[#eff4fa] text-[#12385b]',
     },
     {
-      title: wardView === 'affected' ? 'Lead ward' : 'Lead hotspot',
+      title: wardView === 'affected' ? 'Lead Ward' : 'Lead Hotspot',
       value: topWard ? topWard.ward_name : 'No ward pressure',
       detail: topWard ? `${topWard.count} complaints currently concentrated here` : 'Ward pressure details will appear after reporting activity grows.',
       icon: MapPinned,
-      tone: 'text-[#c77710] bg-[#fff3e0]',
+      tone: 'bg-[#fff4e8] text-[#9a3412]',
     },
     {
-      title: 'Command posture',
+      title: 'Command Posture',
       value: summary.high_priority_count ? 'Escalation Watch' : 'Stable Queue',
       detail: summary.high_priority_count
-        ? `${summary.high_priority_count} urgent complaints are still in the system.`
+        ? `${summary.high_priority_count} urgent complaints are still active in the system.`
         : 'No urgent spikes detected in the latest reporting view.',
       icon: AlertTriangle,
-      tone: 'text-[#dd6b20] bg-[#fff1eb]',
+      tone: 'bg-[#fff1f0] text-[#b42318]',
     },
   ];
 
   return (
-    <DashboardLayout title="Analytics">
-      <div className="space-y-8">
-        {loading ? <LoadingSummary label="Loading analytics" description="Preparing richer reporting views and ward pressure insights." /> : null}
+    <DashboardLayout title="Reports">
+      <div className="space-y-6">
+        {loading ? <LoadingSummary label="Loading reports" description="Preparing administrative reporting and ward pressure views." /> : null}
+
+        <section className="gov-admin-card overflow-hidden rounded-md">
+          <div className="px-5 py-5">
+            <SectionHeading
+              eyebrow="Analytics"
+              title="Administrative Reports"
+              description="Structured reporting for complaint categories, ward concentration, and command-level monitoring across the municipal network."
+            />
+          </div>
+        </section>
 
         <div className="grid gap-6 xl:grid-cols-2">
           {loading ? (
@@ -170,24 +191,18 @@ export default function AdminAnalyticsPage() {
             </>
           ) : (
             <>
-              <section className="rounded-[1.9rem] border border-white/80 bg-white/90 p-6 shadow-[0_24px_50px_rgba(30,58,95,0.08)]">
+              <section className="gov-admin-card rounded-md p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8d5a13]">
-                      Interactive Report
-                    </div>
-                    <h2 className="mt-2 text-[1.65rem] font-semibold tracking-tight text-[#1e3a5f]">
-                      Complaint category explorer
-                    </h2>
-                    <p className="mt-2 max-w-xl text-sm leading-7 text-[#64788b]">
-                      Click a category chip or bar to inspect complaint concentration in a cleaner comparative view.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-[#e1e8f0] bg-[#f8fbff] px-4 py-3 text-sm text-[#5f7286]">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6881a3]">
+                  <SectionHeading
+                    eyebrow="Report View"
+                    title="Complaint Category Explorer"
+                    description="Inspect category concentration for a cleaner comparative read of administrative demand."
+                  />
+                  <div className="gov-admin-muted rounded-md px-4 py-3 text-sm text-[#5d7287]">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">
                       Selected Category
                     </div>
-                    <div className="mt-1 font-semibold text-[#1e3a5f]">
+                    <div className="mt-1 font-semibold text-[#12385b]">
                       {activeCategoryEntry ? activeCategoryEntry.label : 'No category selected'}
                     </div>
                   </div>
@@ -198,14 +213,17 @@ export default function AdminAnalyticsPage() {
                     <InsightChip
                       key={item.category}
                       active={activeCategoryEntry?.category === item.category}
-                      onClick={() => setActiveCategory(item.category)}
+                      onClick={() => {
+                        setActiveCategory(item.category);
+                        activateFocusMode();
+                      }}
                     >
                       {item.label}
                     </InsightChip>
                   ))}
                 </div>
 
-                <div className="mt-6 rounded-[1.5rem] border border-[#e6edf3] bg-[linear-gradient(180deg,#fbfdff_0%,#f6f9fc_100%)] p-4">
+                <div className="mt-6 rounded-md border border-[#d7e0e8] bg-[#f8fafc] p-4">
                   <ChartContainer config={categoryChartConfig} className="h-[300px] w-full">
                     <BarChart data={categoryData} margin={{ top: 18, right: 12, left: -12, bottom: 0 }}>
                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -219,20 +237,23 @@ export default function AdminAnalyticsPage() {
                             formatter={(value, _name, item) => (
                               <div className="flex min-w-[170px] items-center justify-between gap-4">
                                 <span className="text-slate-500">{item.payload.label}</span>
-                                <span className="font-semibold text-[#1e3a5f]">{String(value)} complaints</span>
+                                <span className="font-semibold text-[#12385b]">{String(value)} complaints</span>
                               </div>
                             )}
                           />
                         }
                       />
-                      <Bar dataKey="count" radius={[12, 12, 4, 4]}>
-                        <LabelList dataKey="count" position="top" className="fill-[#789]" fontSize={11} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="count" position="top" className="fill-[#6d8093]" fontSize={11} />
                         {categoryData.map((item) => (
                           <Cell
                             key={item.category}
                             cursor="pointer"
-                            fill={activeCategoryEntry?.category === item.category ? '#1e3a5f' : '#4e73f8'}
-                            onClick={() => setActiveCategory(item.category)}
+                            fill={activeCategoryEntry?.category === item.category ? '#12385b' : '#40688d'}
+                            onClick={() => {
+                              setActiveCategory(item.category);
+                              activateFocusMode();
+                            }}
                           />
                         ))}
                       </Bar>
@@ -241,121 +262,100 @@ export default function AdminAnalyticsPage() {
                 </div>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-[#e6edf3] bg-[#f7faff] p-4">
-                    <div className="text-xs text-slate-500">Report count</div>
-                    <div className="mt-1 text-2xl font-semibold text-[#1e3a5f]">
-                      {activeCategoryEntry?.count ?? 0}
-                    </div>
+                  <div className="gov-admin-muted rounded-md p-4">
+                    <div className="text-xs text-[#5d7287]">Report count</div>
+                    <div className="mt-1 text-2xl font-semibold text-[#12385b]">{activeCategoryEntry?.count ?? 0}</div>
                   </div>
-                  <div className="rounded-2xl border border-[#f3e3c8] bg-[#fff7ee] p-4">
-                    <div className="text-xs text-slate-500">Share of visible load</div>
-                    <div className="mt-1 text-2xl font-semibold text-[#8d5a13]">
-                      {activeCategoryEntry?.share ?? 0}%
-                    </div>
+                  <div className="rounded-md border border-[#f7ddb1] bg-[#fff8eb] p-4">
+                    <div className="text-xs text-[#5d7287]">Share of visible load</div>
+                    <div className="mt-1 text-2xl font-semibold text-[#9a5f06]">{activeCategoryEntry?.share ?? 0}%</div>
                   </div>
-                  <div className="rounded-2xl border border-[#dcefdc] bg-[#f2faf3] p-4">
-                    <div className="text-xs text-slate-500">Ranking</div>
-                    <div className="mt-1 text-2xl font-semibold text-[#2e7d32]">
-                      #{activeCategoryEntry?.rank ?? 0}
-                    </div>
+                  <div className="rounded-md border border-[#b9ddc0] bg-[#eff9f1] p-4">
+                    <div className="text-xs text-[#5d7287]">Ranking</div>
+                    <div className="mt-1 text-2xl font-semibold text-[#166534]">#{activeCategoryEntry?.rank ?? 0}</div>
                   </div>
                 </div>
               </section>
 
-              <section className="rounded-[1.9rem] border border-white/80 bg-white/90 p-6 shadow-[0_24px_50px_rgba(30,58,95,0.08)]">
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8d5a13]">
-                        Ward Monitor
-                      </div>
-                      <h2 className="mt-2 text-[1.8rem] font-semibold tracking-tight text-[#1e3a5f]">
-                        Ward pressure explorer
-                      </h2>
-                      <p className="mt-2 text-sm leading-7 text-[#64788b]">
-                        Switch between broad ward load and hotspot watchlists for a faster command-level scan.
-                      </p>
-                    </div>
-                    <div className="flex gap-2 rounded-full bg-[#f4f7fb] p-1">
-                      <InsightChip active={wardView === 'affected'} onClick={() => {
+              <section className="gov-admin-card rounded-md p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <SectionHeading
+                    eyebrow="Ward Monitor"
+                    title="Ward Pressure Explorer"
+                    description="Switch between broad ward load and hotspot watchlists for faster command-level review."
+                  />
+                  <div className="flex gap-2">
+                    <InsightChip
+                      active={wardView === 'affected'}
+                      onClick={() => {
                         setWardView('affected');
                         setActiveWard(summary.most_affected_wards[0]?.ward_name ?? null);
-                      }}>
-                        Most affected
-                      </InsightChip>
-                      <InsightChip active={wardView === 'hotspot'} onClick={() => {
+                      }}
+                    >
+                      Most affected
+                    </InsightChip>
+                    <InsightChip
+                      active={wardView === 'hotspot'}
+                      onClick={() => {
                         setWardView('hotspot');
                         setActiveWard(summary.hotspot_wards[0]?.ward_name ?? null);
-                      }}>
-                        Hotspots
-                      </InsightChip>
-                    </div>
+                      }}
+                    >
+                      Hotspots
+                    </InsightChip>
                   </div>
+                </div>
 
-                  <div className="rounded-[1.5rem] border border-[#e6edf3] bg-[linear-gradient(180deg,#fffdfa_0%,#fff8ef_100%)] p-4">
-                    <ChartContainer config={wardChartConfig} className="h-[320px] w-full">
-                      <BarChart
-                        data={wardData}
-                        layout="vertical"
-                        margin={{ top: 10, right: 10, left: 12, bottom: 0 }}
-                      >
-                        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                        <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} />
-                        <YAxis
-                          type="category"
-                          dataKey="ward_name"
-                          axisLine={false}
-                          tickLine={false}
-                          width={88}
-                        />
-                        <ChartTooltip
-                          cursor={false}
-                          content={
-                            <ChartTooltipContent
-                              hideLabel
-                              formatter={(value, _name, item) => (
-                                <div className="flex min-w-[170px] items-center justify-between gap-4">
-                                  <span className="text-slate-500">{item.payload.ward_name}</span>
-                                  <span className="font-semibold text-[#1e3a5f]">{String(value)} complaints</span>
-                                </div>
-                              )}
-                            />
-                          }
-                        />
-                        <Bar dataKey="count" radius={[0, 12, 12, 0]}>
-                          <LabelList dataKey="count" position="right" className="fill-[#789]" fontSize={11} />
-                          {wardData.map((item) => (
-                            <Cell
-                              key={item.ward_name}
-                              cursor="pointer"
-                              fill={activeWardEntry?.ward_name === item.ward_name ? '#c77710' : '#ffad1f'}
-                              onClick={() => setActiveWard(item.ward_name)}
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ChartContainer>
+                <div className="mt-6 rounded-md border border-[#d7e0e8] bg-[#fffaf4] p-4">
+                  <ChartContainer config={wardChartConfig} className="h-[320px] w-full">
+                    <BarChart data={wardData} layout="vertical" margin={{ top: 10, right: 10, left: 12, bottom: 0 }}>
+                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                      <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="ward_name" axisLine={false} tickLine={false} width={88} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            hideLabel
+                            formatter={(value, _name, item) => (
+                              <div className="flex min-w-[170px] items-center justify-between gap-4">
+                                <span className="text-slate-500">{item.payload.ward_name}</span>
+                                <span className="font-semibold text-[#12385b]">{String(value)} complaints</span>
+                              </div>
+                            )}
+                          />
+                        }
+                      />
+                      <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                        <LabelList dataKey="count" position="right" className="fill-[#6d8093]" fontSize={11} />
+                        {wardData.map((item) => (
+                          <Cell
+                            key={item.ward_name}
+                            cursor="pointer"
+                            fill={activeWardEntry?.ward_name === item.ward_name ? '#9a3412' : '#ff9933'}
+                            onClick={() => {
+                              setActiveWard(item.ward_name);
+                              activateFocusMode();
+                            }}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className="gov-admin-muted rounded-md p-4">
+                    <div className="text-xs text-[#5d7287]">Selected ward</div>
+                    <div className="mt-1 text-lg font-semibold text-[#12385b]">{activeWardEntry?.ward_name ?? 'No ward selected'}</div>
                   </div>
-
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div className="rounded-2xl border border-[#e6edf3] bg-[#f8fbff] p-4">
-                      <div className="text-xs text-slate-500">Selected ward</div>
-                      <div className="mt-1 text-lg font-semibold text-[#1e3a5f]">
-                        {activeWardEntry?.ward_name ?? 'No ward selected'}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-[#f3e3c8] bg-[#fff7ee] p-4">
-                      <div className="text-xs text-slate-500">Complaint pressure</div>
-                      <div className="mt-1 text-lg font-semibold text-[#8d5a13]">
-                        {activeWardEntry?.count ?? 0} cases
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-[#dcefdc] bg-[#f2faf3] p-4">
-                      <div className="text-xs text-slate-500">Share of ward load</div>
-                      <div className="mt-1 text-lg font-semibold text-[#2e7d32]">
-                        {activeWardEntry?.share ?? 0}%
-                      </div>
-                    </div>
+                  <div className="rounded-md border border-[#f7ddb1] bg-[#fff8eb] p-4">
+                    <div className="text-xs text-[#5d7287]">Complaint pressure</div>
+                    <div className="mt-1 text-lg font-semibold text-[#9a5f06]">{activeWardEntry?.count ?? 0} cases</div>
+                  </div>
+                  <div className="rounded-md border border-[#b9ddc0] bg-[#eff9f1] p-4">
+                    <div className="text-xs text-[#5d7287]">Share of ward load</div>
+                    <div className="mt-1 text-lg font-semibold text-[#166534]">{activeWardEntry?.share ?? 0}%</div>
                   </div>
                 </div>
               </section>
@@ -371,29 +371,28 @@ export default function AdminAnalyticsPage() {
             </>
           ) : (
             <>
-              <section className="rounded-[1.8rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_46px_rgba(30,58,95,0.08)]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8d5a13]">
-                  Report Brief
-                </div>
-                <h3 className="mt-2 text-[1.55rem] font-semibold tracking-tight text-[#1e3a5f]">
-                  Quick command insights
-                </h3>
+              <section className="gov-admin-card rounded-md p-5">
+                <SectionHeading
+                  eyebrow="Report Brief"
+                  title="Quick Command Insights"
+                  description="High-level findings to support administrative reviews and reporting decisions."
+                />
                 <div className="mt-5 space-y-3">
                   {quickInsights.map((item) => {
                     const Icon = item.icon;
 
                     return (
-                      <div key={item.title} className="rounded-[1.35rem] border border-[#e7edf3] bg-[#fbfdff] p-4">
+                      <div key={item.title} className="rounded-md border border-[#d7e0e8] bg-[#fbfcfd] p-4">
                         <div className="flex items-start gap-3">
-                          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.tone}`}>
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-sm ${item.tone}`}>
                             <Icon className="h-4.5 w-4.5" />
                           </div>
                           <div className="min-w-0">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6d8093]">
                               {item.title}
                             </div>
-                            <div className="mt-1 text-lg font-semibold text-[#1e3a5f]">{item.value}</div>
-                            <p className="mt-1 text-sm leading-6 text-[#64788b]">{item.detail}</p>
+                            <div className="mt-1 text-lg font-semibold text-[#12385b]">{item.value}</div>
+                            <p className="mt-1 text-sm leading-6 text-[#5d7287]">{item.detail}</p>
                           </div>
                         </div>
                       </div>
@@ -402,71 +401,71 @@ export default function AdminAnalyticsPage() {
                 </div>
               </section>
 
-              <section className="rounded-[1.8rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_46px_rgba(30,58,95,0.08)]">
+              <section className="gov-admin-card rounded-md p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8d5a13]">
-                      Pressure Lanes
-                    </div>
-                    <h3 className="mt-2 text-[1.55rem] font-semibold tracking-tight text-[#1e3a5f]">
-                      Top report contributors
-                    </h3>
-                  </div>
-                  <div className="text-sm text-[#64788b]">
-                    Ranked lists update directly from the same analytics feed.
-                  </div>
+                  <SectionHeading
+                    eyebrow="Pressure Lanes"
+                    title="Top Report Contributors"
+                    description="Ranked category and ward views updating from the same reporting feed."
+                  />
                 </div>
 
                 <div className="mt-6 grid gap-6 lg:grid-cols-2">
                   <div className="space-y-4">
-                    <div className="text-sm font-semibold text-[#1e3a5f]">Category leaders</div>
+                    <div className="text-sm font-semibold text-[#12385b]">Category leaders</div>
                     {categoryData.slice(0, 5).map((item) => (
                       <button
                         type="button"
                         key={item.category}
-                        onClick={() => setActiveCategory(item.category)}
-                        className={`block w-full rounded-[1.2rem] border p-4 text-left transition ${
+                        onClick={() => {
+                          setActiveCategory(item.category);
+                          activateFocusMode();
+                        }}
+                        className={`block w-full rounded-md border p-4 text-left transition ${
                           activeCategoryEntry?.category === item.category
-                            ? 'border-[#cfdcfb] bg-[#f4f7ff] shadow-[0_12px_24px_rgba(49,87,211,0.08)]'
-                            : 'border-[#e6edf3] bg-[#fbfdff] hover:border-[#d8e3f2] hover:bg-white'
+                            ? 'border-[#c8d4e0] bg-[#f4f8fc]'
+                            : 'border-[#d7e0e8] bg-[#fbfcfd] hover:bg-white'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm font-semibold text-[#1e3a5f]">{item.label}</div>
-                            <div className="mt-1 text-xs text-[#64788b]">{item.share}% of visible complaint load</div>
+                            <div className="text-sm font-semibold text-[#12385b]">{item.label}</div>
+                            <div className="mt-1 text-xs text-[#5d7287]">{item.share}% of visible complaint load</div>
                           </div>
-                          <div className="text-lg font-semibold text-[#3157d3]">{item.count}</div>
+                          <div className="text-lg font-semibold text-[#12385b]">{item.count}</div>
                         </div>
-                        <div className="mt-3 h-2 rounded-full bg-[#eaf0f6]">
-                          <div className="h-full rounded-full bg-[#4e73f8]" style={{ width: `${Math.max(item.share, 10)}%` }} />
+                        <div className="mt-3 h-2 rounded-full bg-[#e5ebf2]">
+                          <div className="h-full rounded-full bg-[#12385b]" style={{ width: `${Math.max(item.share, 10)}%` }} />
                         </div>
                       </button>
                     ))}
                   </div>
 
                   <div className="space-y-4">
-                    <div className="text-sm font-semibold text-[#1e3a5f]">Ward leaders</div>
+                    <div className="text-sm font-semibold text-[#12385b]">Ward leaders</div>
                     {wardData.slice(0, 5).map((item) => (
                       <button
                         type="button"
                         key={item.ward_name}
-                        onClick={() => setActiveWard(item.ward_name)}
-                        className={`block w-full rounded-[1.2rem] border p-4 text-left transition ${
+                        onClick={() => {
+                          setActiveWard(item.ward_name);
+                          activateFocusMode();
+                        }}
+                        className={`block w-full rounded-md border p-4 text-left transition ${
                           activeWardEntry?.ward_name === item.ward_name
-                            ? 'border-[#ffe0b3] bg-[#fff7ee] shadow-[0_12px_24px_rgba(199,119,16,0.10)]'
-                            : 'border-[#e6edf3] bg-[#fbfdff] hover:border-[#e9dcc5] hover:bg-white'
+                            ? 'border-[#f7ddb1] bg-[#fff8eb]'
+                            : 'border-[#d7e0e8] bg-[#fbfcfd] hover:bg-white'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm font-semibold text-[#1e3a5f]">{item.ward_name}</div>
-                            <div className="mt-1 text-xs text-[#64788b]">{item.share}% of current ward pressure</div>
+                            <div className="text-sm font-semibold text-[#12385b]">{item.ward_name}</div>
+                            <div className="mt-1 text-xs text-[#5d7287]">{item.share}% of current ward pressure</div>
                           </div>
-                          <div className="text-lg font-semibold text-[#c77710]">{item.count}</div>
+                          <div className="text-lg font-semibold text-[#9a3412]">{item.count}</div>
                         </div>
-                        <div className="mt-3 h-2 rounded-full bg-[#f3eadf]">
-                          <div className="h-full rounded-full bg-[#ffad1f]" style={{ width: `${Math.max(item.share, 10)}%` }} />
+                        <div className="mt-3 h-2 rounded-full bg-[#f3e7d5]">
+                          <div className="h-full rounded-full bg-[#ff9933]" style={{ width: `${Math.max(item.share, 10)}%` }} />
                         </div>
                       </button>
                     ))}

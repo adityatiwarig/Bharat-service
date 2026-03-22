@@ -1,12 +1,19 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 export function ScrollProgressBar() {
   const ticking = useRef(false)
   const [progress, setProgress] = useState(0)
+  const pathname = usePathname()
+  const isAdminRoute = pathname?.startsWith('/admin')
 
   useEffect(() => {
+    if (isAdminRoute) {
+      return
+    }
+
     const updateProgress = () => {
       const scrollTop = window.scrollY || document.documentElement.scrollTop
       const documentHeight = document.documentElement.scrollHeight - window.innerHeight
@@ -33,7 +40,11 @@ export function ScrollProgressBar() {
       window.removeEventListener('scroll', requestUpdate)
       window.removeEventListener('resize', requestUpdate)
     }
-  }, [])
+  }, [isAdminRoute])
+
+  if (isAdminRoute) {
+    return null
+  }
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-1 bg-transparent">

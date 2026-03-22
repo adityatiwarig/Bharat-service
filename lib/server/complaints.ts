@@ -100,7 +100,6 @@ const UNIVERSAL_WARD_WORKER_EMAILS = [
   'worker.karol@govcrm.demo',
 ];
 
-<<<<<<< Updated upstream
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const COMPLAINT_SELECT_COLUMNS = `
@@ -140,7 +139,7 @@ const COMPLAINT_SELECT_COLUMNS = `
   w.name AS ward_name,
   u.name AS citizen_name
 `;
-=======
+
 const COMPLAINT_APPLICANT_COLUMNS = [
   'applicant_name',
   'applicant_mobile',
@@ -151,7 +150,6 @@ const COMPLAINT_APPLICANT_COLUMNS = [
 ] as const;
 
 let complaintApplicantColumnsPromise: Promise<boolean> | null = null;
->>>>>>> Stashed changes
 
 function normalizeStatus(status: string) {
   return status;

@@ -1,4 +1,5 @@
 import { SessionProvider } from '@/components/session-provider';
+import { AdminWorkspaceProvider } from '@/components/admin-workspace';
 import { requireUser } from '@/lib/server/auth';
 
 export default async function AdminLayout({
@@ -8,5 +9,9 @@ export default async function AdminLayout({
 }) {
   const user = await requireUser(['admin']);
 
-  return <SessionProvider user={user}>{children}</SessionProvider>;
+  return (
+    <SessionProvider user={user}>
+      <AdminWorkspaceProvider>{children}</AdminWorkspaceProvider>
+    </SessionProvider>
+  );
 }

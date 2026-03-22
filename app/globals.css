@@ -199,6 +199,21 @@
     background: linear-gradient(90deg, #f97316 0%, #f8fafc 48%, #16a34a 100%);
   }
 
+  .gov-flag-strip {
+    background: linear-gradient(90deg, #ff9933 0%, #ff9933 33.33%, #ffffff 33.33%, #ffffff 66.66%, #138808 66.66%, #138808 100%);
+  }
+
+  .gov-admin-card {
+    border: 1px solid rgba(201, 213, 225, 0.95);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.98) 100%);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04);
+  }
+
+  .gov-admin-muted {
+    border: 1px solid rgba(212, 221, 230, 0.95);
+    background: #f8fafc;
+  }
+
   .gov-fade-in {
     animation: gov-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
