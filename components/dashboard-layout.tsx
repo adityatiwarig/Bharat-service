@@ -37,20 +37,6 @@ export function DashboardLayout({
   const session = useSession()
   const resolvedRole = userRole ?? session?.role ?? 'citizen'
   const resolvedName = userName ?? session?.name ?? 'GovCRM User'
-<<<<<<< Updated upstream
-  const showSidebar = resolvedRole !== 'citizen'
-
-  return (
-    <div className="gov-shell flex min-h-screen w-full">
-      {showSidebar ? (
-        <Sidebar
-          userRole={resolvedRole}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-        />
-      ) : null}
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-=======
   const isAdmin = resolvedRole === 'admin'
 
   if (isAdmin) {
@@ -89,17 +75,12 @@ export function DashboardLayout({
         onClose={() => setSidebarOpen(false)}
       />
       <div className={cn('flex min-h-screen flex-1 flex-col', isAdmin ? 'bg-[#f4f6f8]' : '')}>
->>>>>>> Stashed changes
         <Header
           title={title}
           userRole={resolvedRole}
           userName={resolvedName}
-          onMenuClick={showSidebar ? () => setSidebarOpen((open) => !open) : undefined}
+          onMenuClick={() => setSidebarOpen((open) => !open)}
         />
-<<<<<<< Updated upstream
-        <main className="flex-1 overflow-x-hidden">
-          <div className="gov-fade-in mx-auto w-full max-w-[96rem] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-5">
-=======
         <main className={cn('flex-1 overflow-auto', isAdmin ? 'bg-[#f4f6f8]' : '')}>
           <div
             className={cn(
@@ -107,7 +88,6 @@ export function DashboardLayout({
               isAdmin ? 'max-w-[1440px] lg:px-10 lg:py-10' : 'max-w-7xl',
             )}
           >
->>>>>>> Stashed changes
             {children}
           </div>
         </main>
