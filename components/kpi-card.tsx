@@ -1,5 +1,4 @@
 import { ReactNode } from 'react'
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -25,37 +24,32 @@ export function KPICard({
   variant = 'default',
 }: KPICardProps) {
   const variantStyles = {
-    default: 'border-gray-200 bg-white',
-    primary: 'border-gray-200 bg-white',
-    success: 'border-gray-200 bg-white',
-    warning: 'border-gray-200 bg-white',
-    danger: 'border-gray-200 bg-white',
+    default: 'border-gray-300 bg-white',
+    primary: 'border-gray-300 bg-white',
+    success: 'border-gray-300 bg-white',
+    warning: 'border-gray-300 bg-white',
+    danger: 'border-gray-300 bg-white',
   }
 
   const textVariants = {
-    default: 'text-slate-700',
-    primary: 'text-sky-700',
-    success: 'text-emerald-700',
-    warning: 'text-amber-700',
-    danger: 'text-rose-700',
+    default: 'text-gray-700',
+    primary: 'text-blue-700',
+    success: 'text-green-700',
+    warning: 'text-orange-600',
+    danger: 'text-red-700',
   }
 
   return (
     <Card className={cn('rounded-md border shadow-none', variantStyles[variant])}>
-      <CardHeader className="space-y-0 pb-1">
+      <CardHeader className="space-y-0 px-4 pb-1 pt-4">
         <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="text-xl font-semibold text-slate-950">{value}</div>
+      <CardContent className="px-4 pb-4 pt-0">
+        <div className="text-xl font-semibold text-gray-800">{value}</div>
         {subtitle ? <p className="mt-1 text-sm text-gray-600">{subtitle}</p> : null}
         {trend ? (
           <div className={cn('mt-3 inline-flex items-center gap-1 text-xs font-semibold', textVariants[variant])}>
-            {trend.direction === 'up' ? (
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            ) : (
-              <ArrowDownRight className="h-3.5 w-3.5" />
-            )}
-            <span>{Math.abs(trend.value)}%</span>
+            <span>{trend.direction === 'up' ? '+' : '-'}{Math.abs(trend.value)}%</span>
           </div>
         ) : null}
       </CardContent>

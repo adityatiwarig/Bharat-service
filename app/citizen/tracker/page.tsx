@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ImageIcon,
   Link2,
-  MessageSquareText,
   Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +14,6 @@ import { ComplaintTrackingTimeline } from '@/components/complaint-tracking-timel
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary, TrackerDetailsSkeleton } from '@/components/loading-skeletons';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
@@ -165,29 +163,48 @@ export default function TrackerPage() {
 
   return (
     <DashboardLayout title="Complaint Tracker" compactCitizenHeader>
-      <div className="space-y-6">
-        <section className="space-y-4">
-          <div className="mb-2 text-xs text-gray-500">Home &gt; Complaint Tracker</div>
-          <div className="text-lg font-semibold text-gray-800">Track Complaint</div>
-          <form onSubmit={handleSearch} className="mx-auto flex max-w-xl gap-2">
-            <Input
-              ref={searchInputRef}
-              value={lookupId}
-              onChange={(event) => setLookupId(event.target.value)}
-              placeholder="Enter Complaint ID (e.g., DL-2025-000123)"
-              className="border border-gray-300 rounded-md text-gray-800"
-            />
-            <Button type="submit" className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
-              Track
-            </Button>
+      <div className="space-y-4">
+        <section className="border border-gray-300 bg-white rounded-md">
+          <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-base font-semibold text-gray-800">Government of NCT of Delhi</div>
+              <div className="text-sm text-gray-600">Complaint Tracking System</div>
+            </div>
+            <div className="text-sm font-medium text-gray-600">Helpline: 1800-XXX-XXXX</div>
+          </div>
+          <div className="border-t border-gray-300" />
+          <div className="space-y-2 px-4 py-4">
+            <div className="text-xs text-gray-500">Home &gt; Complaint Tracker</div>
+            <div className="text-lg font-semibold text-gray-800">Track Complaint</div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-3xl border border-gray-300 bg-white rounded-md p-4">
+          <form onSubmit={handleSearch} className="space-y-2">
+            <label htmlFor="complaint-id" className="text-sm font-medium text-gray-800">
+              Enter Complaint ID
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="complaint-id"
+                ref={searchInputRef}
+                value={lookupId}
+                onChange={(event) => setLookupId(event.target.value)}
+                placeholder="Enter Complaint ID (e.g., DL-2025-000123)"
+                className="border border-gray-400 rounded-md px-4 py-2 text-gray-800"
+              />
+              <Button type="submit" className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+                Track
+              </Button>
+            </div>
           </form>
           {isSearching ? (
-            <div className="mx-auto flex max-w-xl items-center justify-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 pt-2 text-sm text-gray-600">
               <Spinner label="Fetching complaint details..." size="sm" />
             </div>
           ) : null}
           {error === 'Invalid Complaint ID' ? (
-            <div className="mx-auto max-w-xl text-center text-sm text-rose-600">Invalid Complaint ID</div>
+            <div className="pt-2 text-sm text-rose-600">Invalid Complaint ID</div>
           ) : null}
         </section>
 
@@ -197,170 +214,151 @@ export default function TrackerPage() {
             <TrackerDetailsSkeleton />
           </div>
         ) : complaint ? (
-          <div className="mx-auto max-w-3xl space-y-6">
-            <Card className="rounded-md border border-gray-300 bg-white shadow-none">
-              <CardHeader className="border-b border-gray-300 pb-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="mx-auto max-w-3xl space-y-4">
+            <section className="border border-gray-300 bg-white rounded-md">
+              <div className="border-b border-gray-300 px-4 py-4">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <CardTitle className="text-lg text-gray-800">{complaint.title}</CardTitle>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">
-                      {complaint.department_message || 'Your complaint is currently being handled through the department workflow.'}
-                    </p>
+                    <div className="text-base font-semibold text-gray-800">{complaint.title}</div>
                   </div>
                   <div className={`text-sm font-medium ${getStatusTextClass(complaint.status)}`}>
-                    {formatStatusWithDate(complaint)}
+                    Status: {formatStatusWithDate(complaint)}
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-5">
-                <div className="rounded-md border border-gray-300 bg-white p-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Complaint ID</div>
-                      <div className="mt-2 text-sm font-semibold text-gray-800">{complaint.complaint_id}</div>
+              </div>
+              <div className="space-y-0">
+                <div className="border-b border-gray-300 px-4 py-4">
+                  <div className="mb-3 text-sm font-semibold text-gray-800">Complaint Details</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">Complaint ID:</span> {complaint.complaint_id}
                     </div>
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Department</div>
-                      <div className="mt-2 text-sm font-semibold capitalize text-gray-800">{complaint.department.replace('_', ' ')}</div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">Department:</span> {complaint.department.replace('_', ' ')}
                     </div>
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Status</div>
-                      <div className={`mt-2 text-sm font-semibold ${getStatusTextClass(complaint.status)}`}>
-                        {getStatusText(complaint.status)}
-                      </div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">Submitted Date:</span> {new Date(complaint.created_at).toLocaleString('en-IN')}
                     </div>
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Submitted Date</div>
-                      <div className="mt-2 text-sm font-semibold text-gray-800">
-                        {new Date(complaint.created_at).toLocaleString('en-IN')}
-                      </div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">Current Status:</span>{' '}
+                      <span className={getStatusTextClass(complaint.status)}>{getStatusText(complaint.status)}</span>
                     </div>
                   </div>
                 </div>
 
-                <ComplaintTrackingTimeline complaint={complaint} />
+                <div className="border-b border-gray-300 px-4 py-4">
+                  <ComplaintTrackingTimeline complaint={complaint} />
+                </div>
 
-                <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                  <div className="space-y-6">
-                    <div className="rounded-md border border-gray-300 bg-white px-4 py-4">
-                      <div className="text-sm font-semibold text-gray-800">Complaint details</div>
-                      <div className="mt-3 text-sm leading-7 text-gray-600">{complaint.text}</div>
+                <div className="border-b border-gray-300 px-4 py-4">
+                  <div className="text-sm font-semibold text-gray-800">Description</div>
+                  <div className="mt-2 text-sm leading-6 text-gray-600">{complaint.text}</div>
+                  {complaint.department_message ? (
+                    <div className="mt-3 text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">Department Message:</span> {complaint.department_message}
                     </div>
+                  ) : null}
+                </div>
 
-                    {showProofSection ? (
-                      <div className="rounded-md border border-gray-300 bg-white p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                          <ImageIcon className="h-4 w-4" />
-                          Work completion proof
-                        </div>
-                        {complaint.proof_text ? (
-                          <div className="mt-3 text-sm leading-6 text-gray-600">{complaint.proof_text}</div>
-                        ) : null}
-                        {complaint.proof_image ? (
-                          <div className="mt-3">
-                            <a
-                              href={complaint.proof_image.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-sm text-[#1d4f91] hover:underline"
-                            >
-                              <Link2 className="h-4 w-4" />
-                              View proof
-                            </a>
-                          </div>
-                        ) : null}
-                        {complaint.proof_image ? (
-                          <img
-                            src={complaint.proof_image.url}
-                            alt="Work completion proof"
-                            className="mt-4 max-h-80 rounded-md border border-gray-300 object-cover"
-                          />
-                        ) : null}
+                {showProofSection ? (
+                  <div className="border-b border-gray-300 px-4 py-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                      <ImageIcon className="h-4 w-4" />
+                      Work Completion Proof
+                    </div>
+                    {complaint.proof_text ? (
+                      <div className="mt-2 text-sm leading-6 text-gray-600">{complaint.proof_text}</div>
+                    ) : null}
+                    {complaint.proof_image ? (
+                      <div className="mt-2">
+                        <a
+                          href={complaint.proof_image.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 text-sm text-[#1d4f91] hover:underline"
+                        >
+                          <Link2 className="h-4 w-4" />
+                          View proof
+                        </a>
                       </div>
                     ) : null}
+                    {complaint.proof_image ? (
+                      <img
+                        src={complaint.proof_image.url}
+                        alt="Work completion proof"
+                        className="mt-3 max-h-80 rounded-md border border-gray-300 object-cover"
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
 
-                    {complaint.updates?.length ? (
-                      <div className="rounded-md border border-gray-300 bg-white p-4">
-                        <div className="text-sm font-semibold text-gray-800">Recent update log</div>
-                        <div className="mt-4 space-y-3">
-                          {complaint.updates.map((update) => (
-                            <div key={update.id} className="rounded-md border border-gray-300 bg-white px-4 py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className={`text-sm font-medium ${getStatusTextClass(update.status)}`}>
-                                  {getStatusText(update.status)}
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  {new Date(update.updated_at).toLocaleString('en-IN')}
-                                </div>
-                              </div>
-                              {update.note ? <div className="mt-2 text-sm text-gray-600">Officer remarks: {update.note}</div> : null}
+                {complaint.updates?.length ? (
+                  <div className="border-b border-gray-300 px-4 py-4">
+                    <div className="text-sm font-semibold text-gray-800">Recent Update Log</div>
+                    <div className="mt-3 space-y-3">
+                      {complaint.updates.map((update) => (
+                        <div key={update.id} className="border-b border-gray-200 pb-3 last:border-b-0 last:pb-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className={`text-sm font-medium ${getStatusTextClass(update.status)}`}>
+                              {getStatusText(update.status)}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="space-y-6">
-                    {showFeedbackSummary ? (
-                      <div className="rounded-md border border-gray-300 bg-white p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                          <MessageSquareText className="h-4 w-4" />
-                          Your feedback
-                        </div>
-                        <div className="mt-3 text-sm font-medium text-gray-800">
-                          Rating: {complaint.rating?.rating}/5
-                        </div>
-                        <div className="mt-2 text-sm leading-6 text-gray-600">
-                          {complaint.rating?.feedback || 'You submitted a rating without extra comments.'}
-                        </div>
-                        {complaint.rating?.created_at ? (
-                          <div className="mt-3 text-xs text-gray-600">
-                            Submitted on {new Date(complaint.rating.created_at).toLocaleString('en-IN')}
+                            <div className="text-xs text-gray-600">
+                              {new Date(update.updated_at).toLocaleString('en-IN')}
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {isClosedComplaint ? (
-                      <div className="rounded-md border border-gray-300 bg-white px-4 py-4 text-sm text-gray-600">
-                        This complaint has been closed by the department. Timeline and status records remain available for reference.
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-md border border-gray-300 bg-white p-4">
-                      <div className="text-sm font-semibold text-gray-800">Tracker guidance</div>
-                      <div className="mt-3 space-y-3 text-sm text-gray-600">
-                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
-                          Use the complaint ID search above anytime to reopen this same complaint.
+                          {update.note ? <div className="mt-2 text-sm text-gray-600">Officer remarks: {update.note}</div> : null}
                         </div>
-                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
-                          Department messages and work proof appear here as soon as they are published.
-                        </div>
-                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
-                          Once the complaint reaches the resolved stage, you can submit a citizen rating below.
-                        </div>
-                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
-                          If unresolved in 7 days, the complaint may move to escalation review.
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
+                ) : null}
+
+                {showFeedbackSummary ? (
+                  <div className="border-b border-gray-300 px-4 py-4">
+                    <div className="text-sm font-semibold text-gray-800">Your Feedback</div>
+                    <div className="mt-2 text-sm font-medium text-gray-800">
+                      Rating: {complaint.rating?.rating}/5
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-gray-600">
+                      {complaint.rating?.feedback || 'You submitted a rating without extra comments.'}
+                    </div>
+                    {complaint.rating?.created_at ? (
+                      <div className="mt-2 text-xs text-gray-600">
+                        Submitted on {new Date(complaint.rating.created_at).toLocaleString('en-IN')}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {isClosedComplaint ? (
+                  <div className="border-b border-gray-300 px-4 py-4 text-sm text-gray-600">
+                    This complaint has been closed by the department. Timeline and status records remain available for reference.
+                  </div>
+                ) : null}
+
+                <div className="px-4 py-4">
+                  <div className="text-sm font-semibold text-gray-800">Tracker Guidance</div>
+                  <div className="mt-2 space-y-2 text-sm text-gray-600">
+                    <div>Use the complaint ID search above anytime to reopen this same complaint.</div>
+                    <div>Department messages and work proof appear here as soon as they are published.</div>
+                    <div>Once the complaint reaches the resolved stage, you can submit a citizen rating below.</div>
+                    <div>If unresolved in 7 days, the complaint may move to escalation review.</div>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
 
             {canRateResolution ? (
-              <Card className="rounded-md border border-gray-300 bg-white shadow-none">
-                <CardHeader className="border-b border-gray-300 pb-5">
-                  <CardTitle>
+              <section className="border border-gray-300 bg-white rounded-md">
+                <div className="border-b border-gray-300 px-4 py-4">
+                  <div className="text-base font-semibold text-gray-800">
                     {complaint.rating ? 'Update your resolution feedback' : 'Rate the resolution'}
-                  </CardTitle>
+                  </div>
                   <p className="text-sm text-gray-600">
                     Review the latest proof and share whether the issue was actually resolved on the ground.
                   </p>
-                </CardHeader>
-                <CardContent className="space-y-4 pt-5">
+                </div>
+                <div className="space-y-4 px-4 py-4">
                   <div className="flex flex-wrap gap-2">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <Button
@@ -385,8 +383,8 @@ export default function TrackerPage() {
                   <Button onClick={handleRating} disabled={savingRating} className="rounded-md bg-green-600 text-white hover:bg-green-700">
                     {savingRating ? <Spinner label="Submitting..." /> : complaint.rating ? 'Update feedback' : 'Submit feedback'}
                   </Button>
-                </CardContent>
-              </Card>
+                </div>
+              </section>
             ) : null}
           </div>
         ) : error ? (

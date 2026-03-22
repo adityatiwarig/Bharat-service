@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowRight, CheckCircle, Clock3, FileSearch, FileText } from 'lucide-react';
+import { ArrowRight, FileSearch } from 'lucide-react';
 
 import { ComplaintCard } from '@/components/complaint-card';
 import { ComplaintCardSkeleton } from '@/components/complaint-card-skeleton';
@@ -81,14 +81,14 @@ export default function CitizenDashboard() {
 
   return (
     <DashboardLayout title="Citizen Dashboard" compactCitizenHeader>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <section className="space-y-4">
           <div>
             <div className="mb-2 text-xs text-gray-500">Home &gt; Citizen Dashboard</div>
             <div className="mb-4 text-lg font-semibold text-gray-800">Citizen Dashboard</div>
           </div>
           <div>
-            <div className="mb-3 text-sm font-medium text-slate-700">Quick Actions</div>
+            <div className="mb-3 text-sm font-medium text-gray-700">Quick Actions</div>
             <div className="flex flex-wrap gap-3">
               <Button asChild className="rounded-md bg-green-600 px-5 text-white hover:bg-green-700">
                 <Link href="/citizen/submit">
@@ -96,7 +96,7 @@ export default function CitizenDashboard() {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="rounded-md border-slate-300 bg-white px-5 text-slate-700 hover:bg-slate-50">
+              <Button asChild variant="outline" className="rounded-md border-gray-300 bg-white px-5 text-gray-700 hover:bg-gray-50">
                 <Link href="/citizen/tracker">
                   Open Tracker
                   <FileSearch className="h-4 w-4" />
@@ -116,28 +116,28 @@ export default function CitizenDashboard() {
             </>
           ) : (
             <>
-              <KPICard title="Total Complaints" value={stats.total} subtitle="All complaints under your account" icon={<FileText className="h-4 w-4" />} />
-              <KPICard title="Open Cases" value={stats.open} subtitle="Pending intake or field action" variant="warning" icon={<AlertCircle className="h-4 w-4" />} />
-              <KPICard title="In Progress" value={stats.in_progress} subtitle="Under active department handling" variant="primary" icon={<Clock3 className="h-4 w-4" />} />
-              <KPICard title="Resolved" value={stats.resolved} subtitle="Resolved or closed complaints" variant="success" icon={<CheckCircle className="h-4 w-4" />} />
+              <KPICard title="Total Complaints" value={stats.total} subtitle="All complaints under your account" />
+              <KPICard title="Open Cases" value={stats.open} subtitle="Pending intake or field action" variant="warning" />
+              <KPICard title="In Progress" value={stats.in_progress} subtitle="Under active department handling" variant="primary" />
+              <KPICard title="Resolved" value={stats.resolved} subtitle="Resolved or closed complaints" variant="success" />
             </>
           )}
         </div>
 
-        <div className="grid grid-cols-12 gap-6">
-          <Card className="col-span-12 rounded-md border border-gray-200 bg-white shadow-none xl:col-span-8">
-            <CardHeader className="flex flex-col gap-3 border-b border-gray-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid grid-cols-12 gap-4">
+          <Card className="col-span-12 rounded-md border border-gray-300 bg-white shadow-none xl:col-span-8">
+            <CardHeader className="flex flex-col gap-3 border-b border-gray-300 pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle>Recent Complaints</CardTitle>
-                <p className="mt-1.5 text-sm text-slate-500">
+                <p className="mt-1.5 text-sm text-gray-600">
                   Review the latest requests submitted from your account.
                 </p>
               </div>
-              <Button asChild variant="outline" className="rounded-md border-slate-300">
+              <Button asChild variant="outline" className="rounded-md border-gray-300">
                 <Link href="/citizen/my-complaints">View all complaints</Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-3 pt-5">
+            <CardContent className="space-y-3 pt-4">
               {loading ? (
                 <>
                   <ComplaintCardSkeleton compact />
@@ -145,7 +145,7 @@ export default function CitizenDashboard() {
                   <ComplaintCardSkeleton compact />
                 </>
               ) : error ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                <div className="rounded-md border border-red-200 bg-white px-4 py-4 text-sm text-red-700">
                   {error}
                 </div>
               ) : recentComplaints.length ? (
@@ -159,7 +159,7 @@ export default function CitizenDashboard() {
                   />
                 ))
               ) : (
-                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-sm text-gray-500">
+                <div className="rounded-md border border-dashed border-gray-300 bg-white px-6 py-8 text-center text-sm text-gray-500">
                   <div>No complaints yet. Click 'Raise Complaint' to submit your first request.</div>
                   <div className="mt-4">
                     <Button asChild className="rounded-md bg-green-600 text-white hover:bg-green-700">
@@ -171,10 +171,10 @@ export default function CitizenDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="col-span-12 rounded-md border border-gray-200 bg-white shadow-none xl:col-span-4">
-            <CardHeader className="border-b border-gray-200 pb-5">
+          <Card className="col-span-12 rounded-md border border-gray-300 bg-white shadow-none xl:col-span-4">
+            <CardHeader className="border-b border-gray-300 pb-4">
               <CardTitle>Quick Actions</CardTitle>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-gray-600">
                 Common citizen actions are available here.
               </p>
             </CardHeader>
@@ -187,10 +187,10 @@ export default function CitizenDashboard() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                      <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p>
+                      <div className="text-sm font-semibold text-gray-800">{item.title}</div>
+                      <p className="mt-1 text-sm leading-6 text-gray-600">{item.description}</p>
                     </div>
-                    <span className="mt-0.5 text-base text-slate-400">→</span>
+                    <span className="mt-0.5 text-base text-gray-500">-&gt;</span>
                   </div>
                 </Link>
               ))}
@@ -198,10 +198,10 @@ export default function CitizenDashboard() {
           </Card>
         </div>
 
-        <Card className="rounded-md border border-gray-200 bg-white shadow-none">
+        <Card className="rounded-md border border-gray-300 bg-white shadow-none">
           <CardHeader className="pb-3">
             <CardTitle>Help &amp; Information</CardTitle>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-gray-600">
               Important information related to complaint tracking and closure.
             </p>
           </CardHeader>
@@ -221,10 +221,10 @@ export default function CitizenDashboard() {
               },
             ].map((item) => (
               <div key={item.title} className="flex items-start gap-3 px-1 py-2">
-                <div className="pt-1 text-slate-500">•</div>
+                <div className="pt-1 text-gray-500">•</div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-950">{item.title}</div>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">{item.description}</p>
+                  <div className="text-sm font-semibold text-gray-800">{item.title}</div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600">{item.description}</p>
                 </div>
               </div>
             ))}
