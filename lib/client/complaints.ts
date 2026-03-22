@@ -6,6 +6,8 @@ import type {
   ComplaintListFilters,
   ComplaintPriority,
   ComplaintStatus,
+  ComplaintTrendSummary,
+  ComplaintWardComparisonSummary,
   PaginatedResult,
   Rating,
   Ward,
@@ -137,6 +139,14 @@ export async function fetchWorkerDashboard() {
       items: Complaint[];
     };
   }>('/api/dashboard/worker');
+}
+
+export async function fetchLeaderTrendSummary() {
+  return fetchJson<{ summary: ComplaintTrendSummary }>('/api/dashboard/leader-trends');
+}
+
+export async function fetchLeaderWardComparisonSummary() {
+  return fetchJson<{ summary: ComplaintWardComparisonSummary }>('/api/dashboard/leader-ward-comparison');
 }
 
 export async function fetchUsers() {

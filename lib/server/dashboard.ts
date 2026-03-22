@@ -2,13 +2,20 @@ import 'server-only';
 
 import { query } from '@/lib/server/db';
 import { mapComplaintRow, type ComplaintRow } from '@/lib/server/complaints';
-import type { ComplaintAnalyticsSummary, User, WorkerDashboardSummary } from '@/lib/types';
+import type { ComplaintAnalyticsSummary, ComplaintWardComparisonSummary, User, WorkerDashboardSummary } from '@/lib/types';
+
+function getDepartmentScope(user?: User) {
+  const hasDepartmentScope = user?.role === 'leader' && user.department;
+
+  return {
+    whereClause: hasDepartmentScope ? 'WHERE department = $1' : '',
+    complaintAliasWhereClause: hasDepartmentScope ? 'WHERE c.department = $1' : '',
+    params: hasDepartmentScope ? [user.department] : [],
+  };
+}
 
 export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAnalyticsSummary> {
-  const whereClause = user?.role === 'leader' && user.department
-    ? 'WHERE department = $1'
-    : '';
-  const params = user?.role === 'leader' && user.department ? [user.department] : [];
+  const { whereClause, complaintAliasWhereClause, params } = getDepartmentScope(user);
 
   const [totals, categories, urgentIssues, wards, hotspots] = await Promise.all([
     query<{ total_complaints: string; high_priority_count: string; resolution_rate: string }>(
@@ -76,7 +83,7 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
-        ${whereClause ? `WHERE c.department = $1` : ''}
+        ${complaintAliasWhereClause}
         ORDER BY
           CASE c.priority
             WHEN 'critical' THEN 0
@@ -95,7 +102,7 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
         SELECT c.ward_id, w.name AS ward_name, COUNT(*)::text AS count
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
-        ${whereClause ? `WHERE c.department = $1` : ''}
+        ${complaintAliasWhereClause}
         GROUP BY c.ward_id, w.name
         ORDER BY COUNT(*) DESC
         LIMIT 5
@@ -107,7 +114,9 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
         SELECT c.ward_id, w.name AS ward_name, COUNT(*)::text AS count
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
-        ${whereClause ? `WHERE c.department = $1 AND c.created_at >= NOW() - INTERVAL '24 hours'` : `WHERE c.created_at >= NOW() - INTERVAL '24 hours'`}
+        ${complaintAliasWhereClause
+          ? `${complaintAliasWhereClause} AND c.created_at >= NOW() - INTERVAL '24 hours'`
+          : `WHERE c.created_at >= NOW() - INTERVAL '24 hours'`}
         GROUP BY c.ward_id, w.name
         HAVING COUNT(*) >= 3
         ORDER BY COUNT(*) DESC
@@ -135,6 +144,112 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
       ward_name: row.ward_name,
       count: Number(row.count),
     })),
+  };
+}
+
+export async function getLeaderWardComparisonSummary(user: User): Promise<ComplaintWardComparisonSummary> {
+  const { complaintAliasWhereClause, params } = getDepartmentScope(user);
+  const complaintSourceClause = complaintAliasWhereClause || '';
+
+  const [totals, wardRows] = await Promise.all([
+    query<{
+      total_wards: string;
+      wards_with_recent_activity: string;
+      hotspot_wards: string;
+    }>(
+      `
+        WITH ward_summary AS (
+          SELECT
+            c.ward_id,
+            COUNT(*)::int AS total_complaints,
+            COUNT(*) FILTER (WHERE c.created_at >= NOW() - INTERVAL '7 days')::int AS complaints_last_7_days,
+            COUNT(*) FILTER (WHERE c.created_at >= NOW() - INTERVAL '24 hours')::int AS complaints_last_24_hours
+          FROM complaints c
+          ${complaintSourceClause}
+          GROUP BY c.ward_id
+        )
+        SELECT
+          COUNT(*)::text AS total_wards,
+          COUNT(*) FILTER (WHERE complaints_last_7_days > 0)::text AS wards_with_recent_activity,
+          COUNT(*) FILTER (WHERE complaints_last_24_hours >= 3)::text AS hotspot_wards
+        FROM ward_summary
+      `,
+      params,
+    ),
+    query<{
+      ward_id: number;
+      ward_name: string;
+      total_complaints: string;
+      open_complaints: string;
+      resolved_complaints: string;
+      high_priority_open: string;
+      complaints_last_7_days: string;
+      complaints_last_24_hours: string;
+      hotspot_watch: boolean;
+    }>(
+      `
+        WITH ward_summary AS (
+          SELECT
+            c.ward_id,
+            w.name AS ward_name,
+            COUNT(*)::int AS total_complaints,
+            COUNT(*) FILTER (
+              WHERE c.status NOT IN ('resolved', 'closed', 'rejected')
+            )::int AS open_complaints,
+            COUNT(*) FILTER (
+              WHERE c.status IN ('resolved', 'closed')
+            )::int AS resolved_complaints,
+            COUNT(*) FILTER (
+              WHERE c.priority::text IN ('high', 'critical', 'urgent')
+              AND c.status NOT IN ('resolved', 'closed', 'rejected')
+            )::int AS high_priority_open,
+            COUNT(*) FILTER (
+              WHERE c.created_at >= NOW() - INTERVAL '7 days'
+            )::int AS complaints_last_7_days,
+            COUNT(*) FILTER (
+              WHERE c.created_at >= NOW() - INTERVAL '24 hours'
+            )::int AS complaints_last_24_hours
+          FROM complaints c
+          INNER JOIN wards w ON w.id = c.ward_id
+          ${complaintSourceClause}
+          GROUP BY c.ward_id, w.name
+        )
+        SELECT
+          ward_id,
+          ward_name,
+          total_complaints::text,
+          open_complaints::text,
+          resolved_complaints::text,
+          high_priority_open::text,
+          complaints_last_7_days::text,
+          complaints_last_24_hours::text,
+          (complaints_last_24_hours >= 3) AS hotspot_watch
+        FROM ward_summary
+        ORDER BY total_complaints DESC, complaints_last_7_days DESC, ward_name ASC
+        LIMIT 8
+      `,
+      params,
+    ),
+  ]);
+
+  const totalsRow = totals.rows[0];
+
+  return {
+    total_wards: Number(totalsRow?.total_wards || 0),
+    wards_with_recent_activity: Number(totalsRow?.wards_with_recent_activity || 0),
+    hotspot_wards: Number(totalsRow?.hotspot_wards || 0),
+    ward_rows: wardRows.rows.map((row) => ({
+      ward_id: row.ward_id,
+      ward_name: row.ward_name,
+      total_complaints: Number(row.total_complaints),
+      open_complaints: Number(row.open_complaints),
+      resolved_complaints: Number(row.resolved_complaints),
+      high_priority_open: Number(row.high_priority_open),
+      complaints_last_7_days: Number(row.complaints_last_7_days),
+      complaints_last_24_hours: Number(row.complaints_last_24_hours),
+      hotspot_watch: Boolean(row.hotspot_watch),
+    })),
+    generated_at: new Date().toISOString(),
   };
 }
 

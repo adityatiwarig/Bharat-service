@@ -189,3 +189,34 @@ export interface WorkerDashboardSummary {
   urgent_queue: number;
   items: Complaint[];
 }
+
+export interface ComplaintTrendSummary {
+  total_complaints: number;
+  complaints_last_7_days: number;
+  resolved_last_7_days: number;
+  high_priority_open: number;
+  category_breakdown: Array<{ category: ComplaintCategory; count: number }>;
+  status_breakdown: Array<{ status: ComplaintStatus; count: number }>;
+  priority_breakdown: Array<{ priority: 'critical' | 'high' | 'medium' | 'low'; count: number }>;
+  daily_intake: Array<{ date: string; label: string; count: number }>;
+  ward_velocity: Array<{ ward_id: number; ward_name: string; count: number }>;
+  generated_at: string;
+}
+
+export interface ComplaintWardComparisonSummary {
+  total_wards: number;
+  wards_with_recent_activity: number;
+  hotspot_wards: number;
+  ward_rows: Array<{
+    ward_id: number;
+    ward_name: string;
+    total_complaints: number;
+    open_complaints: number;
+    resolved_complaints: number;
+    high_priority_open: number;
+    complaints_last_7_days: number;
+    complaints_last_24_hours: number;
+    hotspot_watch: boolean;
+  }>;
+  generated_at: string;
+}

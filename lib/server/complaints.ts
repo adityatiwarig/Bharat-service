@@ -94,6 +94,46 @@ const UNIVERSAL_WARD_WORKER_EMAILS = [
   'worker.karol@govcrm.demo',
 ];
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const COMPLAINT_SELECT_COLUMNS = `
+  c.id,
+  c.complaint_id,
+  c.tracking_code,
+  c.user_id,
+  c.ward_id,
+  c.department,
+  c.assigned_worker_id,
+  c.title,
+  c.text,
+  c.category,
+  c.status,
+  c.progress,
+  c.dept_head_viewed,
+  c.worker_assigned,
+  c.priority,
+  c.risk_score,
+  c.sentiment_score,
+  c.frequency_score,
+  c.hotspot_count,
+  c.is_hotspot,
+  c.is_spam,
+  c.spam_reasons,
+  c.attachments,
+  c.proof_image,
+  c.proof_text,
+  c.department_message,
+  c.location_address,
+  c.latitude,
+  c.longitude,
+  c.resolved_at,
+  c.resolution_notes,
+  c.created_at,
+  c.updated_at,
+  w.name AS ward_name,
+  u.name AS citizen_name
+`;
+
 function normalizeStatus(status: string) {
   return status;
 }
@@ -104,6 +144,10 @@ function normalizePriority(priority: string) {
 
 function normalizeDepartment(department: string) {
   return department.toLowerCase().replace(/\s+/g, '_') as ComplaintDepartment;
+}
+
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
 }
 
 function isUniversalWardWorkerEmail(email?: string) {
@@ -196,7 +240,11 @@ function buildWhereClause(user: User, filters: ComplaintListFilters) {
   }
 
   if (filters.priority && filters.priority !== 'all') {
-    clauses.push(`c.priority = $${params.push(normalizePriority(filters.priority))}`);
+    if (filters.priority === 'high') {
+      clauses.push(`c.priority IN ('high', 'critical')`);
+    } else {
+      clauses.push(`c.priority = $${params.push(normalizePriority(filters.priority))}`);
+    }
   }
 
   if (filters.ward_id) {
@@ -318,70 +366,71 @@ export async function listComplaintsForUser(
   filters: ComplaintListFilters = {},
 ): Promise<PaginatedResult<Complaint>> {
   const page = Math.max(1, Number(filters.page || 1));
-  const pageSize = Math.min(20, Math.max(1, Number(filters.page_size || 10)));
+  const maxPageSize = user.role === 'leader' ? 100 : 20;
+  const pageSize = Math.min(maxPageSize, Math.max(1, Number(filters.page_size || 10)));
   const { whereClause, params } = buildWhereClause(user, filters);
-
-  const totalResult = await query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM complaints c ${whereClause}`,
-    params,
-  );
-
   const listingParams = [...params, pageSize, (page - 1) * pageSize];
-  const rows = await query<ComplaintRow>(
-    `
-      SELECT
-        c.id,
-        c.complaint_id,
-        c.tracking_code,
-        c.user_id,
-        c.ward_id,
-        c.department,
-        c.assigned_worker_id,
-        c.title,
-        c.text,
-        c.category,
-        c.status,
-        c.progress,
-        c.dept_head_viewed,
-        c.worker_assigned,
-        c.priority,
-        c.risk_score,
-        c.sentiment_score,
-        c.frequency_score,
-        c.hotspot_count,
-        c.is_hotspot,
-        c.is_spam,
-        c.spam_reasons,
-        c.attachments,
-        c.proof_image,
-        c.proof_text,
-        c.department_message,
-        c.location_address,
-        c.latitude,
-        c.longitude,
-        c.resolved_at,
-        c.resolution_notes,
-        c.created_at,
-        c.updated_at,
-        w.name AS ward_name,
-        u.name AS citizen_name
-      FROM complaints c
-      INNER JOIN wards w ON w.id = c.ward_id
-      INNER JOIN users u ON u.id = c.user_id
-      ${whereClause}
-      ORDER BY
-        CASE c.priority
-          WHEN 'critical' THEN 0
-          WHEN 'high' THEN 1
-          WHEN 'medium' THEN 2
-          ELSE 3
-        END,
-        c.created_at DESC
-      LIMIT $${listingParams.length - 1}
-      OFFSET $${listingParams.length}
-    `,
-    listingParams,
-  );
+  const [totalResult, rows] = await Promise.all([
+    query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM complaints c ${whereClause}`,
+      params,
+    ),
+    query<ComplaintRow>(
+      `
+        SELECT
+          c.id,
+          c.complaint_id,
+          c.tracking_code,
+          c.user_id,
+          c.ward_id,
+          c.department,
+          c.assigned_worker_id,
+          c.title,
+          c.text,
+          c.category,
+          c.status,
+          c.progress,
+          c.dept_head_viewed,
+          c.worker_assigned,
+          c.priority,
+          c.risk_score,
+          c.sentiment_score,
+          c.frequency_score,
+          c.hotspot_count,
+          c.is_hotspot,
+          c.is_spam,
+          c.spam_reasons,
+          c.attachments,
+          c.proof_image,
+          c.proof_text,
+          c.department_message,
+          c.location_address,
+          c.latitude,
+          c.longitude,
+          c.resolved_at,
+          c.resolution_notes,
+          c.created_at,
+          c.updated_at,
+          w.name AS ward_name,
+          u.name AS citizen_name
+        FROM complaints c
+        INNER JOIN wards w ON w.id = c.ward_id
+        INNER JOIN users u ON u.id = c.user_id
+        ${whereClause}
+        ORDER BY
+          CASE c.priority
+            WHEN 'critical' THEN 0
+            WHEN 'high' THEN 1
+            WHEN 'medium' THEN 2
+            ELSE 3
+          END,
+          c.created_at DESC
+        LIMIT $${listingParams.length - 1}
+        OFFSET $${listingParams.length}
+      `,
+      listingParams,
+    ),
+  ]);
 
   const total = Number(totalResult.rows[0]?.count || 0);
 
@@ -394,52 +443,32 @@ export async function listComplaintsForUser(
   };
 }
 
-export async function getComplaintByIdForUser(user: User, complaintId: string) {
-  const result = await query<ComplaintRow>(
-    `
+async function getComplaintCoreByIdForUser(user: User, complaintId: string) {
+  const identifier = complaintId.trim();
+  const lookupQuery = isUuid(identifier)
+    ? `
       SELECT
-        c.id,
-        c.complaint_id,
-        c.tracking_code,
-        c.user_id,
-        c.ward_id,
-        c.department,
-        c.assigned_worker_id,
-        c.title,
-        c.text,
-        c.category,
-        c.status,
-        c.progress,
-        c.dept_head_viewed,
-        c.worker_assigned,
-        c.priority,
-        c.risk_score,
-        c.sentiment_score,
-        c.frequency_score,
-        c.hotspot_count,
-        c.is_hotspot,
-        c.is_spam,
-        c.spam_reasons,
-        c.attachments,
-        c.proof_image,
-        c.proof_text,
-        c.department_message,
-        c.location_address,
-        c.latitude,
-        c.longitude,
-        c.resolved_at,
-        c.resolution_notes,
-        c.created_at,
-        c.updated_at,
-        w.name AS ward_name,
-        u.name AS citizen_name
+        ${COMPLAINT_SELECT_COLUMNS}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
       INNER JOIN users u ON u.id = c.user_id
-      WHERE c.id::text = $1 OR c.complaint_id = $1 OR c.tracking_code = $1
+      WHERE c.id = $1::uuid
       LIMIT 1
-    `,
-    [complaintId],
+    `
+    : `
+      SELECT
+        ${COMPLAINT_SELECT_COLUMNS}
+      FROM complaints c
+      INNER JOIN wards w ON w.id = c.ward_id
+      INNER JOIN users u ON u.id = c.user_id
+      WHERE c.complaint_id = $1 OR c.tracking_code = $1
+      ORDER BY CASE WHEN c.complaint_id = $1 THEN 0 ELSE 1 END
+      LIMIT 1
+    `;
+
+  const result = await query<ComplaintRow>(
+    lookupQuery,
+    [identifier],
   );
 
   const row = result.rows[0];
@@ -459,9 +488,23 @@ export async function getComplaintByIdForUser(user: User, complaintId: string) {
     throw new AuthError('You are not allowed to view this complaint.', 403);
   }
 
-  complaint.updates = await getComplaintUpdates(complaint.id);
-  complaint.rating = await getComplaintRating(complaint.id);
+  return complaint;
+}
 
+export async function getComplaintByIdForUser(user: User, complaintId: string) {
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
+
+  if (!complaint) {
+    return null;
+  }
+
+  const [updates, rating] = await Promise.all([
+    getComplaintUpdates(complaint.id),
+    getComplaintRating(complaint.id),
+  ]);
+
+  complaint.updates = updates;
+  complaint.rating = rating;
   return complaint;
 }
 
@@ -612,7 +655,7 @@ export async function updateComplaintStatusForUser(
   },
 ) {
   const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
@@ -891,7 +934,7 @@ export async function reopenComplaintByDeptHead(
     throw new AuthError('Only dept head users can reopen complaints.', 403);
   }
 
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
@@ -948,7 +991,7 @@ export async function reopenComplaintByDeptHead(
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
-  return getComplaintByIdForUser(user, complaint.id);
+  return getComplaintCoreByIdForUser(user, complaint.id);
 }
 
 export async function markComplaintViewedByDeptHead(user: User, complaintId: string) {
@@ -956,7 +999,7 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
     throw new AuthError('Only dept head users can mark complaints as viewed.', 403);
   }
 
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
@@ -997,7 +1040,7 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
-  return getComplaintByIdForUser(user, complaint.id);
+  return getComplaintCoreByIdForUser(user, complaint.id);
 }
 
 export async function listAssignableWorkersForComplaint(user: User, complaintId: string) {
@@ -1005,7 +1048,7 @@ export async function listAssignableWorkersForComplaint(user: User, complaintId:
     throw new AuthError('Only dept head users can view assignable workers.', 403);
   }
 
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
@@ -1044,7 +1087,7 @@ export async function assignComplaintToWorkerByDeptHead(
     throw new AuthError('Only dept head users can assign workers.', 403);
   }
 
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintCoreByIdForUser(user, complaintId);
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
@@ -1136,7 +1179,7 @@ export async function assignComplaintToWorkerByDeptHead(
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
-  return getComplaintByIdForUser(user, complaint.id);
+  return getComplaintCoreByIdForUser(user, complaint.id);
 }
 
 async function processComplaintPipeline(complaintId: string) {
