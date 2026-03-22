@@ -46,7 +46,7 @@ export function ComplaintCard({
   if (compact) {
     return (
       <Card
-        className="gov-fade-in cursor-pointer rounded-[1rem] border-slate-200/90 bg-white transition duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)]"
+        className="cursor-pointer rounded-md border border-gray-200 bg-white shadow-none transition hover:bg-slate-50"
         onClick={onViewDetails}
       >
         <CardContent className="pt-5">
@@ -78,7 +78,7 @@ export function ComplaintCard({
 
   return (
     <Card
-      className="gov-fade-in cursor-pointer rounded-[1rem] border-slate-200/90 bg-white transition duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)]"
+      className="cursor-pointer rounded-md border border-gray-200 bg-white shadow-none transition hover:bg-slate-50"
       onClick={onViewDetails}
     >
       <CardHeader className="pb-2">

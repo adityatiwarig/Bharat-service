@@ -47,6 +47,7 @@ export interface UserSession {
   name: string;
   email: string;
   role: UserRole;
+  phone?: string | null;
   ward_id?: number | null;
   department?: ComplaintDepartment | null;
 }
@@ -113,6 +114,12 @@ export interface Complaint {
   tracking_code: string;
   user_id: string;
   citizen_id?: string;
+  applicant_name?: string | null;
+  applicant_mobile?: string | null;
+  applicant_email?: string | null;
+  applicant_address?: string | null;
+  applicant_gender?: string | null;
+  previous_complaint_id?: string | null;
   ward_id: number;
   department: ComplaintDepartment;
   title: string;

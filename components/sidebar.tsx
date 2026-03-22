@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import {
   ArrowUpRight,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Landmark,
   LayoutDashboard,
@@ -22,10 +24,18 @@ import { Button } from '@/components/ui/button'
 interface SidebarProps {
   userRole: UserRole
   isOpen?: boolean
+  collapsed?: boolean
+  onToggleCollapse?: () => void
   onClose?: () => void
 }
 
-export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
+export function Sidebar({
+  userRole,
+  isOpen = true,
+  collapsed = false,
+  onToggleCollapse,
+  onClose,
+}: SidebarProps) {
   const pathname = usePathname()
   const nav = legacyNavigation[userRole]
   const meta = roleMeta[userRole]
@@ -87,11 +97,15 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          'fixed left-0 z-40 w-72 shrink-0 transition-transform duration-300 md:sticky md:self-start md:translate-x-0',
+          'fixed left-0 z-40 shrink-0 transition-[width,transform] duration-300 md:sticky md:self-start md:translate-x-0',
           isAdmin
             ? 'top-[8px] h-[calc(100vh-8px)] border-r border-[#d7dfe7] bg-[#edf2f6] md:top-0 md:h-full'
-            : 'border-r border-slate-200/70 bg-white/88 backdrop-blur-xl',
+            : cn(
+                'border-r border-slate-200 bg-[#f3f5f7]',
+                collapsed ? 'md:w-20' : 'md:w-64',
+              ),
           !isAdmin ? 'top-0 h-screen md:top-0 md:h-screen' : '',
+          !isAdmin ? 'w-64' : '',
           isOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -99,32 +113,52 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
           <div className={cn(
             'px-5 pb-5 pt-6',
             isAdmin ? 'border-b border-[#d7dfe7]' : 'border-b border-slate-200/80',
+            collapsed && !isAdmin ? 'px-2 pb-4 pt-4' : '',
           )}>
-            <Link href="/" className="flex items-center gap-3">
-              {isAdmin ? (
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d7dfe7] bg-white text-[#1e3a5f] shadow-[0_10px_24px_rgba(30,58,95,0.08)]">
-                  <Landmark className="h-5 w-5" />
+            <div className={cn('flex items-start justify-between gap-2', collapsed && !isAdmin ? 'flex-col items-center justify-center gap-3' : '')}>
+              <Link href="/" className={cn('flex items-center gap-3', collapsed && !isAdmin ? 'justify-center' : '')}>
+                {isAdmin ? (
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d7dfe7] bg-white text-[#1e3a5f] shadow-[0_10px_24px_rgba(30,58,95,0.08)]">
+                    <Landmark className="h-5 w-5" />
+                  </div>
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-[#1d3557] text-sm font-semibold text-white">
+                    GC
+                  </div>
+                )}
+                <div className={cn(collapsed && !isAdmin ? 'hidden' : '')}>
+                  <div className={cn(
+                    'text-xs font-semibold tracking-[0.24em] uppercase',
+                    isAdmin ? 'text-[#6a7f94]' : 'text-slate-500',
+                  )}>
+                    {isAdmin ? 'Municipal Control' : 'GovCRM'}
+                  </div>
+                  <div className={cn(
+                    'text-sm font-semibold',
+                    isAdmin ? 'text-[#1e3a5f]' : 'text-slate-950',
+                  )}>
+                    {isAdmin ? 'Administrator Console' : meta.workspace}
+                  </div>
                 </div>
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                  GC
-                </div>
-              )}
-              <div>
-                <div className={cn(
-                  'text-xs font-semibold tracking-[0.24em] uppercase',
-                  isAdmin ? 'text-[#6a7f94]' : 'text-slate-500',
-                )}>
-                  {isAdmin ? 'Municipal Control' : 'GovCRM'}
-                </div>
-                <div className={cn(
-                  'text-sm font-semibold',
-                  isAdmin ? 'text-[#1e3a5f]' : 'text-slate-950',
-                )}>
-                  {isAdmin ? 'Administrator Console' : meta.workspace}
-                </div>
-              </div>
-            </Link>
+              </Link>
+
+              {!isAdmin ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={onToggleCollapse}
+                  className={cn(
+                    'hidden rounded-md border-slate-300 bg-white text-slate-700 hover:bg-slate-50 md:inline-flex',
+                    collapsed ? 'h-9 w-9 self-center' : 'h-9 w-9',
+                  )}
+                  title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                  {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                  <span className="sr-only">{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
+                </Button>
+              ) : null}
+            </div>
 
             {isAdmin ? (
               <div className="mt-5 rounded-lg bg-gradient-to-br from-white via-[#f6f9fb] to-[#eef4f8] p-5 shadow-[0_14px_32px_rgba(30,58,95,0.08)]">
@@ -138,14 +172,14 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
             ) : (
               <div
                 className={cn(
-                  'mt-6 rounded-[1.5rem] border border-slate-200 bg-gradient-to-br p-5',
-                  meta.accentClass,
+                  'mt-6 rounded-md border border-slate-200 bg-white p-4',
+                  collapsed && 'hidden md:hidden',
                 )}
               >
-                <Badge className="rounded-full bg-slate-950 text-white hover:bg-slate-950">
+                <Badge className="rounded-md bg-[#1d4f91] text-white hover:bg-[#1d4f91]">
                   {meta.signal}
                 </Badge>
-                <p className="mt-4 text-sm leading-6 text-slate-700">{meta.summary}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-700">{meta.summary}</p>
               </div>
             )}
           </div>
@@ -205,13 +239,16 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
               </div>
             ) : (
               <>
-                <div className="px-2 text-xs font-semibold tracking-[0.24em] text-slate-400 uppercase">
-                  Workspace
+                <div className={cn('px-2 text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase', collapsed && 'hidden')}>
+                  Citizen Services
                 </div>
                 <nav className="mt-4 space-y-2">
                   {nav.map((item) => {
                     const Icon = item.icon
-                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    const isDashboardRoot = item.href === '/citizen'
+                    const isActive = isDashboardRoot
+                      ? pathname === item.href
+                      : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
                     return (
                       <Link
@@ -219,33 +256,37 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
                         href={item.href}
                         onClick={onClose}
                         className={cn(
-                          'group flex items-start gap-3 rounded-2xl border px-4 py-3 transition duration-200',
+                          'group relative flex items-start gap-3 rounded-md border border-transparent px-3 py-3 transition duration-200',
                           isActive
-                            ? 'border-slate-900 bg-slate-950 text-white shadow-[0_18px_36px_rgba(15,23,42,0.16)]'
-                            : 'border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-white hover:shadow-[0_14px_30px_rgba(15,23,42,0.06)]',
+                            ? 'border-l-4 border-l-[#1d4f91] bg-blue-50 text-[#1d3557]'
+                            : 'bg-transparent text-slate-700 hover:border-slate-200 hover:bg-white',
+                          collapsed ? 'justify-center px-2' : '',
                         )}
+                        title={collapsed ? item.label : undefined}
                       >
+                        {isActive && !collapsed ? <span className="absolute inset-y-2 left-0 w-1 bg-[#1d4f91]" /> : null}
                         <div
                           className={cn(
-                            'mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl',
+                            'mt-0.5 flex h-10 w-10 items-center justify-center rounded-md',
                             isActive
-                              ? 'bg-white/10 text-white'
-                              : 'bg-slate-200/70 text-slate-700 group-hover:bg-sky-100 group-hover:text-sky-700',
+                              ? 'bg-blue-100 text-[#1d4f91]'
+                              : 'bg-slate-200 text-slate-700 group-hover:bg-slate-300',
                           )}
                         >
                           <Icon className="h-4 w-4" />
                         </div>
-                        <div className="min-w-0 flex-1">
+                        <div className={cn('min-w-0 flex-1', collapsed && 'hidden')}>
                           <div className="text-sm font-semibold">{item.label}</div>
                           <p
                             className={cn(
                               'mt-1 text-xs leading-5',
-                              isActive ? 'text-slate-300' : 'text-slate-500',
+                              isActive ? 'text-[#48627f]' : 'text-slate-500',
                             )}
                           >
                             {item.description}
                           </p>
                         </div>
+                        {!collapsed ? <ChevronRight className={cn('mt-1 h-4 w-4', isActive ? 'text-[#1d4f91]' : 'text-slate-400')} /> : null}
                       </Link>
                     )
                   })}
@@ -255,10 +296,10 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
           </div>
 
           {!isAdmin ? (
-            <div className="border-t border-slate-200/80 p-4">
-              <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+            <div className={cn('border-t border-slate-200/80 p-4', collapsed && 'hidden md:hidden')}>
+              <div className="rounded-md border border-slate-200 bg-white p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-950 shadow-sm">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-100 text-slate-950">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -271,7 +312,7 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
                 <Link href="/" className="mt-4 block">
                   <Button
                     variant="ghost"
-                    className="w-full justify-between rounded-xl px-3 text-slate-700 hover:bg-white"
+                    className="w-full justify-between rounded-md px-3 text-slate-700 hover:bg-slate-50"
                   >
                     Return to overview
                     <ArrowUpRight className="h-4 w-4" />
@@ -279,7 +320,7 @@ export function Sidebar({ userRole, isOpen = true, onClose }: SidebarProps) {
                 </Link>
                 <Button
                   variant="ghost"
-                  className="mt-2 w-full justify-between rounded-xl px-3 text-slate-700 hover:bg-white"
+                  className="mt-2 w-full justify-between rounded-md px-3 text-slate-700 hover:bg-slate-50"
                 >
                   Support guide
                   <LifeBuoy className="h-4 w-4" />

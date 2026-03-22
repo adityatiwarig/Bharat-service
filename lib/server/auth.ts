@@ -74,6 +74,7 @@ export function toSessionUser(user: User): UserSession {
     name: user.name,
     email: user.email,
     role: user.role,
+    phone: user.phone,
     ward_id: user.ward_id,
     department: user.department,
   };

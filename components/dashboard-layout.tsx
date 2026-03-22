@@ -13,6 +13,7 @@ interface DashboardLayoutProps {
   title: string
   userRole?: UserRole
   userName?: string
+  compactCitizenHeader?: boolean
 }
 
 function AdminIdentityBar() {
@@ -32,8 +33,10 @@ export function DashboardLayout({
   title,
   userRole,
   userName,
+  compactCitizenHeader = false,
 }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const session = useSession()
   const resolvedRole = userRole ?? session?.role ?? 'citizen'
   const resolvedName = userName ?? session?.name ?? 'GovCRM User'
@@ -72,6 +75,8 @@ export function DashboardLayout({
       <Sidebar
         userRole={resolvedRole}
         isOpen={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((collapsed) => !collapsed)}
         onClose={() => setSidebarOpen(false)}
       />
       <div className={cn('flex min-h-screen flex-1 flex-col', isAdmin ? 'bg-[#f4f6f8]' : '')}>
@@ -80,6 +85,9 @@ export function DashboardLayout({
           userRole={resolvedRole}
           userName={resolvedName}
           onMenuClick={() => setSidebarOpen((open) => !open)}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebarCollapse={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          compactCitizenHeader={compactCitizenHeader}
         />
         <main className={cn('flex-1 overflow-auto', isAdmin ? 'bg-[#f4f6f8]' : '')}>
           <div

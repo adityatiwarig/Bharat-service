@@ -56,6 +56,12 @@ model Complaint {
   id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tracking_code      String            @unique
   user_id            String            @db.Uuid
+  applicant_name     String?
+  applicant_mobile   String?
+  applicant_email    String?
+  applicant_address  String?
+  applicant_gender   String?
+  previous_complaint_id String?
   ward_id            Int
   department         DepartmentName    @default(roads)
   assigned_worker_id String?           @db.Uuid

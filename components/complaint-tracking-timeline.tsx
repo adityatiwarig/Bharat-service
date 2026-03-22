@@ -1,103 +1,80 @@
-import { CheckCircle2, CircleDashed, Eye, LoaderCircle, UserCheck } from 'lucide-react'
-
 import type { Complaint } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
-type StageState = 'pending' | 'in_progress' | 'completed'
-
-function getStageStateClasses(state: StageState) {
-  if (state === 'completed') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return 'Awaiting update'
   }
 
-  if (state === 'in_progress') {
-    return 'border-amber-200 bg-amber-50 text-amber-700'
-  }
-
-  return 'border-slate-200 bg-slate-50 text-slate-500'
+  return new Date(value).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function StageIcon({ icon, state }: { icon: 'viewed' | 'assigned' | 'progress'; state: StageState }) {
-  if (state === 'completed') {
-    return <CheckCircle2 className="h-5 w-5" />
-  }
-
-  if (state === 'in_progress') {
-    return <LoaderCircle className="h-5 w-5" />
-  }
-
-  if (icon === 'viewed') {
-    return <Eye className="h-5 w-5" />
-  }
-
-  if (icon === 'assigned') {
-    return <UserCheck className="h-5 w-5" />
-  }
-
-  return <CircleDashed className="h-5 w-5" />
+function getLatestUpdateNote(complaint: Complaint, statuses: string[]) {
+  const match = complaint.updates?.find((update) => statuses.includes(update.status))
+  return match?.note || null
 }
 
 export function ComplaintTrackingTimeline({ complaint }: { complaint: Complaint }) {
-  const steps: Array<{
-    key: string
-    label: string
-    value: string
-    state: StageState
-    icon: 'viewed' | 'assigned' | 'progress'
-  }> = [
+  const submittedAt = complaint.created_at
+  const assignedNote = getLatestUpdateNote(complaint, ['assigned', 'received', 'submitted'])
+  const inProgressNote = getLatestUpdateNote(complaint, ['in_progress'])
+  const resolvedNote = getLatestUpdateNote(complaint, ['resolved', 'closed'])
+  const isAssigned = ['assigned', 'in_progress', 'resolved', 'closed'].includes(complaint.status)
+  const isInProgress = ['in_progress', 'resolved', 'closed'].includes(complaint.status)
+  const isResolved = ['resolved', 'closed'].includes(complaint.status)
+
+  const steps = [
     {
-      key: 'dept_head_viewed',
-      label: 'Dept Head Viewed',
-      value: complaint.dept_head_viewed ? 'Yes' : 'No',
-      state: complaint.dept_head_viewed ? 'completed' : 'pending',
-      icon: 'viewed',
+      key: 'submitted',
+      title: 'Submitted',
+      detail: formatDateTime(submittedAt),
+      note: getLatestUpdateNote(complaint, ['submitted']),
+      active: true,
     },
     {
-      key: 'worker_assigned',
-      label: 'Worker Assigned',
-      value: complaint.worker_assigned ? 'Yes' : 'No',
-      state: complaint.worker_assigned ? 'completed' : complaint.dept_head_viewed ? 'in_progress' : 'pending',
-      icon: 'assigned',
+      key: 'assigned',
+      title: 'Assigned to Department',
+      detail: isAssigned
+        ? assignedNote || `${complaint.department.replace('_', ' ')} department assigned`
+        : 'Awaiting department assignment',
+      note: assignedNote,
+      active: isAssigned,
     },
     {
-      key: 'progress',
-      label: 'Progress',
-      value: complaint.progress === 'in_progress' ? 'In Progress' : complaint.progress === 'resolved' ? 'Resolved' : 'Pending',
-      state:
-        complaint.progress === 'resolved'
-          ? 'completed'
-          : complaint.progress === 'in_progress'
-            ? 'in_progress'
-            : 'pending',
-      icon: 'progress',
+      key: 'in_progress',
+      title: 'In Progress',
+      detail: isInProgress ? inProgressNote || 'Officer action update available in tracker.' : 'Pending field action',
+      note: inProgressNote,
+      active: isInProgress,
+    },
+    {
+      key: 'resolved',
+      title: 'Resolved',
+      detail: isResolved ? resolvedNote || formatDateTime(complaint.resolved_at || complaint.updated_at) : 'Not completed yet',
+      note: resolvedNote,
+      active: isResolved,
     },
   ]
 
   return (
-    <div className="space-y-4">
-      <div>
-        <div className="text-sm font-semibold text-slate-950">Tracking Stages</div>
-        <p className="mt-1 text-sm text-slate-600">Follow department review, worker assignment, and complaint progress in one view.</p>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        {steps.map((step, index) => (
+    <div className="rounded-md border border-gray-300 bg-white p-4">
+      <div className="mb-4 text-sm font-semibold text-slate-950">Complaint Timeline</div>
+      <div className="border-l-2 border-gray-200 pl-4 space-y-4">
+        {steps.map((step) => (
           <div key={step.key} className="relative">
-            {index < steps.length - 1 ? (
-              <div className="absolute left-[calc(100%-0.5rem)] top-7 hidden h-px w-4 bg-slate-200 lg:block" />
-            ) : null}
-            <div className={cn('rounded-[1.5rem] border p-5 shadow-sm transition-colors', getStageStateClasses(step.state))}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-current/20 bg-white/80">
-                  <StageIcon icon={step.icon} state={step.state} />
-                </div>
-                <div className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
-                  Step {index + 1}
-                </div>
-              </div>
-              <div className="mt-4 text-base font-semibold text-slate-950">{step.label}</div>
-              <div className="mt-2 text-sm font-medium">{step.value}</div>
-            </div>
+            <span
+              className={`absolute -left-[1.32rem] top-1.5 h-3 w-3 rounded-full border ${
+                step.active ? 'border-[#1d4f91] bg-[#1d4f91]' : 'border-gray-300 bg-white'
+              }`}
+            />
+            <div className="text-sm font-medium text-slate-900">{step.title}</div>
+            <div className="mt-1 text-sm text-slate-600">{step.detail}</div>
+            {step.note ? <div className="mt-1 text-sm text-slate-600">Officer remarks: {step.note}</div> : null}
           </div>
         ))}
       </div>

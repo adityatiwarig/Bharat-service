@@ -26,6 +26,12 @@ export type ComplaintRow = {
   complaint_id: string;
   tracking_code: string;
   user_id: string;
+  applicant_name?: string | null;
+  applicant_mobile?: string | null;
+  applicant_email?: string | null;
+  applicant_address?: string | null;
+  applicant_gender?: string | null;
+  previous_complaint_id?: string | null;
   ward_id: number;
   department: ComplaintDepartment;
   assigned_worker_id: string | null;
@@ -94,6 +100,7 @@ const UNIVERSAL_WARD_WORKER_EMAILS = [
   'worker.karol@govcrm.demo',
 ];
 
+<<<<<<< Updated upstream
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const COMPLAINT_SELECT_COLUMNS = `
@@ -133,6 +140,18 @@ const COMPLAINT_SELECT_COLUMNS = `
   w.name AS ward_name,
   u.name AS citizen_name
 `;
+=======
+const COMPLAINT_APPLICANT_COLUMNS = [
+  'applicant_name',
+  'applicant_mobile',
+  'applicant_email',
+  'applicant_address',
+  'applicant_gender',
+  'previous_complaint_id',
+] as const;
+
+let complaintApplicantColumnsPromise: Promise<boolean> | null = null;
+>>>>>>> Stashed changes
 
 function normalizeStatus(status: string) {
   return status;
@@ -170,6 +189,26 @@ function mapCategoryToDepartment(category: Complaint['category']): ComplaintDepa
   return mapping[category] || 'roads';
 }
 
+async function complaintsTableHasApplicantColumns() {
+  complaintApplicantColumnsPromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'complaints'
+        AND column_name = ANY($1::text[])
+    `,
+    [COMPLAINT_APPLICANT_COLUMNS],
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) === COMPLAINT_APPLICANT_COLUMNS.length)
+    .catch((error) => {
+      complaintApplicantColumnsPromise = null;
+      throw error;
+    });
+
+  return complaintApplicantColumnsPromise;
+}
+
 export function mapComplaintRow(row: ComplaintRow): Complaint {
   return {
     id: row.id,
@@ -177,6 +216,12 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     tracking_code: row.tracking_code,
     user_id: row.user_id,
     citizen_id: row.user_id,
+    applicant_name: row.applicant_name ?? null,
+    applicant_mobile: row.applicant_mobile ?? null,
+    applicant_email: row.applicant_email ?? null,
+    applicant_address: row.applicant_address ?? null,
+    applicant_gender: row.applicant_gender ?? null,
+    previous_complaint_id: row.previous_complaint_id ?? null,
     ward_id: row.ward_id,
     department: row.department,
     assigned_worker_id: row.assigned_worker_id,
@@ -511,8 +556,15 @@ export async function getComplaintByIdForUser(user: User, complaintId: string) {
 export async function createComplaintForUser(
   user: User,
   input: {
+    applicant_name: string;
+    applicant_mobile: string;
+    applicant_email?: string;
+    applicant_address: string;
+    applicant_gender?: string;
+    previous_complaint_id?: string;
     title: string;
     text: string;
+    category: Complaint['category'];
     ward_id: number;
     department: ComplaintDepartment;
     location_address?: string;
@@ -524,10 +576,95 @@ export async function createComplaintForUser(
   const complaintId = randomUUID();
   const complaintReference = createTrackingCode();
   const attachments = await saveAttachments(files, complaintId);
+  const hasApplicantColumns = await complaintsTableHasApplicantColumns();
 
   const complaint = await withTransaction(async (client) => {
-    const result = await client.query<ComplaintRow>(
+    const insertQuery = hasApplicantColumns
+      ? `
+        INSERT INTO complaints (
+          id,
+          complaint_id,
+          tracking_code,
+          user_id,
+          applicant_name,
+          applicant_mobile,
+          applicant_email,
+          applicant_address,
+          applicant_gender,
+          previous_complaint_id,
+          ward_id,
+          department,
+          title,
+          text,
+          category,
+          status,
+          progress,
+          dept_head_viewed,
+          worker_assigned,
+          priority,
+          risk_score,
+          sentiment_score,
+          frequency_score,
+          hotspot_count,
+          is_hotspot,
+          is_spam,
+          spam_reasons,
+          attachments,
+          proof_image,
+          proof_text,
+          department_message,
+          location_address,
+          latitude,
+          longitude
+          )
+          VALUES (
+            $1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'submitted', 'pending', FALSE, FALSE, 'medium', 0, 0, 0, 0, false, false,
+            '[]'::jsonb, $15::jsonb, NULL::jsonb, NULL, $16, $17, $18, $19
+          )
+          RETURNING
+            id,
+            complaint_id,
+            tracking_code,
+            user_id,
+            applicant_name,
+            applicant_mobile,
+            applicant_email,
+            applicant_address,
+            applicant_gender,
+            previous_complaint_id,
+            ward_id,
+            department,
+            assigned_worker_id,
+            title,
+            text,
+            category,
+            status,
+            progress,
+            dept_head_viewed,
+            worker_assigned,
+            priority,
+            risk_score,
+            sentiment_score,
+            frequency_score,
+            hotspot_count,
+            is_hotspot,
+            is_spam,
+            spam_reasons,
+            attachments,
+            proof_image,
+            proof_text,
+            department_message,
+            location_address,
+            latitude,
+            longitude,
+            resolved_at,
+            resolution_notes,
+            created_at,
+            updated_at,
+            (SELECT name FROM wards WHERE id = $10) AS ward_name,
+            $20 AS citizen_name
       `
+      : `
         INSERT INTO complaints (
           id,
           complaint_id,
@@ -557,63 +694,98 @@ export async function createComplaintForUser(
           location_address,
           latitude,
           longitude
-        )
-        VALUES (
-          $1, $2, $2, $3, $4, $5, $6, $7, 'other', 'submitted', 'pending', FALSE, FALSE, 'medium', 0, 0, 0, 0, false, false,
-          '[]'::jsonb, $8::jsonb, NULL::jsonb, NULL, $9, $10, $11, $12
-        )
-        RETURNING
-          id,
-          complaint_id,
-          tracking_code,
-          user_id,
-          ward_id,
-          department,
-          assigned_worker_id,
-          title,
-          text,
-          category,
-          status,
-          progress,
-          dept_head_viewed,
-          worker_assigned,
-          priority,
-          risk_score,
-          sentiment_score,
-          frequency_score,
-          hotspot_count,
-          is_hotspot,
-          is_spam,
-          spam_reasons,
-          attachments,
-          proof_image,
-          proof_text,
-          department_message,
-          location_address,
-          latitude,
-          longitude,
-          resolved_at,
-          resolution_notes,
-          created_at,
-          updated_at,
-          (SELECT name FROM wards WHERE id = $4) AS ward_name,
-          $13 AS citizen_name
-      `,
-      [
-        complaintId,
-        complaintReference,
-        user.id,
-        input.ward_id,
-        input.department,
-        input.title.trim(),
-        input.text.trim(),
-        JSON.stringify(attachments),
-        'Complaint submitted successfully. Department review is pending.',
-        input.location_address?.trim() || null,
-        input.latitude || null,
-        input.longitude || null,
-        user.name,
-      ],
+          )
+          VALUES (
+            $1, $2, $2, $3, $4, $5, $6, $7, $8, 'submitted', 'pending', FALSE, FALSE, 'medium', 0, 0, 0, 0, false, false,
+            '[]'::jsonb, $9::jsonb, NULL::jsonb, NULL, $10, $11, $12, $13
+          )
+          RETURNING
+            id,
+            complaint_id,
+            tracking_code,
+            user_id,
+            NULL::text AS applicant_name,
+            NULL::text AS applicant_mobile,
+            NULL::text AS applicant_email,
+            NULL::text AS applicant_address,
+            NULL::text AS applicant_gender,
+            NULL::text AS previous_complaint_id,
+            ward_id,
+            department,
+            assigned_worker_id,
+            title,
+            text,
+            category,
+            status,
+            progress,
+            dept_head_viewed,
+            worker_assigned,
+            priority,
+            risk_score,
+            sentiment_score,
+            frequency_score,
+            hotspot_count,
+            is_hotspot,
+            is_spam,
+            spam_reasons,
+            attachments,
+            proof_image,
+            proof_text,
+            department_message,
+            location_address,
+            latitude,
+            longitude,
+            resolved_at,
+            resolution_notes,
+            created_at,
+            updated_at,
+            (SELECT name FROM wards WHERE id = $4) AS ward_name,
+            $14 AS citizen_name
+      `;
+
+    const insertParams = hasApplicantColumns
+      ? [
+          complaintId,
+          complaintReference,
+          user.id,
+          input.applicant_name.trim(),
+          input.applicant_mobile.trim(),
+          input.applicant_email?.trim() || null,
+          input.applicant_address.trim(),
+          input.applicant_gender?.trim() || null,
+          input.previous_complaint_id?.trim() || null,
+          input.ward_id,
+          input.department,
+          input.title.trim(),
+          input.text.trim(),
+          input.category,
+          JSON.stringify(attachments),
+          'Complaint submitted successfully. Department review is pending.',
+          input.location_address?.trim() || null,
+          input.latitude || null,
+          input.longitude || null,
+          user.name,
+        ]
+      : [
+          complaintId,
+          complaintReference,
+          user.id,
+          input.ward_id,
+          input.department,
+          input.title.trim(),
+          input.text.trim(),
+          input.category,
+          JSON.stringify(attachments),
+          'Complaint submitted successfully. Department review is pending.',
+          input.location_address?.trim() || null,
+          input.latitude || null,
+          input.longitude || null,
+          user.name,
+        ];
+
+    const result = await client.query<ComplaintRow>(
+      insertQuery,
+      insertParams,
     );
 
     await appendComplaintUpdate(client, {
@@ -1236,10 +1408,8 @@ async function processComplaintPipeline(complaintId: string) {
     return;
   }
 
-  const draftAnalysis = analyzeComplaint({
-    title: complaint.title,
-    text: complaint.text,
-  });
+  const selectedCategory = complaint.category as Complaint['category'];
+  const selectedDepartment = complaint.department;
 
   const repeatedResult = await query<{ count: string }>(
     `
@@ -1254,7 +1424,7 @@ async function processComplaintPipeline(complaintId: string) {
           OR ($3 = 'other'::complaint_category AND department = $4)
         )
     `,
-    [complaint.user_id, complaint.ward_id, draftAnalysis.category, draftAnalysis.department, complaint.id],
+    [complaint.user_id, complaint.ward_id, selectedCategory, selectedDepartment, complaint.id],
   );
 
   const sameIssueResult = await query<{ count: string }>(
@@ -1269,7 +1439,7 @@ async function processComplaintPipeline(complaintId: string) {
           OR ($2 = 'other'::complaint_category AND department = $3)
         )
     `,
-    [complaint.ward_id, draftAnalysis.category, draftAnalysis.department, complaint.id],
+    [complaint.ward_id, selectedCategory, selectedDepartment, complaint.id],
   );
 
   const repeatedCount = Number(repeatedResult.rows[0]?.count || 0);
@@ -1282,7 +1452,7 @@ async function processComplaintPipeline(complaintId: string) {
     repeated_count: repeatedCount,
   });
 
-  const resolvedDepartment = analysis.department || complaint.department || mapCategoryToDepartment(analysis.category);
+  const resolvedDepartment = selectedDepartment || analysis.department || mapCategoryToDepartment(selectedCategory);
 
   await withTransaction(async (client) => {
     await client.query(
@@ -1311,7 +1481,7 @@ async function processComplaintPipeline(complaintId: string) {
       [
         complaint.id,
         resolvedDepartment,
-        analysis.category,
+        selectedCategory,
         analysis.priority,
         analysis.risk_score,
         analysis.sentiment_score,

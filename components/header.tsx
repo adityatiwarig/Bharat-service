@@ -24,9 +24,20 @@ interface HeaderProps {
   userRole: UserRole
   userName: string
   onMenuClick?: () => void
+  sidebarCollapsed?: boolean
+  onToggleSidebarCollapse?: () => void
+  compactCitizenHeader?: boolean
 }
 
-export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) {
+export function Header({
+  title,
+  userRole,
+  userName,
+  onMenuClick,
+  sidebarCollapsed = false,
+  onToggleSidebarCollapse,
+  compactCitizenHeader = false,
+}: HeaderProps) {
   const meta = roleMeta[userRole]
   const isAdmin = userRole === 'admin'
   const router = useRouter()
@@ -163,7 +174,7 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
           className={
             isAdmin
               ? 'relative h-11 w-11 rounded-lg border-[#d7dfe7] bg-white text-[#1e3a5f] shadow-[0_8px_20px_rgba(30,58,95,0.06)] hover:bg-[#f8fafc]'
-              : 'relative rounded-full'
+              : 'relative rounded-md border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
           }
         >
           <Bell className="h-4 w-4" />
@@ -309,16 +320,70 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
     )
   }
 
+  if (compactCitizenHeader) {
+    return (
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onMenuClick}
+              className="rounded-md border-slate-300 md:hidden"
+            >
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle menu</span>
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-3 lg:flex">
+              {notificationsMenu}
+              <Link href="/">
+                <Button className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+                  Public site
+                </Button>
+              </Link>
+              <Button variant="outline" className="rounded-md border-slate-300" onClick={handleLogout}>
+                Logout
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-950">{userName}</div>
+                <div className="text-xs text-slate-500">{meta.workspace}</div>
+              </div>
+              <Avatar className="h-9 w-9 border border-slate-200">
+                <AvatarFallback className="bg-slate-950 text-xs font-semibold text-white">
+                  {userName
+                    .split(' ')
+                    .map((part) => part[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          </div>
+        </div>
+      </header>
+    )
+  }
+
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
-      <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="icon"
               onClick={onMenuClick}
-              className="md:hidden"
+              className="rounded-md border-slate-300 md:hidden"
             >
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle menu</span>
@@ -326,14 +391,14 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
 
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="rounded-full bg-white text-slate-600">
+                <Badge variant="outline" className="rounded-md border-slate-300 bg-slate-50 text-slate-600">
                   {meta.label}
                 </Badge>
-                <span className="text-xs font-medium tracking-[0.2em] text-slate-400 uppercase">
+                <span className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
                   {meta.signal}
                 </span>
               </div>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{title}</h1>
+              <h1 className="mt-2 text-[1.85rem] font-semibold tracking-tight text-slate-900">{title}</h1>
               <p className="mt-1 text-sm text-slate-500">{meta.summary}</p>
             </div>
           </div>
@@ -341,11 +406,11 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
           <div className="hidden items-center gap-3 lg:flex">
             {notificationsMenu}
             <Link href="/">
-              <Button className="rounded-full bg-slate-950 text-white hover:bg-slate-800">
+              <Button className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
                 Public site
               </Button>
             </Link>
-            <Button variant="outline" className="rounded-full" onClick={handleLogout}>
+            <Button variant="outline" className="rounded-md border-slate-300" onClick={handleLogout}>
               Logout
             </Button>
           </div>
@@ -353,16 +418,16 @@ export function Header({ title, userRole, userName, onMenuClick }: HeaderProps) 
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
               Clear, role-based navigation
             </div>
-            <div className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-700">
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-700">
               Mobile-ready workspace shell
             </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+          <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sky-50 text-sky-700">
               <Sparkles className="h-4 w-4" />
             </div>
             <div className="min-w-0">

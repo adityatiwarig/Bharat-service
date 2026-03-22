@@ -1,22 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ImageIcon,
-  MapPinned,
+  Link2,
   MessageSquareText,
-  Search,
-  ShieldCheck,
   Star,
-  TimerReset,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ComplaintTrackingTimeline } from '@/components/complaint-tracking-timeline';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary, TrackerDetailsSkeleton } from '@/components/loading-skeletons';
-import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -36,10 +33,17 @@ export default function TrackerPage() {
   const [feedback, setFeedback] = useState('');
   const [rating, setRating] = useState(5);
   const [savingRating, setSavingRating] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const complaintIdPattern = /^[A-Z]{2,5}-\d{4,8}-\d{3,}$/;
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setLookupId(complaintId);
   }, [complaintId]);
+
+  useEffect(() => {
+    searchInputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -65,11 +69,12 @@ export default function TrackerPage() {
       } catch (loadError) {
         if (mounted) {
           setComplaint(null);
-          setError(loadError instanceof Error ? loadError.message : 'Unable to load complaint.');
+          setError(loadError instanceof Error ? loadError.message : 'Invalid Complaint ID');
         }
       } finally {
         if (mounted) {
           setLoading(false);
+          setIsSearching(false);
         }
       }
     };
@@ -102,6 +107,14 @@ export default function TrackerPage() {
       return;
     }
 
+    if (!complaintIdPattern.test(value.toUpperCase())) {
+      setError('Invalid Complaint ID');
+      toast.error('Invalid Complaint ID');
+      return;
+    }
+
+    setError('');
+    setIsSearching(true);
     router.replace(`/citizen/tracker?id=${encodeURIComponent(value)}`);
   }
 
@@ -126,158 +139,161 @@ export default function TrackerPage() {
   const showFeedbackSummary = Boolean(complaint?.rating) && !isClosedComplaint;
   const showProofSection = Boolean(complaint?.proof_image || complaint?.proof_text) && !isClosedComplaint;
 
-  return (
-    <DashboardLayout title="Complaint Tracker">
-      <div className="space-y-6">
-        <section className="gov-citizen-panel gov-fade-in rounded-[1.2rem] p-6 sm:p-7">
-          <div className="gov-citizen-band h-1.5 w-full rounded-full" />
-          <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-            <div>
-              <div className="inline-flex rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
-                Live complaint tracking
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-                Search by complaint ID
-              </h2>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-                Open the latest timeline, department updates, proof of work, and feedback status for any complaint linked to your citizen account.
-              </p>
-            </div>
+  function getStatusText(status?: Complaint['status']) {
+    if (!status) return ''
+    if (['submitted', 'received', 'assigned'].includes(status)) return 'Pending'
+    if (status === 'in_progress') return 'In Progress'
+    if (status === 'resolved' || status === 'closed') return 'Resolved'
+    return 'Rejected'
+  }
 
-            <form onSubmit={handleSearch} className="rounded-[1rem] border border-slate-200 bg-white p-5 shadow-[0_16px_32px_rgba(15,23,42,0.05)]">
-              <div className="text-sm font-semibold text-slate-950">Lookup complaint</div>
-              <div className="mt-2 text-sm text-slate-500">
-                Enter complaint ID from your dashboard, email, or earlier tracker view.
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
-                <Input
-                  value={lookupId}
-                  onChange={(event) => setLookupId(event.target.value)}
-                  placeholder="Enter complaint ID"
-                />
-                <Button type="submit" className="rounded-lg">
-                  <Search className="h-4 w-4" />
-                  Search
-                </Button>
-              </div>
-            </form>
-          </div>
+  function getStatusTextClass(status?: Complaint['status']) {
+    if (!status) return 'text-slate-700'
+    if (['submitted', 'received', 'assigned'].includes(status)) return 'text-orange-600'
+    if (status === 'in_progress') return 'text-blue-600'
+    if (status === 'resolved' || status === 'closed') return 'text-green-600'
+    return 'text-rose-600'
+  }
+
+  function formatStatusWithDate(item: Complaint) {
+    return `${getStatusText(item.status)} (Updated on ${new Date(item.updated_at).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })})`
+  }
+
+  return (
+    <DashboardLayout title="Complaint Tracker" compactCitizenHeader>
+      <div className="space-y-6">
+        <section className="space-y-4">
+          <div className="mb-2 text-xs text-gray-500">Home &gt; Complaint Tracker</div>
+          <div className="text-lg font-semibold text-gray-800">Track Complaint</div>
+          <form onSubmit={handleSearch} className="mx-auto flex max-w-xl gap-2">
+            <Input
+              ref={searchInputRef}
+              value={lookupId}
+              onChange={(event) => setLookupId(event.target.value)}
+              placeholder="Enter Complaint ID (e.g., DL-2025-000123)"
+              className="border border-gray-300 rounded-md text-gray-800"
+            />
+            <Button type="submit" className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+              Track
+            </Button>
+          </form>
+          {isSearching ? (
+            <div className="mx-auto flex max-w-xl items-center justify-center gap-2 text-sm text-gray-600">
+              <Spinner label="Fetching complaint details..." size="sm" />
+            </div>
+          ) : null}
+          {error === 'Invalid Complaint ID' ? (
+            <div className="mx-auto max-w-xl text-center text-sm text-rose-600">Invalid Complaint ID</div>
+          ) : null}
         </section>
 
         {loading ? (
-          <div className="space-y-4">
+          <div className="mx-auto max-w-3xl space-y-4">
             <LoadingSummary label="Loading complaint timeline" description="Retrieving the latest status from the portal." />
             <TrackerDetailsSkeleton />
           </div>
         ) : complaint ? (
-          <div className="space-y-6">
-            <Card className="gov-citizen-panel gov-fade-in rounded-[1.1rem]">
-              <CardHeader className="border-b border-slate-200/80 pb-6">
+          <div className="mx-auto max-w-3xl space-y-6">
+            <Card className="rounded-md border border-gray-300 bg-white shadow-none">
+              <CardHeader className="border-b border-gray-300 pb-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <CardTitle className="text-xl text-slate-950">{complaint.title}</CardTitle>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                    <CardTitle className="text-lg text-gray-800">{complaint.title}</CardTitle>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">
                       {complaint.department_message || 'Your complaint is currently being handled through the department workflow.'}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusBadge status={complaint.status} />
-                    <PriorityBadge priority={complaint.priority} />
-                    {showProofSection ? <WorkCompletedBadge /> : null}
+                  <div className={`text-sm font-medium ${getStatusTextClass(complaint.status)}`}>
+                    {formatStatusWithDate(complaint)}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6 pt-6">
-                <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                  <div className="rounded-[1rem] border border-slate-200 bg-slate-50/90 p-5">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Complaint ID</div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">{complaint.complaint_id}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Tracking code</div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">{complaint.tracking_code}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Department</div>
-                        <div className="mt-2 text-sm font-semibold capitalize text-slate-950">{complaint.department.replace('_', ' ')}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Last updated</div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">
-                          {new Date(complaint.updated_at).toLocaleString('en-IN')}
-                        </div>
+              <CardContent className="space-y-4 pt-5">
+                <div className="rounded-md border border-gray-300 bg-white p-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Complaint ID</div>
+                      <div className="mt-2 text-sm font-semibold text-gray-800">{complaint.complaint_id}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Department</div>
+                      <div className="mt-2 text-sm font-semibold capitalize text-gray-800">{complaint.department.replace('_', ' ')}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Status</div>
+                      <div className={`mt-2 text-sm font-semibold ${getStatusTextClass(complaint.status)}`}>
+                        {getStatusText(complaint.status)}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                    <div className="rounded-[1rem] border border-slate-200 bg-white px-4 py-4">
-                      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-slate-400">
-                        <MapPinned className="h-3.5 w-3.5" />
-                        Ward
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-gray-600">Submitted Date</div>
+                      <div className="mt-2 text-sm font-semibold text-gray-800">
+                        {new Date(complaint.created_at).toLocaleString('en-IN')}
                       </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-950">{complaint.ward_name || 'Not assigned'}</div>
-                    </div>
-                    <div className="rounded-[1rem] border border-slate-200 bg-white px-4 py-4">
-                      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-slate-400">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Category
-                      </div>
-                      <div className="mt-2 text-sm font-semibold capitalize text-slate-950">{complaint.category}</div>
-                    </div>
-                    <div className="rounded-[1rem] border border-slate-200 bg-white px-4 py-4">
-                      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-slate-400">
-                        <TimerReset className="h-3.5 w-3.5" />
-                        Risk score
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-950">{Math.round(complaint.risk_score)}</div>
                     </div>
                   </div>
                 </div>
 
                 <ComplaintTrackingTimeline complaint={complaint} />
 
-                <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
                   <div className="space-y-6">
-                    <div className="rounded-[1rem] border border-slate-200 bg-white px-5 py-5">
-                      <div className="text-sm font-semibold text-slate-950">Complaint details</div>
-                      <div className="mt-3 text-sm leading-7 text-slate-700">{complaint.text}</div>
+                    <div className="rounded-md border border-gray-300 bg-white px-4 py-4">
+                      <div className="text-sm font-semibold text-gray-800">Complaint details</div>
+                      <div className="mt-3 text-sm leading-7 text-gray-600">{complaint.text}</div>
                     </div>
 
                     {showProofSection ? (
-                      <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50/80 p-5">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                      <div className="rounded-md border border-gray-300 bg-white p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                           <ImageIcon className="h-4 w-4" />
                           Work completion proof
                         </div>
                         {complaint.proof_text ? (
-                          <div className="mt-3 text-sm leading-6 text-emerald-950">{complaint.proof_text}</div>
+                          <div className="mt-3 text-sm leading-6 text-gray-600">{complaint.proof_text}</div>
+                        ) : null}
+                        {complaint.proof_image ? (
+                          <div className="mt-3">
+                            <a
+                              href={complaint.proof_image.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-[#1d4f91] hover:underline"
+                            >
+                              <Link2 className="h-4 w-4" />
+                              View proof
+                            </a>
+                          </div>
                         ) : null}
                         {complaint.proof_image ? (
                           <img
                             src={complaint.proof_image.url}
                             alt="Work completion proof"
-                            className="mt-4 max-h-80 rounded-[1.25rem] border border-emerald-200 object-cover"
+                            className="mt-4 max-h-80 rounded-md border border-gray-300 object-cover"
                           />
                         ) : null}
                       </div>
                     ) : null}
 
                     {complaint.updates?.length ? (
-                      <div className="rounded-[1rem] border border-slate-200 bg-white p-5">
-                        <div className="text-sm font-semibold text-slate-950">Recent update log</div>
-                        <div className="gov-stagger mt-4 space-y-3">
+                      <div className="rounded-md border border-gray-300 bg-white p-4">
+                        <div className="text-sm font-semibold text-gray-800">Recent update log</div>
+                        <div className="mt-4 space-y-3">
                           {complaint.updates.map((update) => (
-                            <div key={update.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
+                            <div key={update.id} className="rounded-md border border-gray-300 bg-white px-4 py-3">
                               <div className="flex items-center justify-between gap-3">
-                                <StatusBadge status={update.status} />
-                                <div className="text-xs text-slate-500">
+                                <div className={`text-sm font-medium ${getStatusTextClass(update.status)}`}>
+                                  {getStatusText(update.status)}
+                                </div>
+                                <div className="text-xs text-gray-600">
                                   {new Date(update.updated_at).toLocaleString('en-IN')}
                                 </div>
                               </div>
-                              {update.note ? <div className="mt-3 text-sm text-slate-700">{update.note}</div> : null}
+                              {update.note ? <div className="mt-2 text-sm text-gray-600">Officer remarks: {update.note}</div> : null}
                             </div>
                           ))}
                         </div>
@@ -287,19 +303,19 @@ export default function TrackerPage() {
 
                   <div className="space-y-6">
                     {showFeedbackSummary ? (
-                      <div className="rounded-[1rem] border border-sky-200 bg-sky-50/80 p-5">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-sky-900">
+                      <div className="rounded-md border border-gray-300 bg-white p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                           <MessageSquareText className="h-4 w-4" />
                           Your feedback
                         </div>
-                        <div className="mt-3 text-sm font-medium text-sky-950">
+                        <div className="mt-3 text-sm font-medium text-gray-800">
                           Rating: {complaint.rating?.rating}/5
                         </div>
-                        <div className="mt-2 text-sm leading-6 text-sky-950">
+                        <div className="mt-2 text-sm leading-6 text-gray-600">
                           {complaint.rating?.feedback || 'You submitted a rating without extra comments.'}
                         </div>
                         {complaint.rating?.created_at ? (
-                          <div className="mt-3 text-xs text-sky-700">
+                          <div className="mt-3 text-xs text-gray-600">
                             Submitted on {new Date(complaint.rating.created_at).toLocaleString('en-IN')}
                           </div>
                         ) : null}
@@ -307,22 +323,25 @@ export default function TrackerPage() {
                     ) : null}
 
                     {isClosedComplaint ? (
-                      <div className="rounded-[1rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                      <div className="rounded-md border border-gray-300 bg-white px-4 py-4 text-sm text-gray-600">
                         This complaint has been closed by the department. Timeline and status records remain available for reference.
                       </div>
                     ) : null}
 
-                    <div className="rounded-[1rem] border border-slate-200 bg-white p-5">
-                      <div className="text-sm font-semibold text-slate-950">Tracker guidance</div>
-                      <div className="mt-4 space-y-3 text-sm text-slate-600">
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="rounded-md border border-gray-300 bg-white p-4">
+                      <div className="text-sm font-semibold text-gray-800">Tracker guidance</div>
+                      <div className="mt-3 space-y-3 text-sm text-gray-600">
+                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
                           Use the complaint ID search above anytime to reopen this same complaint.
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
                           Department messages and work proof appear here as soon as they are published.
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
                           Once the complaint reaches the resolved stage, you can submit a citizen rating below.
+                        </div>
+                        <div className="rounded-md border border-gray-300 bg-white px-4 py-3">
+                          If unresolved in 7 days, the complaint may move to escalation review.
                         </div>
                       </div>
                     </div>
@@ -332,16 +351,16 @@ export default function TrackerPage() {
             </Card>
 
             {canRateResolution ? (
-              <Card className="gov-citizen-panel gov-fade-in rounded-[1.1rem]">
-                <CardHeader className="border-b border-slate-200/80 pb-6">
+              <Card className="rounded-md border border-gray-300 bg-white shadow-none">
+                <CardHeader className="border-b border-gray-300 pb-5">
                   <CardTitle>
                     {complaint.rating ? 'Update your resolution feedback' : 'Rate the resolution'}
                   </CardTitle>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-gray-600">
                     Review the latest proof and share whether the issue was actually resolved on the ground.
                   </p>
                 </CardHeader>
-                <CardContent className="space-y-4 pt-6">
+                <CardContent className="space-y-4 pt-5">
                   <div className="flex flex-wrap gap-2">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <Button
@@ -349,7 +368,7 @@ export default function TrackerPage() {
                         type="button"
                         variant={rating === value ? 'default' : 'outline'}
                         onClick={() => setRating(value)}
-                        className="rounded-lg"
+                        className="rounded-md"
                       >
                         <Star className="h-4 w-4" />
                         {value}
@@ -361,8 +380,9 @@ export default function TrackerPage() {
                     onChange={(event) => setFeedback(event.target.value)}
                     rows={4}
                     placeholder="Share what was fixed well or what still needs attention"
+                    className="rounded-md border border-gray-300"
                   />
-                  <Button onClick={handleRating} disabled={savingRating} className="rounded-lg">
+                  <Button onClick={handleRating} disabled={savingRating} className="rounded-md bg-green-600 text-white hover:bg-green-700">
                     {savingRating ? <Spinner label="Submitting..." /> : complaint.rating ? 'Update feedback' : 'Submit feedback'}
                   </Button>
                 </CardContent>
@@ -370,15 +390,25 @@ export default function TrackerPage() {
             ) : null}
           </div>
         ) : error ? (
-          <Card className="rounded-[1.7rem]">
-            <CardContent className="py-10 text-center text-sm text-rose-700">{error}</CardContent>
-          </Card>
+          <div className="mx-auto max-w-3xl py-12 text-center">
+            <div className="text-sm text-gray-500">No tracking data available.</div>
+            <div className="mt-2 text-sm text-gray-500">Enter a valid complaint ID to view status updates.</div>
+            <div className="mt-5">
+              <Button asChild className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+                <Link href="/citizen/my-complaints">Go to My Complaints</Link>
+              </Button>
+            </div>
+          </div>
         ) : (
-          <Card className="gov-citizen-panel rounded-[1.8rem]">
-            <CardContent className="py-12 text-center text-sm text-slate-500">
-              No complaints found for tracking right now.
-            </CardContent>
-          </Card>
+          <div className="mx-auto max-w-3xl py-12 text-center">
+            <div className="text-sm text-gray-500">No tracking data available.</div>
+            <div className="mt-2 text-sm text-gray-500">Enter a valid complaint ID to view status updates.</div>
+            <div className="mt-5">
+              <Button asChild className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+                <Link href="/citizen/my-complaints">Go to My Complaints</Link>
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </DashboardLayout>

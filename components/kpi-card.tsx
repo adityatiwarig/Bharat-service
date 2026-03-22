@@ -25,11 +25,11 @@ export function KPICard({
   variant = 'default',
 }: KPICardProps) {
   const variantStyles = {
-    default: 'border-slate-200 bg-white',
-    primary: 'border-sky-200 bg-sky-50/70',
-    success: 'border-emerald-200 bg-emerald-50/70',
-    warning: 'border-amber-200 bg-amber-50/70',
-    danger: 'border-rose-200 bg-rose-50/70',
+    default: 'border-gray-200 bg-white',
+    primary: 'border-gray-200 bg-white',
+    success: 'border-gray-200 bg-white',
+    warning: 'border-gray-200 bg-white',
+    danger: 'border-gray-200 bg-white',
   }
 
   const textVariants = {
@@ -41,18 +41,13 @@ export function KPICard({
   }
 
   return (
-    <Card className={cn('gov-fade-in rounded-[1.5rem] shadow-[0_18px_40px_rgba(15,23,42,0.05)]', variantStyles[variant])}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-slate-600">{title}</CardTitle>
-        {icon ? (
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-            {icon}
-          </div>
-        ) : null}
+    <Card className={cn('rounded-md border shadow-none', variantStyles[variant])}>
+      <CardHeader className="space-y-0 pb-1">
+        <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
-        {subtitle ? <p className="mt-2 text-xs text-slate-500">{subtitle}</p> : null}
+      <CardContent className="pt-0">
+        <div className="text-xl font-semibold text-slate-950">{value}</div>
+        {subtitle ? <p className="mt-1 text-sm text-gray-600">{subtitle}</p> : null}
         {trend ? (
           <div className={cn('mt-3 inline-flex items-center gap-1 text-xs font-semibold', textVariants[variant])}>
             {trend.direction === 'up' ? (
