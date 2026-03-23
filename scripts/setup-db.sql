@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS complaints (
   spam_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
   attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
   proof_image JSONB,
+  proof_images JSONB,
   proof_text TEXT,
   department_message TEXT,
   location_address TEXT,
@@ -127,6 +128,7 @@ ALTER TABLE complaints ADD COLUMN IF NOT EXISTS progress TEXT;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS dept_head_viewed BOOLEAN;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS worker_assigned BOOLEAN;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_image JSONB;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_images JSONB;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_text TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS department department_name;
 ALTER TABLE workers ADD COLUMN IF NOT EXISTS department department_name;
@@ -265,8 +267,7 @@ WITH seeded_users AS (
     ('Saket Field Officer', 'worker.saket@govcrm.demo', 'changeme', 'worker', '9999000006', 'roads'),
     ('Laxmi Nagar Field Officer', 'worker.laxmi@govcrm.demo', 'changeme', 'worker', '9999000007', 'roads'),
     ('Karol Bagh Field Officer', 'worker.karol@govcrm.demo', 'changeme', 'worker', '9999000008', 'roads'),
-    ('Control Center Admin', 'admin@govcrm.demo', 'changeme', 'admin', '9999000004', NULL),
-    ('Central Dept Head', 'leader@govcrm.demo', 'changeme', 'leader', '9999000005', NULL)
+    ('Control Center Admin', 'admin@govcrm.demo', 'changeme', 'admin', '9999000004', NULL)
   ON CONFLICT (email) DO NOTHING
   RETURNING id, email
 )
@@ -280,9 +281,6 @@ JOIN wards
   OR (users.email = 'worker.laxmi@govcrm.demo' AND wards.name = 'Laxmi Nagar')
   OR (users.email = 'worker.karol@govcrm.demo' AND wards.name = 'Karol Bagh')
 ON CONFLICT (user_id) DO NOTHING;
-UPDATE users
-SET department = NULL
-WHERE email = 'leader@govcrm.demo';
 
 INSERT INTO users (name, email, password, role, phone, department)
 VALUES
@@ -301,6 +299,7 @@ WITH department_seed AS (
     ('electricity', 'Electricity'),
     ('water', 'Water'),
     ('sanitation', 'Sanitation'),
+    ('roads', 'Roads'),
     ('fire', 'Fire'),
     ('drainage', 'Drainage'),
     ('garbage', 'Garbage'),
@@ -339,6 +338,7 @@ WITH department_seed AS (
     ('electricity'),
     ('water'),
     ('sanitation'),
+    ('roads'),
     ('fire'),
     ('drainage'),
     ('garbage'),

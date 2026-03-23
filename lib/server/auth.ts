@@ -68,6 +68,12 @@ function mapUser(row: UserRow): User {
   };
 }
 
+function assertLeaderDepartment(user: User) {
+  if (user.role === 'leader' && !user.department) {
+    throw new AuthError('This department head account has no department assigned. Use a department-specific head account.', 403);
+  }
+}
+
 export function toSessionUser(user: User): UserSession {
   return {
     id: user.id,
@@ -90,7 +96,7 @@ export async function getUserById(id: string) {
         u.password,
         u.role,
         u.phone,
-        w.ward_id,
+        w.ward_id AS ward_id,
         COALESCE(w.department, u.department) AS department,
         u.created_at,
         u.updated_at
@@ -115,7 +121,7 @@ export async function getUserByEmail(email: string) {
         u.password,
         u.role,
         u.phone,
-        w.ward_id,
+        w.ward_id AS ward_id,
         COALESCE(w.department, u.department) AS department,
         u.created_at,
         u.updated_at
@@ -179,6 +185,7 @@ export async function loginUser(input: { email: string; password: string }) {
     throw new AuthError('Invalid email or password.', 401);
   }
 
+  assertLeaderDepartment(user);
   return user;
 }
 
@@ -203,6 +210,10 @@ export async function requireUser(allowedRoles?: UserRole[]) {
     redirect(`/${user.role}`);
   }
 
+  if (user.role === 'leader' && !user.department) {
+    redirect('/worker-login');
+  }
+
   return user;
 }
 
@@ -217,5 +228,6 @@ export async function requireApiUser(allowedRoles?: UserRole[]) {
     throw new AuthError('You are not allowed to perform this action.', 403);
   }
 
+  assertLeaderDepartment(user);
   return user;
 }

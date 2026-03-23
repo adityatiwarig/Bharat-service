@@ -105,6 +105,7 @@ export interface ComplaintTimelineData {
 export interface ComplaintProofData {
   complaint_id: string;
   proof_image?: ComplaintAttachment | null;
+  proof_images?: ComplaintAttachment[];
   proof_text?: string | null;
   resolved_at?: string | null;
   resolution_notes?: string | null;
@@ -172,6 +173,7 @@ export interface Complaint {
   longitude?: number | null;
   attachments?: ComplaintAttachment[];
   proof_image?: ComplaintAttachment | null;
+  proof_images?: ComplaintAttachment[];
   proof_text?: string | null;
   assigned_worker_id?: string | null;
   assigned_to?: string | null;

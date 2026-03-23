@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, PlayCircle, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, CameraOff, CheckCircle2, PlayCircle, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
@@ -10,16 +10,61 @@ import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/sta
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  fetchComplaints,
-  submitComplaintResolutionProof,
-  updateComplaintStatus,
-} from '@/lib/client/complaints';
-import type { Complaint } from '@/lib/types';
+import { fetchComplaints, submitComplaintResolutionProof, updateComplaintStatus } from '@/lib/client/complaints';
+import type { Complaint, ComplaintAttachment } from '@/lib/types';
+
+type CameraFacingMode = 'environment' | 'user';
+
+const MAX_PROOF_IMAGES = 6;
+
+function getSavedProofImages(complaint: Complaint | undefined) {
+  if (!complaint) {
+    return [] as ComplaintAttachment[];
+  }
+
+  if (complaint.proof_images?.length) {
+    return complaint.proof_images;
+  }
+
+  return complaint.proof_image ? [complaint.proof_image] : [];
+}
+
+function ProofThumbnail({
+  file,
+  active,
+  onSelect,
+}: {
+  file: File;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [file]);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`overflow-hidden rounded-[1rem] border text-left ${active ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white'}`}
+    >
+      {url ? <img src={url} alt={file.name} className="h-32 w-full object-cover" /> : null}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-slate-600">
+        <span className="truncate">{file.name}</span>
+      </div>
+    </button>
+  );
+}
 
 export default function WorkerUpdatesPage() {
   const [loading, setLoading] = useState(true);
@@ -28,10 +73,24 @@ export default function WorkerUpdatesPage() {
   const [startNote, setStartNote] = useState('');
   const [proofText, setProofText] = useState('');
   const [completionNote, setCompletionNote] = useState('');
-  const [proofImage, setProofImage] = useState<File | null>(null);
+  const [proofImages, setProofImages] = useState<File[]>([]);
+  const [activeProofIndex, setActiveProofIndex] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [submittingStart, setSubmittingStart] = useState(false);
   const [submittingComplete, setSubmittingComplete] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('environment');
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rearCaptureInputRef = useRef<HTMLInputElement | null>(null);
+  const frontCaptureInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+
+  const supportsLiveCamera = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
   async function loadComplaints(nextSelectedId?: string) {
     setLoading(true);
@@ -51,20 +110,6 @@ export default function WorkerUpdatesPage() {
     void loadComplaints();
   }, []);
 
-  useEffect(() => {
-    if (!proofImage) {
-      setPreviewUrl('');
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(proofImage);
-    setPreviewUrl(objectUrl);
-
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [proofImage]);
-
   const selectedComplaint = useMemo(
     () => complaints.find((item) => item.id === selectedId),
     [complaints, selectedId],
@@ -72,58 +117,251 @@ export default function WorkerUpdatesPage() {
 
   const canStartWork = selectedComplaint?.status === 'assigned';
   const canCompleteWork = selectedComplaint?.status === 'in_progress';
+  const activeProofImage = proofImages[activeProofIndex] || null;
+  const savedProofImages = useMemo(() => getSavedProofImages(selectedComplaint), [selectedComplaint]);
+
+  function stopCameraStream() {
+    const stream = cameraStreamRef.current;
+
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+
+    cameraStreamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOpen(false);
+    setCameraReady(false);
+    setCameraError('');
+  }
+
+  function resetProofSelection() {
+    setProofImages([]);
+    setActiveProofIndex(0);
+    setPreviewUrl('');
+  }
+
+  useEffect(() => {
+    resetProofSelection();
+    stopCameraStream();
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!activeProofImage) {
+      setPreviewUrl('');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(activeProofImage);
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [activeProofImage]);
+
+  useEffect(() => {
+    if (!cameraOpen || !videoRef.current || !cameraStreamRef.current) {
+      return;
+    }
+
+    const video = videoRef.current;
+    video.srcObject = cameraStreamRef.current;
+    video.muted = true;
+    video.playsInline = true;
+    void video.play().catch(() => {
+      setCameraError('Unable to start the live camera preview on this device.');
+    });
+  }, [cameraOpen]);
+
+  useEffect(() => {
+    if (!proofImages.length) {
+      setActiveProofIndex(0);
+      return;
+    }
+
+    if (activeProofIndex >= proofImages.length) {
+      setActiveProofIndex(proofImages.length - 1);
+    }
+  }, [activeProofIndex, proofImages]);
+
+  useEffect(() => {
+    if (!canCompleteWork) {
+      resetProofSelection();
+      stopCameraStream();
+    }
+  }, [canCompleteWork]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, []);
+
+  async function openLiveCamera(facingMode: CameraFacingMode) {
+    if (!supportsLiveCamera) {
+      setCameraError('Live camera access is not available in this browser. Please use the mobile camera or upload option.');
+      return;
+    }
+
+    stopCameraStream();
+    setCameraFacingMode(facingMode);
+    setCameraError('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facingMode },
+        },
+        audio: false,
+      });
+
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+    } catch (error) {
+      setCameraError('Camera permission was not granted. Please allow camera access or use the upload option.');
+      console.error('Unable to open worker camera', error);
+    }
+  }
+
+  function appendProofFiles(files: File[]) {
+    if (!files.length) {
+      return;
+    }
+
+    setProofImages((current) => {
+      const deduped = files.filter((file) => !current.some(
+        (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
+      ));
+      const next = [...current, ...deduped].slice(0, MAX_PROOF_IMAGES);
+
+      if (next.length === current.length) {
+        toast.error(`A maximum of ${MAX_PROOF_IMAGES} photographs may be attached.`);
+        return current;
+      }
+
+      setActiveProofIndex(next.length - 1);
+      toast.success('The selected photograph has been attached.');
+      return next;
+    });
+  }
+
+  function handleProofInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    appendProofFiles(Array.from(event.target.files || []));
+    event.target.value = '';
+  }
+
+  function removeProofImage(index: number) {
+    setProofImages((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setActiveProofIndex((current) => Math.max(0, current > index ? current - 1 : current));
+  }
+
+  function captureLivePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || !cameraReady) {
+      setCameraError('The live camera is not ready yet. Please wait and try again.');
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      setCameraError('Unable to process the current camera frame.');
+      return;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('Unable to capture the photograph. Please try again.');
+        return;
+      }
+
+      const file = new File([blob], `completion-proof-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      appendProofFiles([file]);
+    }, 'image/jpeg', 0.92);
+  }
 
   async function handleStartWork() {
-    if (!selectedComplaint || !canStartWork) return;
+    if (!selectedComplaint || !canStartWork) {
+      return;
+    }
 
     setSubmittingStart(true);
     try {
       await updateComplaintStatus(selectedComplaint.id, { status: 'in_progress', note: startNote });
-      toast.success('Work started successfully.');
+      toast.success('The work order has been moved to In Progress.');
       setStartNote('');
       await loadComplaints(selectedComplaint.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to start work.');
+      toast.error(error instanceof Error ? error.message : 'Unable to start the work order.');
     } finally {
       setSubmittingStart(false);
     }
   }
 
-  async function handleCompleteWork(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedComplaint || !canCompleteWork || !proofImage) return;
+  async function submitCompletionRecord() {
+    if (!selectedComplaint || !canCompleteWork || !proofImages.length || submittingComplete) {
+      return;
+    }
+
+    if (!proofText.trim()) {
+      toast.error('Please enter the completion description before submission.');
+      return;
+    }
 
     setSubmittingComplete(true);
     try {
       await submitComplaintResolutionProof(selectedComplaint.id, {
-        proof_text: proofText,
-        note: completionNote,
-        proof_image: proofImage,
+        proof_text: proofText.trim(),
+        note: completionNote.trim() || undefined,
+        proof_images: proofImages,
       });
-      toast.success('Work proof submitted and complaint resolved.');
+      toast.success('The completion record has been submitted successfully.');
       setProofText('');
       setCompletionNote('');
-      setProofImage(null);
+      resetProofSelection();
+      stopCameraStream();
       await loadComplaints(selectedComplaint.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to complete work.');
+      toast.error(error instanceof Error ? error.message : 'Unable to submit the completion record.');
     } finally {
       setSubmittingComplete(false);
     }
   }
 
+  async function handleCompleteWork(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitCompletionRecord();
+  }
+
   return (
     <DashboardLayout title="Submit Update">
       <div className="mx-auto max-w-6xl space-y-6">
-        {loading ? <LoadingSummary label="Loading assigned complaints" description="Preparing the worker execution queue." /> : null}
+        {loading ? <LoadingSummary label="Loading assigned complaints" description="Preparing the worker action queue." /> : null}
 
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+          <Card className="rounded-[1.8rem] border-slate-200/80">
             <CardHeader>
-              <CardTitle>Assigned complaints</CardTitle>
-              <CardDescription>
-                Open one complaint to start work or submit completion proof.
-              </CardDescription>
+              <CardTitle>Assigned Complaints</CardTitle>
+              <CardDescription>Open a complaint assigned to this worker account to begin or complete field action.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {loading ? <StatListSkeleton count={4} /> : complaints.length ? complaints.map((complaint) => (
@@ -147,25 +385,23 @@ export default function WorkerUpdatesPage() {
                 </button>
               )) : (
                 <div className="rounded-[1.4rem] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-sm text-slate-500">
-                  No assigned complaints are waiting for action right now.
+                  No assigned complaints are currently awaiting action.
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
+          <Card className="rounded-[1.8rem] border-slate-200/80">
             <CardHeader>
-              <CardTitle>Work execution</CardTitle>
-              <CardDescription>
-                Start the field task first, then complete it with proof image and work description.
-              </CardDescription>
+              <CardTitle>Field Action</CardTitle>
+              <CardDescription>Start the work order first, then submit the completion record with photographs and notes.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FieldGroup>
                 <Field>
-                  <FieldLabel>Select complaint</FieldLabel>
+                  <FieldLabel>Select Complaint</FieldLabel>
                   <Select value={selectedId} onValueChange={setSelectedId}>
-                    <SelectTrigger><SelectValue placeholder="Choose assigned complaint" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Select assigned complaint" /></SelectTrigger>
                     <SelectContent>
                       {complaints.map((complaint) => (
                         <SelectItem key={complaint.id} value={complaint.id}>
@@ -188,46 +424,40 @@ export default function WorkerUpdatesPage() {
                       <div className="flex flex-wrap gap-2">
                         <StatusBadge status={selectedComplaint.status} />
                         <PriorityBadge priority={selectedComplaint.priority} />
-                        {selectedComplaint.proof_image || selectedComplaint.proof_text ? <WorkCompletedBadge /> : null}
                       </div>
                     </div>
                     <div className="mt-3 text-sm leading-6 text-slate-600">{selectedComplaint.text}</div>
                   </div>
 
                   <div className="rounded-[1.4rem] border border-slate-200 bg-white p-4">
-                    <div className="text-sm font-semibold text-slate-900">Start work</div>
-                    <div className="mt-1 text-sm text-slate-500">Move the complaint from assigned to in progress.</div>
+                    <div className="text-sm font-semibold text-slate-900">Start Work Order</div>
+                    <div className="mt-1 text-sm text-slate-500">Move the complaint from Assigned to In Progress.</div>
                     <Textarea
                       className="mt-4"
                       value={startNote}
                       onChange={(event) => setStartNote(event.target.value)}
                       rows={3}
-                      placeholder="Optional note about the visit start, route, or execution plan."
+                      placeholder="Enter an optional operational note."
                     />
-                    <Button
-                      type="button"
-                      className="mt-4 rounded-full"
-                      disabled={!canStartWork || submittingStart}
-                      onClick={handleStartWork}
-                    >
+                    <Button type="button" className="mt-4 rounded-full" disabled={!canStartWork || submittingStart} onClick={handleStartWork}>
                       {submittingStart ? <Spinner label="Starting..." /> : <><PlayCircle className="h-4 w-4" /> Start Work</>}
                     </Button>
                   </div>
 
                   <form onSubmit={handleCompleteWork} className="space-y-5 rounded-[1.4rem] border border-slate-200 bg-white p-4">
                     <div>
-                      <div className="text-sm font-semibold text-slate-900">Complete work</div>
-                      <div className="mt-1 text-sm text-slate-500">Submit proof image and completion details to resolve the complaint.</div>
+                      <div className="text-sm font-semibold text-slate-900">Submit Completion Record</div>
+                      <div className="mt-1 text-sm text-slate-500">Photographs are attached automatically after capture or upload confirmation.</div>
                     </div>
 
                     <FieldGroup>
                       <Field>
-                        <FieldLabel>Proof description</FieldLabel>
+                        <FieldLabel>Completion Description</FieldLabel>
                         <Textarea
                           value={proofText}
                           onChange={(event) => setProofText(event.target.value)}
                           rows={4}
-                          placeholder="Describe exactly what work was completed and what the citizen should know."
+                          placeholder="Describe the work completed at the site."
                           disabled={!canCompleteWork}
                           required
                         />
@@ -236,12 +466,12 @@ export default function WorkerUpdatesPage() {
 
                     <FieldGroup>
                       <Field>
-                        <FieldLabel>Completion note</FieldLabel>
+                        <FieldLabel>Internal Note</FieldLabel>
                         <Textarea
                           value={completionNote}
                           onChange={(event) => setCompletionNote(event.target.value)}
                           rows={3}
-                          placeholder="Optional short note for the internal update timeline."
+                          placeholder="Enter an optional internal note."
                           disabled={!canCompleteWork}
                         />
                       </Field>
@@ -249,50 +479,163 @@ export default function WorkerUpdatesPage() {
 
                     <FieldGroup>
                       <Field>
-                        <FieldLabel>Proof image</FieldLabel>
-                        <Input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          disabled={!canCompleteWork}
-                          onChange={(event) => setProofImage(event.target.files?.[0] || null)}
-                          required
-                        />
+                        <FieldLabel>Completion Photographs</FieldLabel>
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap gap-3">
+                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => void openLiveCamera('environment')}>
+                              <Camera className="h-4 w-4" />
+                              Open Rear Camera
+                            </Button>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => void openLiveCamera('user')}>
+                              <Camera className="h-4 w-4" />
+                              Open Front Camera
+                            </Button>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => rearCaptureInputRef.current?.click()}>
+                              <Upload className="h-4 w-4" />
+                              Use Mobile Rear Camera
+                            </Button>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => frontCaptureInputRef.current?.click()}>
+                              <Upload className="h-4 w-4" />
+                              Use Mobile Front Camera
+                            </Button>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => galleryInputRef.current?.click()}>
+                              <Upload className="h-4 w-4" />
+                              Upload Photographs
+                            </Button>
+                          </div>
+
+                          <input ref={rearCaptureInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleProofInputChange} />
+                          <input ref={frontCaptureInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleProofInputChange} />
+                          <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleProofInputChange} />
+
+                          <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                            On mobile devices, the photograph is attached automatically after it is confirmed in the device camera screen. Use Remove if the selected photograph is not correct.
+                          </div>
+
+                          {cameraOpen ? (
+                            <div className="space-y-4 rounded-[1.35rem] border border-sky-200 bg-sky-50/70 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-900">Live Camera</div>
+                                  <div className="mt-1 text-sm text-slate-500">
+                                    {cameraFacingMode === 'environment' ? 'Rear camera view is active.' : 'Front camera view is active.'}
+                                  </div>
+                                </div>
+                                <Button type="button" variant="ghost" onClick={stopCameraStream}>
+                                  <CameraOff className="h-4 w-4" />
+                                  Close Camera
+                                </Button>
+                              </div>
+
+                              <div className="flex flex-wrap gap-3">
+                                <Button type="button" variant="outline" onClick={() => void openLiveCamera('environment')}>Rear Camera</Button>
+                                <Button type="button" variant="outline" onClick={() => void openLiveCamera('user')}>Front Camera</Button>
+                              </div>
+
+                              <div className="overflow-hidden rounded-[1.2rem] border border-slate-200 bg-slate-950">
+                                <video
+                                  ref={videoRef}
+                                  className="max-h-[26rem] w-full object-cover"
+                                  autoPlay
+                                  muted
+                                  playsInline
+                                  onLoadedMetadata={() => setCameraReady(true)}
+                                />
+                              </div>
+
+                              <div className="flex flex-wrap gap-3">
+                                <Button type="button" disabled={!cameraReady || proofImages.length >= MAX_PROOF_IMAGES} onClick={captureLivePhoto}>
+                                  <Camera className="h-4 w-4" />
+                                  Capture Photograph
+                                </Button>
+                                <Button type="button" variant="outline" onClick={stopCameraStream}>Close</Button>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {cameraError ? (
+                            <div className="rounded-[1.2rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                              {cameraError}
+                            </div>
+                          ) : null}
+
+                          <canvas ref={canvasRef} className="hidden" />
+
+                          {proofImages.length ? (
+                            <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                              {proofImages.length} photograph{proofImages.length > 1 ? 's' : ''} selected for submission.
+                            </div>
+                          ) : null}
+
+                          {proofImages.length ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {proofImages.map((file, index) => (
+                                <ProofThumbnail
+                                  key={`${file.name}-${file.lastModified}-${index}`}
+                                  file={file}
+                                  active={index === activeProofIndex}
+                                  onSelect={() => setActiveProofIndex(index)}
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </Field>
                     </FieldGroup>
 
                     {previewUrl ? (
                       <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-4">
-                        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                          <Upload className="h-4 w-4" />
-                          Image preview
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-slate-900">Selected Photograph</div>
+                          <Button type="button" variant="outline" size="sm" disabled={!activeProofImage} onClick={() => removeProofImage(activeProofIndex)}>
+                            <Trash2 className="h-4 w-4" />
+                            Remove
+                          </Button>
                         </div>
-                        <img src={previewUrl} alt="Proof preview" className="max-h-72 rounded-2xl object-cover" />
+                        <img src={previewUrl} alt="Selected completion proof" className="max-h-80 rounded-2xl object-cover" />
                       </div>
                     ) : null}
 
-                    {(selectedComplaint.proof_image || selectedComplaint.proof_text) ? (
+                    {(savedProofImages.length || selectedComplaint.proof_text) ? (
                       <div className="rounded-[1.35rem] border border-emerald-200 bg-emerald-50 p-4">
                         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-900">
                           <CheckCircle2 className="h-4 w-4" />
-                          Work already completed
+                          Saved Completion Record
                         </div>
                         {selectedComplaint.proof_text ? <div className="text-sm text-emerald-900">{selectedComplaint.proof_text}</div> : null}
-                        {selectedComplaint.proof_image ? (
-                          <img src={selectedComplaint.proof_image.url} alt="Completed work proof" className="mt-3 max-h-72 rounded-2xl object-cover" />
+                        {savedProofImages.length ? (
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            {savedProofImages.map((image) => (
+                              <a
+                                key={image.id}
+                                href={image.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="overflow-hidden rounded-[1rem] border border-emerald-200 bg-white"
+                              >
+                                <img src={image.url} alt={image.name || 'Saved completion proof'} className="h-40 w-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
 
-                    <Button type="submit" disabled={!canCompleteWork || !proofImage || !proofText.trim() || submittingComplete} className="rounded-full">
-                      {submittingComplete ? <Spinner label="Submitting proof..." /> : <><CheckCircle2 className="h-4 w-4" /> Complete Work</>}
+                    <Button
+                      type="submit"
+                      disabled={!canCompleteWork || !proofImages.length || !proofText.trim() || submittingComplete}
+                      className="rounded-full"
+                    >
+                      {submittingComplete ? <Spinner label="Submitting..." /> : <><CheckCircle2 className="h-4 w-4" /> Submit Completion Record</>}
                     </Button>
                   </form>
                 </>
               ) : (
                 <div className="rounded-[1.4rem] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-sm text-slate-500">
-                  Select one assigned complaint from the left to start or complete work.
+                  Select an assigned complaint from the left panel to continue.
                 </div>
               )}
+
               {loading ? <StatListSkeleton count={3} className="mt-5" /> : null}
             </CardContent>
           </Card>
@@ -301,4 +644,3 @@ export default function WorkerUpdatesPage() {
     </DashboardLayout>
   );
 }
-

@@ -4,12 +4,26 @@ import { query } from '@/lib/server/db';
 import type { ComplaintTrendSummary, User } from '@/lib/types';
 
 function getDepartmentScope(user?: User) {
-  const hasDepartmentScope = user?.role === 'leader' && user.department;
+  if (user?.role !== 'leader') {
+    return {
+      whereClause: '',
+      complaintAliasWhereClause: '',
+      params: [],
+    };
+  }
+
+  if (!user.department) {
+    return {
+      whereClause: 'WHERE 1 = 0',
+      complaintAliasWhereClause: 'WHERE 1 = 0',
+      params: [],
+    };
+  }
 
   return {
-    whereClause: hasDepartmentScope ? 'WHERE department = $1' : '',
-    complaintAliasWhereClause: hasDepartmentScope ? 'WHERE c.department = $1' : '',
-    params: hasDepartmentScope ? [user.department] : [],
+    whereClause: 'WHERE department = $1',
+    complaintAliasWhereClause: 'WHERE c.department = $1',
+    params: [user.department],
   };
 }
 

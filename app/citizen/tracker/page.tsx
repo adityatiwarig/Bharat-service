@@ -467,9 +467,14 @@ function buildComplaintReportPdf({
     formatTrackerDateTime(complaint.resolved_at || tracker.timeline.find((step) => step.key === 'proof_uploaded')?.timestamp || null),
   );
   addDetailRow('Evidence Status', tracker.proofSubmitted ? 'Evidence available in complaint record' : 'Pending action');
-  if (complaint.proof_image?.url) {
+  const proofImageLinks = complaint.proof_images?.length
+    ? complaint.proof_images.map((image) => image.url)
+    : complaint.proof_image?.url
+      ? [complaint.proof_image.url]
+      : [];
+  if (proofImageLinks.length) {
     addParagraphBlock(
-      `Evidence File Reference: ${complaint.proof_image.url}\nOpen the complaint tracker portal for image preview and verification.`,
+      `Evidence File Reference: ${proofImageLinks.join(', ')}\nOpen the complaint tracker portal for image preview and verification.`,
     );
   }
 
@@ -688,6 +693,11 @@ function handleExportReport() {
     complaint?.resolved_at ||
     tracker?.timeline.find((step) => step.key === 'proof_uploaded')?.timestamp ||
     null;
+  const proofImages = complaint?.proof_images?.length
+    ? complaint.proof_images
+    : complaint?.proof_image
+      ? [complaint.proof_image]
+      : [];
   const canRateResolution = complaint?.status === 'resolved';
   const updateCount = complaint?.updates?.length || 0;
 
@@ -879,23 +889,23 @@ function handleExportReport() {
                           </div>
                         </div>
 
-                        {complaint.proof_image ? (
-                          <div className="grid grid-cols-1 gap-3">
-                            <div className="border border-slate-200 bg-white p-2">
-                              <img
-                                src={complaint.proof_image.url}
-                                alt="Work completion evidence"
-                                className="max-h-72 w-full object-cover"
-                              />
-                            </div>
-                            <a
-                              href={complaint.proof_image.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sm font-medium text-[#0b3c5d] hover:underline"
-                            >
-                              View uploaded evidence
-                            </a>
+                        {proofImages.length ? (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {proofImages.map((image, index) => (
+                              <a
+                                key={image.id || `${image.url}-${index}`}
+                                href={image.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="border border-slate-200 bg-white p-2"
+                              >
+                                <img
+                                  src={image.url}
+                                  alt={`Work completion evidence ${index + 1}`}
+                                  className="max-h-72 w-full object-cover"
+                                />
+                              </a>
+                            ))}
                           </div>
                         ) : null}
                       </>

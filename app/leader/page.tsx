@@ -54,6 +54,17 @@ function formatPriorityFilterLabel(value: LeaderPriorityFilter) {
   return formatLabel(value)
 }
 
+function formatWorkerOptionLabel(worker: AssignableWorker) {
+  const primaryLabel = worker.user_name || worker.user_email || worker.id
+  const scopeLabel = `${formatLabel(worker.department)} / Ward ${worker.ward_id}`
+
+  if (worker.user_email && worker.user_email !== primaryLabel) {
+    return `${primaryLabel} - ${scopeLabel} - ${worker.user_email}`
+  }
+
+  return `${primaryLabel} - ${scopeLabel}`
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return 'Not available'
@@ -140,6 +151,11 @@ export default function LeaderDashboardPage() {
 
   const activeComplaint = selectedComplaint?.id === selectedId ? selectedComplaint : selectedSummary
   const activeComplaintId = activeComplaint?.id || ''
+  const activeProofImages = activeComplaint?.proof_images?.length
+    ? activeComplaint.proof_images
+    : activeComplaint?.proof_image
+      ? [activeComplaint.proof_image]
+      : []
   const canAssignWorker = Boolean(activeComplaint?.dept_head_viewed && selectedWorkerId && activeComplaint?.status !== 'closed')
   const canCloseComplaint = activeComplaint?.status === 'resolved' && Boolean(activeComplaint?.rating)
   const canReopenComplaint = activeComplaint?.status === 'resolved' || activeComplaint?.status === 'closed'
@@ -151,6 +167,24 @@ export default function LeaderDashboardPage() {
       return { ...current, [nextComplaint.id]: cached ? { ...cached, ...nextComplaint } : nextComplaint }
     })
     setSelectedComplaint((current) => current?.id === nextComplaint.id ? { ...current, ...nextComplaint } : current)
+  }
+
+  async function loadAssignableWorkers(complaintId: string) {
+    if (!complaintId) {
+      setWorkers([])
+      setSelectedWorkerId('')
+      return
+    }
+
+    try {
+      const result = await fetchAssignableWorkers(complaintId)
+      setWorkers(result)
+      setSelectedWorkerId((current) => current && result.some((worker) => worker.id === current) ? current : result[0]?.id || '')
+    } catch (error) {
+      setWorkers([])
+      setSelectedWorkerId('')
+      toast.error(error instanceof Error ? error.message : 'Unable to load worker options.')
+    }
   }
 
   async function loadComplaints(nextSelectedId?: string) {
@@ -209,7 +243,7 @@ export default function LeaderDashboardPage() {
   async function refreshSelection(nextSelectedId?: string) {
     const targetId = await loadComplaints(nextSelectedId || selectedId)
     if (targetId) {
-      await loadComplaintDetails(targetId)
+      await loadComplaintDetails(targetId, true)
     }
   }
 
@@ -269,17 +303,8 @@ export default function LeaderDashboardPage() {
       return
     }
 
-    fetchAssignableWorkers(activeComplaintId)
-      .then((result) => {
-        setWorkers(result)
-        setSelectedWorkerId((current) => current && result.some((worker) => worker.id === current) ? current : result[0]?.id || '')
-      })
-      .catch((error) => {
-        setWorkers([])
-        setSelectedWorkerId('')
-        toast.error(error instanceof Error ? error.message : 'Unable to load worker options.')
-      })
-  }, [activeComplaintId])
+    void loadAssignableWorkers(activeComplaintId)
+  }, [activeComplaintId, activeComplaint?.dept_head_viewed, activeComplaint?.department, activeComplaint?.ward_id])
 
   function rememberComplaintInteraction(complaintId: string) {
     setSeenComplaintIds((current) => {
@@ -311,10 +336,15 @@ export default function LeaderDashboardPage() {
     setWorking(true)
     try {
       const updatedComplaint = await markComplaintViewed(activeComplaint.id)
-      mergeComplaintState(updatedComplaint)
+      mergeComplaintState({
+        ...activeComplaint,
+        ...updatedComplaint,
+        dept_head_viewed: true,
+      })
       rememberComplaintInteraction(activeComplaint.id)
+      await loadAssignableWorkers(activeComplaint.id)
+      await refreshSelection(activeComplaint.id)
       toast.success('Complaint marked as viewed.')
-      void loadComplaintDetails(activeComplaint.id, true)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to mark complaint as viewed.')
     } finally {
@@ -334,8 +364,8 @@ export default function LeaderDashboardPage() {
     try {
       const updatedComplaint = await assignComplaintWorker(activeComplaint.id, selectedWorkerId)
       mergeComplaintState(updatedComplaint)
+      await refreshSelection(activeComplaint.id)
       toast.success('Worker assigned successfully.')
-      void loadComplaintDetails(activeComplaint.id, true)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to assign worker.')
     } finally {
@@ -670,7 +700,7 @@ export default function LeaderDashboardPage() {
                     </div>
                   </section>
 
-                  {activeComplaint.proof_image || activeComplaint.proof_text ? (
+                  {activeProofImages.length || activeComplaint.proof_text ? (
                     <section className="rounded-[1.4rem] border border-[#a7d7c5] bg-[#f1fbf5] p-5 shadow-sm">
                       <div className="flex items-center gap-2 text-sm font-semibold text-[#166534]">
                         <ImageIcon className="h-4 w-4" />
@@ -679,8 +709,17 @@ export default function LeaderDashboardPage() {
                       {activeComplaint.proof_text ? (
                         <div className="mt-3 text-sm leading-6 text-[#14532d]">{activeComplaint.proof_text}</div>
                       ) : null}
-                      {activeComplaint.proof_image ? (
-                        <img src={activeComplaint.proof_image.url} alt="Worker proof" className="mt-4 max-h-80 rounded-[1.25rem] border border-[#bfe3d2] object-cover" />
+                      {activeProofImages.length ? (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          {activeProofImages.map((image) => (
+                            <img
+                              key={image.id}
+                              src={image.url}
+                              alt="Worker proof"
+                              className="max-h-80 rounded-[1.25rem] border border-[#bfe3d2] object-cover"
+                            />
+                          ))}
+                        </div>
                       ) : null}
                     </section>
                   ) : null}
@@ -740,17 +779,17 @@ export default function LeaderDashboardPage() {
                               <FieldLabel>Assignable Workers</FieldLabel>
                               <Select value={selectedWorkerId} onValueChange={setSelectedWorkerId}>
                                 <SelectTrigger className="h-12 rounded-2xl border-[#cfd8e3] bg-[#fbfdff]">
-                                  <SelectValue placeholder={workers.length ? 'Select worker' : 'No matching worker found'} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {workers.map((worker) => (
-                                    <SelectItem key={worker.id} value={worker.id}>
-                                      {worker.user_name || worker.user_email || worker.id}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </Field>
+                                <SelectValue placeholder={workers.length ? 'Select worker' : 'No matching worker found'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {workers.map((worker) => (
+                                  <SelectItem key={worker.id} value={worker.id}>
+                                      {formatWorkerOptionLabel(worker)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
                           </FieldGroup>
                         </div>
 

@@ -45,3 +45,11 @@ export async function saveAttachments(files: File[], complaintId: string) {
 export async function saveProofImage(file: File, complaintId: string) {
   return persistUpload(file, `${complaintId}-proof`);
 }
+
+export async function saveProofImages(files: File[], complaintId: string) {
+  if (!files.length) {
+    return [] as ComplaintAttachment[];
+  }
+
+  return Promise.all(files.map((file) => persistUpload(file, `${complaintId}-proof`)));
+}

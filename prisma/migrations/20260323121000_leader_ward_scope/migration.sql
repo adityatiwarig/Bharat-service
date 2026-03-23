@@ -1,0 +1,3 @@
+-- Deprecated migration kept as a no-op.
+-- Department heads are department-only.
+-- Worker accounts remain department plus ward scoped.

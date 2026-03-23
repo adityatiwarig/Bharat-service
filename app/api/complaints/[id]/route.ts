@@ -66,6 +66,9 @@ export async function PATCH(
       const proof_text = String(formData.get('proof_text') || '').trim() || undefined;
       const file = formData.get('proof_image');
       const proof_image = file instanceof File && file.size > 0 ? file : undefined;
+      const proof_images = formData
+        .getAll('proof_images')
+        .filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
       if (!status) {
         return NextResponse.json({ error: 'Status is required.' }, { status: 400 });
@@ -76,6 +79,7 @@ export async function PATCH(
         note,
         proof_text,
         proof_image,
+        proof_images,
       });
 
       return NextResponse.json({ complaint });

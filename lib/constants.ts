@@ -8,6 +8,25 @@ export const DELHI_WARDS: Ward[] = [
   { id: 5, name: 'Karol Bagh', city: 'Delhi' },
 ];
 
+export function getWardLoginSlug(wardName: string) {
+  const normalized = wardName.trim().toLowerCase();
+
+  if (normalized === 'laxmi nagar') {
+    return 'laxmi';
+  }
+
+  if (normalized === 'karol bagh') {
+    return 'karol';
+  }
+
+  return normalized.split(/\s+/)[0] || normalized;
+}
+
+export const DELHI_WARD_LOGIN_OPTIONS = DELHI_WARDS.map((ward) => ({
+  ...ward,
+  slug: getWardLoginSlug(ward.name),
+}));
+
 export const COMPLAINT_CATEGORIES: Array<{ value: ComplaintCategory; label: string }> = [
   { value: 'pothole', label: 'Road Damage / Pothole' },
   { value: 'streetlight', label: 'Streetlight Issue' },

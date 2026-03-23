@@ -44,8 +44,20 @@ export default function WorkerDashboardPage() {
             <div>
               <h2 className="text-3xl font-semibold text-slate-950">Welcome, {session?.name}</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                Your queue is auto-assigned by ward. Move cases from assigned to in progress to resolved, and keep citizens updated with concise notes.
+                Your queue is auto-assigned by department and ward. Use the exact mapped worker login so assigned cases appear in this panel.
               </p>
+              <div className="mt-4 flex flex-wrap gap-3 text-xs font-medium text-slate-600">
+                {session?.department ? (
+                  <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5">
+                    Department: {session.department.replace(/_/g, ' ')}
+                  </div>
+                ) : null}
+                {session?.ward_id ? (
+                  <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5">
+                    Ward ID: {session.ward_id}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm shadow-sm">

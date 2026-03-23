@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { COMPLAINT_CATEGORIES, COMPLAINT_DEPARTMENTS } from '@/lib/constants';
 import { AuthError, requireApiUser } from '@/lib/server/auth';
-import { detectDepartment } from '@/lib/server/ai';
-import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/complaints';
+import { createComplaintForUser, listComplaintsForUser, resolveComplaintDepartment } from '@/lib/server/complaints';
 import { listWards } from '@/lib/server/wards';
 
 export const runtime = 'nodejs';
@@ -79,8 +78,6 @@ export async function POST(request: Request) {
     const previous_complaint_id = String(formData.get('previous_complaint_id') || '').trim();
     const ward_id = Number(formData.get('ward_id') || 0);
     const submittedDepartment = String(formData.get('department') || '').trim().toLowerCase();
-    const detectedDepartment = detectDepartment(`${title} ${text}`);
-    const resolvedDepartment = submittedDepartment || detectedDepartment;
     const location_address = String(formData.get('location_address') || '').trim();
     const latitude = formData.get('latitude') ? Number(formData.get('latitude')) : undefined;
     const longitude = formData.get('longitude') ? Number(formData.get('longitude')) : undefined;
@@ -97,6 +94,12 @@ export async function POST(request: Request) {
 
     const wards = await listWards();
     const wardExists = wards.some((ward) => ward.id === ward_id);
+    const resolvedDepartment = resolveComplaintDepartment({
+      department: submittedDepartment,
+      category,
+      title,
+      text,
+    });
     const departmentExists = COMPLAINT_DEPARTMENTS.some((item) => item.value === resolvedDepartment);
     const categoryExists = COMPLAINT_CATEGORIES.some((item) => item.value === category);
 

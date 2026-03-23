@@ -5,12 +5,26 @@ import { mapComplaintRow, type ComplaintRow } from '@/lib/server/complaints';
 import type { ComplaintAnalyticsSummary, ComplaintWardComparisonSummary, User, WorkerDashboardSummary } from '@/lib/types';
 
 function getDepartmentScope(user?: User) {
-  const hasDepartmentScope = user?.role === 'leader' && user.department;
+  if (user?.role !== 'leader') {
+    return {
+      whereClause: '',
+      complaintAliasWhereClause: '',
+      params: [],
+    };
+  }
+
+  if (!user.department) {
+    return {
+      whereClause: 'WHERE 1 = 0',
+      complaintAliasWhereClause: 'WHERE 1 = 0',
+      params: [],
+    };
+  }
 
   return {
-    whereClause: hasDepartmentScope ? 'WHERE department = $1' : '',
-    complaintAliasWhereClause: hasDepartmentScope ? 'WHERE c.department = $1' : '',
-    params: hasDepartmentScope ? [user.department] : [],
+    whereClause: 'WHERE department = $1',
+    complaintAliasWhereClause: 'WHERE c.department = $1',
+    params: [user.department],
   };
 }
 
@@ -270,9 +284,8 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
           COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed'))::text AS resolved,
           COUNT(*) FILTER (WHERE c.priority IN ('critical', 'high'))::text AS urgent_queue
         FROM complaints c
-        WHERE c.assigned_worker_id = (
-          SELECT id FROM workers WHERE user_id = $1 LIMIT 1
-        )
+        INNER JOIN workers assigned_worker ON assigned_worker.id = c.assigned_worker_id
+        WHERE assigned_worker.user_id = $1
       `,
       [user.id],
     ),
@@ -317,9 +330,8 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
-        WHERE c.assigned_worker_id = (
-          SELECT id FROM workers WHERE user_id = $1 LIMIT 1
-        )
+        INNER JOIN workers assigned_worker ON assigned_worker.id = c.assigned_worker_id
+        WHERE assigned_worker.user_id = $1
         ORDER BY
           CASE c.status
             WHEN 'assigned' THEN 0

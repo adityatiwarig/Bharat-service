@@ -119,12 +119,18 @@ export async function updateComplaintStatus(id: string, input: { status: Complai
 
 export async function submitComplaintResolutionProof(
   id: string,
-  input: { proof_text: string; note?: string; proof_image: File },
+  input: { proof_text: string; note?: string; proof_images: File[] },
 ) {
   const body = new FormData();
   body.set('status', 'resolved');
   body.set('proof_text', input.proof_text);
-  body.set('proof_image', input.proof_image);
+  input.proof_images.forEach((file) => {
+    body.append('proof_images', file);
+  });
+
+  if (input.proof_images[0]) {
+    body.set('proof_image', input.proof_images[0]);
+  }
 
   if (input.note?.trim()) {
     body.set('note', input.note.trim());

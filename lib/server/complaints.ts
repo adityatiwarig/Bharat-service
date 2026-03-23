@@ -17,12 +17,12 @@ import {
   getCachedWorkerInfoByUserId,
   invalidateComplaintCache,
 } from '@/lib/server/complaint-cache';
-import { analyzeComplaint } from '@/lib/server/ai';
+import { analyzeComplaint, detectDepartment } from '@/lib/server/ai';
 import { AuthError } from '@/lib/server/auth';
 import type { DbTransactionClient } from '@/lib/server/db';
 import { query, withTransaction } from '@/lib/server/db';
 import { createNotificationForUser } from '@/lib/server/notifications';
-import { saveAttachments, saveProofImage } from '@/lib/server/uploads';
+import { saveAttachments, saveProofImage, saveProofImages } from '@/lib/server/uploads';
 import type {
   Complaint,
   ComplaintAttachment,
@@ -69,6 +69,7 @@ export type ComplaintRow = {
   spam_reasons: string[] | null;
   attachments: ComplaintAttachment[] | null;
   proof_image: ComplaintAttachment | null;
+  proof_images?: ComplaintAttachment[] | null;
   proof_text: string | null;
   department_message: string | null;
   location_address: string | null;
@@ -111,20 +112,13 @@ type WorkerRow = {
 
 type ComplaintProofRow = {
   proof_image: ComplaintAttachment | null;
+  proof_images?: ComplaintAttachment[] | null;
   proof_text: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
 };
 
 type ComplaintDetailView = 'summary' | 'full';
-
-const UNIVERSAL_WARD_WORKER_EMAILS = [
-  'worker.rohini@govcrm.demo',
-  'worker.dwarka@govcrm.demo',
-  'worker.saket@govcrm.demo',
-  'worker.laxmi@govcrm.demo',
-  'worker.karol@govcrm.demo',
-];
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -225,6 +219,7 @@ const COMPLAINT_APPLICANT_COLUMNS = [
 ] as const;
 
 let complaintApplicantColumnsPromise: Promise<boolean> | null = null;
+let complaintProofImagesColumnPromise: Promise<boolean> | null = null;
 
 function normalizeStatus(status: string) {
   return status;
@@ -242,10 +237,6 @@ function isUuid(value: string) {
   return UUID_PATTERN.test(value);
 }
 
-function isUniversalWardWorkerEmail(email?: string) {
-  return email ? UNIVERSAL_WARD_WORKER_EMAILS.includes(email.toLowerCase()) : false;
-}
-
 function mapCategoryToDepartment(category: Complaint['category']): ComplaintDepartment {
   const mapping: Record<Complaint['category'], ComplaintDepartment> = {
     pothole: 'roads',
@@ -260,6 +251,29 @@ function mapCategoryToDepartment(category: Complaint['category']): ComplaintDepa
   };
 
   return mapping[category] || 'roads';
+}
+
+export function resolveComplaintDepartment(input: {
+  department?: string | null;
+  category?: string | null;
+  title?: string | null;
+  text?: string | null;
+}): ComplaintDepartment {
+  const submittedDepartment = input.department?.trim();
+
+  if (submittedDepartment) {
+    return normalizeDepartment(submittedDepartment);
+  }
+
+  const normalizedCategory = (input.category?.trim().toLowerCase() || 'other') as Complaint['category'];
+  const mappedDepartment = mapCategoryToDepartment(normalizedCategory);
+
+  if (normalizedCategory !== 'other') {
+    return mappedDepartment;
+  }
+
+  const detectedDepartment = detectDepartment(`${input.title || ''} ${input.text || ''}`.trim());
+  return detectedDepartment || mappedDepartment;
 }
 
 async function complaintsTableHasApplicantColumns() {
@@ -282,7 +296,39 @@ async function complaintsTableHasApplicantColumns() {
   return complaintApplicantColumnsPromise;
 }
 
+async function complaintsTableHasProofImagesColumn() {
+  complaintProofImagesColumnPromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'complaints'
+        AND column_name = 'proof_images'
+    `,
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) > 0)
+    .catch((error) => {
+      complaintProofImagesColumnPromise = null;
+      throw error;
+    });
+
+  return complaintProofImagesColumnPromise;
+}
+
+function normalizeProofImages(
+  proofImage: ComplaintAttachment | null | undefined,
+  proofImages: ComplaintAttachment[] | null | undefined,
+) {
+  if (proofImages?.length) {
+    return proofImages;
+  }
+
+  return proofImage ? [proofImage] : [];
+}
+
 export function mapComplaintRow(row: ComplaintRow): Complaint {
+  const normalizedProofImages = normalizeProofImages(row.proof_image, row.proof_images);
+
   return {
     id: row.id,
     complaint_id: row.complaint_id,
@@ -317,6 +363,7 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     spam_reasons: row.spam_reasons || [],
     attachments: row.attachments || [],
     proof_image: row.proof_image || null,
+    proof_images: normalizedProofImages,
     proof_text: row.proof_text || null,
     department_message: row.department_message || 'Your complaint is being handled by the department.',
     location_address: row.location_address,
@@ -347,8 +394,11 @@ function buildWhereClause(user: User, filters: ComplaintListFilters) {
 
   if (user.role === 'worker' || filters.my_assigned) {
     clauses.push(
-      `c.assigned_worker_id = (
-        SELECT id FROM workers WHERE user_id = $${params.push(user.id)} LIMIT 1
+      `EXISTS (
+        SELECT 1
+        FROM workers assigned_worker
+        WHERE assigned_worker.id = c.assigned_worker_id
+          AND assigned_worker.user_id = $${params.push(user.id)}
       )`,
     );
   }
@@ -369,8 +419,12 @@ function buildWhereClause(user: User, filters: ComplaintListFilters) {
     clauses.push(`c.ward_id = $${params.push(filters.ward_id)}`);
   }
 
-  if (user.role === 'leader' && user.department) {
-    clauses.push(`c.department = $${params.push(user.department)}`);
+  if (user.role === 'leader') {
+    if (!user.department) {
+      clauses.push('1 = 0');
+    } else {
+      clauses.push(`c.department = $${params.push(user.department)}`);
+    }
   }
 
   if (filters.category && filters.category !== 'all') {
@@ -441,7 +495,13 @@ async function assertComplaintAccess(user: User, complaint: Complaint) {
   if (
     (user.role === 'citizen' && complaint.user_id !== user.id) ||
     (user.role === 'worker' && complaint.assigned_worker_id !== worker?.id) ||
-    (user.role === 'leader' && user.department && complaint.department !== user.department)
+    (
+      user.role === 'leader' &&
+      (
+        !user.department ||
+        complaint.department !== user.department
+      )
+    )
   ) {
     throw new AuthError('You are not allowed to view this complaint.', 403);
   }
@@ -507,6 +567,23 @@ async function listAdminUserIds(client: DbTransactionClient) {
       FROM users
       WHERE role = 'admin'
     `,
+  );
+
+  return result.rows.map((row) => row.id);
+}
+
+async function listLeaderUserIdsByScope(
+  client: DbTransactionClient,
+  input: { department: ComplaintDepartment; ward_id?: number | null },
+) {
+  const result = await client.query<{ id: string }>(
+    `
+      SELECT id
+      FROM users
+      WHERE role = 'leader'
+        AND department = $1
+    `,
+    [input.department],
   );
 
   return result.rows.map((row) => row.id);
@@ -754,6 +831,22 @@ export async function getComplaintTimelineForUser(
   return timeline;
 }
 
+async function getComplaintTimelineByComplaint(complaint: Pick<Complaint, 'id' | 'complaint_id'>) {
+  const cachedTimeline = await getCachedComplaintTimeline(complaint.complaint_id);
+
+  if (cachedTimeline) {
+    return cachedTimeline;
+  }
+
+  const timeline = {
+    complaint_id: complaint.complaint_id,
+    updates: await getComplaintUpdates(complaint.id),
+  };
+
+  await cacheComplaintTimeline(timeline);
+  return timeline;
+}
+
 export async function getComplaintProofForUser(
   user: User,
   complaintId: string,
@@ -770,11 +863,14 @@ export async function getComplaintProofForUser(
     return cachedProof;
   }
 
+  const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
+
   const [proofResult, rating] = await Promise.all([
     query<ComplaintProofRow>(
       `
         SELECT
           proof_image,
+          ${hasProofImagesColumn ? 'proof_images,' : ''}
           proof_text,
           resolved_at,
           resolution_notes
@@ -791,6 +887,49 @@ export async function getComplaintProofForUser(
   const proof: ComplaintProofData = {
     complaint_id: complaint.complaint_id,
     proof_image: proofRow?.proof_image || null,
+    proof_images: normalizeProofImages(proofRow?.proof_image, proofRow?.proof_images),
+    proof_text: proofRow?.proof_text || null,
+    resolved_at: proofRow?.resolved_at || null,
+    resolution_notes: proofRow?.resolution_notes || null,
+    rating,
+  };
+
+  await cacheComplaintProof(proof);
+  return proof;
+}
+
+async function getComplaintProofByComplaint(complaint: Pick<Complaint, 'id' | 'complaint_id'>) {
+  const cachedProof = await getCachedComplaintProof(complaint.complaint_id);
+
+  if (cachedProof) {
+    return cachedProof;
+  }
+
+  const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
+
+  const [proofResult, rating] = await Promise.all([
+    query<ComplaintProofRow>(
+      `
+        SELECT
+          proof_image,
+          ${hasProofImagesColumn ? 'proof_images,' : ''}
+          proof_text,
+          resolved_at,
+          resolution_notes
+        FROM complaints
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [complaint.id],
+    ),
+    getComplaintRating(complaint.id),
+  ]);
+
+  const proofRow = proofResult.rows[0];
+  const proof: ComplaintProofData = {
+    complaint_id: complaint.complaint_id,
+    proof_image: proofRow?.proof_image || null,
+    proof_images: normalizeProofImages(proofRow?.proof_image, proofRow?.proof_images),
     proof_text: proofRow?.proof_text || null,
     resolved_at: proofRow?.resolved_at || null,
     resolution_notes: proofRow?.resolution_notes || null,
@@ -806,7 +945,24 @@ export async function getComplaintByIdForUser(
   complaintId: string,
   options: { view?: ComplaintDetailView } = {},
 ) {
-  const complaint = await getComplaintSummaryForUser(user, complaintId);
+  const identifier = complaintId.trim();
+  const cachedComplaintId = isUuid(identifier)
+    ? await getCachedComplaintAlias(identifier)
+    : identifier;
+
+  let complaint = cachedComplaintId
+    ? await getCachedComplaintSummary(cachedComplaintId)
+    : null;
+
+  if (complaint) {
+    await assertComplaintAccess(user, complaint);
+  } else {
+    complaint = await getComplaintCoreByIdForUser(user, identifier, { view: 'summary' });
+
+    if (complaint) {
+      await cacheComplaintSummary(complaint, [identifier]);
+    }
+  }
 
   if (!complaint) {
     return null;
@@ -817,12 +973,13 @@ export async function getComplaintByIdForUser(
   }
 
   const [timeline, proof] = await Promise.all([
-    getComplaintTimelineForUser(user, complaint.complaint_id),
-    getComplaintProofForUser(user, complaint.complaint_id),
+    getComplaintTimelineByComplaint(complaint),
+    getComplaintProofByComplaint(complaint),
   ]);
 
   complaint.updates = timeline?.updates || [];
   complaint.proof_image = proof?.proof_image || null;
+  complaint.proof_images = proof?.proof_images || [];
   complaint.proof_text = proof?.proof_text || null;
   complaint.resolved_at = proof?.resolved_at || null;
   complaint.resolution_notes = proof?.resolution_notes || null;
@@ -844,7 +1001,7 @@ export async function createComplaintForUser(
     text: string;
     category: Complaint['category'];
     ward_id: number;
-    department: ComplaintDepartment;
+    department?: ComplaintDepartment;
     location_address?: string;
     latitude?: number;
     longitude?: number;
@@ -855,6 +1012,12 @@ export async function createComplaintForUser(
   const complaintReference = createTrackingCode();
   const attachments = await saveAttachments(files, complaintId);
   const hasApplicantColumns = await complaintsTableHasApplicantColumns();
+  const resolvedDepartment = resolveComplaintDepartment({
+    department: input.department,
+    category: input.category,
+    title: input.title,
+    text: input.text,
+  });
 
   const complaint = await withTransaction(async (client) => {
     const insertQuery = hasApplicantColumns
@@ -1033,7 +1196,7 @@ export async function createComplaintForUser(
           input.applicant_gender?.trim() || null,
           input.previous_complaint_id?.trim() || null,
           input.ward_id,
-          input.department,
+          resolvedDepartment,
           input.title.trim(),
           input.text.trim(),
           input.category,
@@ -1049,7 +1212,7 @@ export async function createComplaintForUser(
           complaintReference,
           user.id,
           input.ward_id,
-          input.department,
+          resolvedDepartment,
           input.title.trim(),
           input.text.trim(),
           input.category,
@@ -1103,6 +1266,7 @@ export async function updateComplaintStatusForUser(
     note?: string;
     proof_text?: string;
     proof_image?: File;
+    proof_images?: File[];
   },
 ) {
   const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
@@ -1118,6 +1282,10 @@ export async function updateComplaintStatusForUser(
 
   const note = input.note?.trim() || null;
   const proofText = input.proof_text?.trim() || null;
+  const proofFiles = input.proof_images?.filter((file) => file.size > 0) || [];
+  if (!proofFiles.length && input.proof_image && input.proof_image.size > 0) {
+    proofFiles.push(input.proof_image);
+  }
   const currentStatus = normalizeStatus(complaint.status);
   const nextStatus = normalizeStatus(input.status);
   const validTransitions: Record<string, string[]> = {
@@ -1139,14 +1307,20 @@ export async function updateComplaintStatusForUser(
       throw new AuthError('Proof description is required before marking work complete.', 400);
     }
 
-    if (!input.proof_image || input.proof_image.size <= 0) {
-      throw new AuthError('Proof image is required before marking work complete.', 400);
+    if (!proofFiles.length) {
+      throw new AuthError('At least one proof image is required before marking work complete.', 400);
     }
   }
 
-  const proofImage = nextStatus === 'resolved' && input.proof_image && input.proof_image.size > 0
-    ? await saveProofImage(input.proof_image, complaint.id)
+  const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
+  const proofImages = nextStatus === 'resolved' && proofFiles.length
+    ? (
+      hasProofImagesColumn
+        ? await saveProofImages(proofFiles, complaint.id)
+        : [await saveProofImage(proofFiles[0], complaint.id)]
+    )
     : null;
+  const proofImage = proofImages?.[0] || null;
 
   await withTransaction(async (client) => {
     await client.query(
@@ -1169,6 +1343,12 @@ export async function updateComplaintStatusForUser(
             WHEN $2::complaint_status = 'resolved' THEN COALESCE($5::jsonb, proof_image)
             ELSE proof_image
           END,
+          ${hasProofImagesColumn
+            ? `proof_images = CASE
+            WHEN $2::complaint_status = 'resolved' THEN COALESCE($6::jsonb, proof_images)
+            ELSE proof_images
+          END,`
+            : ''}
           resolution_notes = CASE WHEN $2::complaint_status = 'resolved' THEN COALESCE($3, $4, resolution_notes) ELSE resolution_notes END,
           resolved_at = CASE WHEN $2::complaint_status = 'resolved' THEN NOW() ELSE resolved_at END,
           updated_at = NOW(),
@@ -1179,13 +1359,22 @@ export async function updateComplaintStatusForUser(
           END
         WHERE id = $1
       `,
-      [
-        complaint.id,
-        nextStatus,
-        note,
-        proofText,
-        proofImage ? JSON.stringify(proofImage) : null,
-      ],
+      hasProofImagesColumn
+        ? [
+            complaint.id,
+            nextStatus,
+            note,
+            proofText,
+            proofImage ? JSON.stringify(proofImage) : null,
+            proofImages ? JSON.stringify(proofImages) : null,
+          ]
+        : [
+            complaint.id,
+            nextStatus,
+            note,
+            proofText,
+            proofImage ? JSON.stringify(proofImage) : null,
+          ],
     );
 
     await appendComplaintUpdate(client, {
@@ -1274,19 +1463,14 @@ export async function addComplaintRatingForUser(
       updated_by_user_id: user.id,
     });
 
-    const deptHeads = await client.query<{ id: string }>(
-      `
-        SELECT id
-        FROM users
-        WHERE role = 'leader'
-          AND (department = $1 OR department IS NULL)
-      `,
-      [complaint.department],
-    );
+    const deptHeadIds = await listLeaderUserIdsByScope(client, {
+      department: complaint.department,
+      ward_id: complaint.ward_id,
+    });
 
-    for (const deptHead of deptHeads.rows) {
+    for (const deptHeadId of deptHeadIds) {
       await createNotificationForUser(client, {
-        user_id: deptHead.id,
+        user_id: deptHeadId,
         complaint_id: complaint.id,
         title: 'Citizen feedback received',
         message: `${complaint.title} received a ${input.rating}/5 citizen rating for closure review.`,
@@ -1404,6 +1588,7 @@ export async function reopenComplaintByDeptHead(
   const departmentMessage = trimmedNote
     ? `The complaint has been reopened for rework. ${trimmedNote}`
     : 'The complaint has been reopened by the department for rework and reassignment.';
+  const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
 
   await withTransaction(async (client) => {
     await client.query(
@@ -1416,6 +1601,7 @@ export async function reopenComplaintByDeptHead(
           worker_assigned = FALSE,
           dept_head_viewed = TRUE,
           proof_image = NULL,
+          ${hasProofImagesColumn ? 'proof_images = NULL,' : ''}
           proof_text = NULL,
           resolved_at = NULL,
           resolution_notes = NULL,
@@ -1522,13 +1708,10 @@ export async function listAssignableWorkersForComplaint(user: User, complaintId:
       FROM workers w
       INNER JOIN users u ON u.id = w.user_id
       WHERE w.ward_id = $1
-        AND (
-          w.department = $2
-          OR LOWER(u.email) = ANY($3::text[])
-        )
+        AND w.department = $2
       ORDER BY u.name ASC
     `,
-    [complaint.ward_id, complaint.department, UNIVERSAL_WARD_WORKER_EMAILS],
+    [complaint.ward_id, complaint.department],
   );
 
   return result.rows;
@@ -1588,7 +1771,7 @@ export async function assignComplaintToWorkerByDeptHead(
 
   if (
     worker.ward_id !== complaint.ward_id ||
-    (worker.department !== complaint.department && !isUniversalWardWorkerEmail(worker.user_email))
+    worker.department !== complaint.department
   ) {
     throw new AuthError('Only workers from the same ward and department can be assigned.', 400);
   }
@@ -1787,19 +1970,14 @@ async function processComplaintPipeline(complaintId: string) {
       ],
     );
 
-    const deptHeads = await client.query<{ id: string }>(
-      `
-        SELECT id
-        FROM users
-        WHERE role = 'leader'
-          AND (department = $1 OR department IS NULL)
-      `,
-      [resolvedDepartment],
-    );
+    const deptHeadIds = await listLeaderUserIdsByScope(client, {
+      department: resolvedDepartment,
+      ward_id: complaint.ward_id,
+    });
 
-    for (const deptHead of deptHeads.rows) {
+    for (const deptHeadId of deptHeadIds) {
       await createNotificationForUser(client, {
-        user_id: deptHead.id,
+        user_id: deptHeadId,
         complaint_id: complaint.id,
         title: 'New department complaint received',
         message: `${complaint.title} has been routed to your department for ${complaint.ward_name}.`,

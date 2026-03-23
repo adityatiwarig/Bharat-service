@@ -21,7 +21,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { fetchLeaderTrendSummary } from '@/lib/client/complaints';
 import type { ComplaintTrendSummary } from '@/lib/types';
 
-const CACHE_KEY = 'leader-trends-summary-v1';
+function getCacheKey(department?: string | null) {
+  return `leader-trends-summary-v1:${department || 'unassigned'}`;
+}
 
 const INITIAL_SUMMARY: ComplaintTrendSummary = {
   total_complaints: 0,
@@ -135,7 +137,7 @@ export default function LeaderTrendsPage() {
       setSummary(result.summary);
 
       try {
-        window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(result.summary));
+        window.sessionStorage.setItem(getCacheKey(session?.department), JSON.stringify(result.summary));
       } catch {
         // Ignore cache write failures and keep the page responsive.
       }
@@ -152,10 +154,11 @@ export default function LeaderTrendsPage() {
   }
 
   useEffect(() => {
+    const cacheKey = getCacheKey(session?.department);
     let usedCache = false;
 
     try {
-      const cached = window.sessionStorage.getItem(CACHE_KEY);
+      const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached) as ComplaintTrendSummary;
         if (parsed && Array.isArray(parsed.category_breakdown) && Array.isArray(parsed.daily_intake)) {
@@ -169,7 +172,7 @@ export default function LeaderTrendsPage() {
     }
 
     void loadTrends({ silent: usedCache });
-  }, []);
+  }, [session?.department]);
 
   const categoryRows = useMemo(() => {
     const total = summary.category_breakdown.reduce((sum, item) => sum + item.count, 0);

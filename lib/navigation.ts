@@ -65,26 +65,26 @@ export const roleMeta: Record<UserRole, RoleMeta> = {
 export const portalNavigation: Record<UserRole, NavItem[]> = {
   citizen: [
     {
-      href: '/app/citizen/dashboard',
+      href: '/citizen',
       label: 'Dashboard',
       description: 'Overview of your requests and service status.',
       icon: LayoutDashboard,
     },
     {
-      href: '/app/citizen/submit',
+      href: '/citizen/submit',
       label: 'Report Issue',
       description: 'Create a new complaint with location and priority.',
       icon: FilePlus2,
       badge: 'New',
     },
     {
-      href: '/app/citizen/my-complaints',
+      href: '/citizen/my-complaints',
       label: 'My Complaints',
       description: 'Review all complaints and current statuses.',
       icon: ClipboardList,
     },
     {
-      href: '/app/citizen/tracker',
+      href: '/citizen/tracker',
       label: 'Tracker',
       description: 'Follow the lifecycle of each complaint.',
       icon: FileSearch,
@@ -92,20 +92,20 @@ export const portalNavigation: Record<UserRole, NavItem[]> = {
   ],
   worker: [
     {
-      href: '/app/worker/dashboard',
+      href: '/worker',
       label: 'Dashboard',
       description: 'Daily workload, priorities, and assignment health.',
       icon: LayoutDashboard,
     },
     {
-      href: '/app/worker/assigned',
+      href: '/worker/assigned',
       label: 'Assigned Tasks',
       description: 'Open work orders that need field action.',
       icon: FolderKanban,
       badge: 'Priority',
     },
     {
-      href: '/app/worker/updates',
+      href: '/worker/updates',
       label: 'Submit Update',
       description: 'Post progress, evidence, and completion notes.',
       icon: Wrench,
@@ -113,25 +113,25 @@ export const portalNavigation: Record<UserRole, NavItem[]> = {
   ],
   admin: [
     {
-      href: '/app/admin/dashboard',
+      href: '/admin',
       label: 'Dashboard',
       description: 'System-wide view of intake, resolution, and workload.',
       icon: LayoutDashboard,
     },
     {
-      href: '/app/admin/complaints',
+      href: '/admin/complaints',
       label: 'Complaints',
       description: 'Review queues, priorities, and case ownership.',
       icon: ClipboardList,
     },
     {
-      href: '/app/admin/analytics',
+      href: '/admin/analytics',
       label: 'Analytics',
       description: 'Track trends, category pressure, and SLA health.',
       icon: LineChart,
     },
     {
-      href: '/app/admin/users',
+      href: '/admin/users',
       label: 'Users',
       description: 'Manage teams, permissions, and staffing coverage.',
       icon: Users2,
@@ -139,25 +139,25 @@ export const portalNavigation: Record<UserRole, NavItem[]> = {
   ],
   leader: [
     {
-      href: '/app/leader/dashboard',
+      href: '/leader',
       label: 'Dashboard',
       description: 'Review department complaints and worker assignment readiness.',
       icon: LayoutDashboard,
     },
     {
-      href: '/app/leader/reports',
+      href: '/leader/reports',
       label: 'Reports',
       description: 'Review department summaries and ward-wise complaint volumes.',
       icon: BellRing,
     },
     {
-      href: '/app/leader/trends',
+      href: '/leader/trends',
       label: 'Trends',
       description: 'Watch department demand, status mix, and complaint flow.',
       icon: BarChart3,
     },
     {
-      href: '/app/leader/ward-comparison',
+      href: '/leader/ward-comparison',
       label: 'Ward Comparison',
       description: 'Compare complaint load across wards in the same department.',
       icon: ShieldCheck,

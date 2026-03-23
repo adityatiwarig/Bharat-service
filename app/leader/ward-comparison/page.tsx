@@ -22,7 +22,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { fetchLeaderWardComparisonSummary } from '@/lib/client/complaints';
 import type { ComplaintWardComparisonSummary } from '@/lib/types';
 
-const CACHE_KEY = 'leader-ward-comparison-summary-v1';
+function getCacheKey(department?: string | null) {
+  return `leader-ward-comparison-summary-v1:${department || 'unassigned'}`;
+}
 
 const INITIAL_SUMMARY: ComplaintWardComparisonSummary = {
   total_wards: 0,
@@ -131,7 +133,7 @@ export default function LeaderWardComparisonPage() {
       setSummary(result.summary);
 
       try {
-        window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(result.summary));
+        window.sessionStorage.setItem(getCacheKey(session?.department), JSON.stringify(result.summary));
       } catch {
         // Ignore cache write failures and keep the page responsive.
       }
@@ -148,10 +150,11 @@ export default function LeaderWardComparisonPage() {
   }
 
   useEffect(() => {
+    const cacheKey = getCacheKey(session?.department);
     let usedCache = false;
 
     try {
-      const cached = window.sessionStorage.getItem(CACHE_KEY);
+      const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached) as ComplaintWardComparisonSummary;
         if (parsed && Array.isArray(parsed.ward_rows)) {
@@ -165,7 +168,7 @@ export default function LeaderWardComparisonPage() {
     }
 
     void loadSummary({ silent: usedCache });
-  }, []);
+  }, [session?.department]);
 
   const totalComplaints = useMemo(
     () => summary.ward_rows.reduce((sum, row) => sum + row.total_complaints, 0),

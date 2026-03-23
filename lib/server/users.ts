@@ -25,7 +25,7 @@ export async function listUsersForAdmin() {
         u.email,
         u.role,
         u.phone,
-        w.ward_id,
+        w.ward_id AS ward_id,
         wd.name AS ward_name,
         COALESCE(w.department, u.department) AS department,
         u.created_at,
