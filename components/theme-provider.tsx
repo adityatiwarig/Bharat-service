@@ -499,7 +499,7 @@ function GuidedCitizenAssistant() {
   }
 
   function getStatusPath() {
-    return isCitizenArea ? '/citizen/tracker' : '/auth?mode=login&next=%2Fcitizen%2Ftracker'
+    return isCitizenArea ? '/citizen/tracker' : '/track'
   }
 
   function getLoginPath() {

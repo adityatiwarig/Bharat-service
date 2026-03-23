@@ -11,6 +11,7 @@ import type {
   ComplaintTrendSummary,
   ComplaintWardComparisonSummary,
   PaginatedResult,
+  PublicComplaintLookupResult,
   Rating,
   Ward,
 } from '@/lib/types';
@@ -97,6 +98,12 @@ export async function fetchComplaintProof(id: string, options: Pick<ComplaintFet
   const data = await fetchJson<{ proof: ComplaintProofData }>(`/api/complaints/${id}/proof`);
   complaintProofCache.set(id, data.proof);
   return data.proof;
+}
+
+export async function fetchPublicComplaintByTrackingCode(trackingCode: string) {
+  const code = trackingCode.trim();
+
+  return fetchJson<PublicComplaintLookupResult>(`/api/public/complaints/${encodeURIComponent(code)}`);
 }
 
 export async function updateComplaintStatus(id: string, input: { status: ComplaintStatus; note?: string }) {

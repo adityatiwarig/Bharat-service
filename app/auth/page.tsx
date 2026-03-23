@@ -251,7 +251,7 @@ function CitizenAuthContent() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="lg" className="rounded-full px-7">
-                  <Link href="/auth?mode=login&next=%2Fcitizen%2Ftracker">
+                  <Link href="/track">
                     Track Complaint
                     <SearchCheck className="h-4 w-4" />
                   </Link>

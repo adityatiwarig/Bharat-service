@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { revalidateTag } from 'next/cache';
 
+import { buildComplaintTrackerSnapshot } from '@/lib/complaint-tracker';
 import {
   cacheComplaintProof,
   cacheComplaintSummary,
@@ -31,6 +32,8 @@ import type {
   ComplaintStatus,
   ComplaintTimelineData,
   PaginatedResult,
+  PublicComplaintLookupResult,
+  PublicComplaintSummary,
   Rating,
   User,
 } from '@/lib/types';
@@ -638,6 +641,41 @@ async function getComplaintCoreByIdForUser(
   return complaint;
 }
 
+async function getComplaintCoreByTrackingCode(trackingCode: string) {
+  const identifier = trackingCode.trim();
+
+  if (!identifier) {
+    return null;
+  }
+
+  const result = await query<ComplaintRow>(
+    `
+      SELECT
+        ${COMPLAINT_SUMMARY_SELECT_COLUMNS}
+      FROM complaints c
+      INNER JOIN wards w ON w.id = c.ward_id
+      WHERE c.tracking_code = $1
+      LIMIT 1
+    `,
+    [identifier],
+  );
+
+  const row = result.rows[0];
+  return row ? mapComplaintRow(row) : null;
+}
+
+function mapPublicComplaintSummary(complaint: Complaint): PublicComplaintSummary {
+  const tracker = buildComplaintTrackerSnapshot(complaint);
+
+  return {
+    complaint_id: complaint.complaint_id,
+    status: tracker.humanStatus,
+    current_stage: tracker.currentStageTitle,
+    department: tracker.departmentLabel,
+    last_updated: complaint.updated_at,
+  };
+}
+
 export async function getComplaintSummaryForUser(
   user: User,
   complaintId: string,
@@ -663,6 +701,32 @@ export async function getComplaintSummaryForUser(
   }
 
   return complaint;
+}
+
+export async function getPublicComplaintByTrackingCode(
+  trackingCode: string,
+  user?: User | null,
+): Promise<PublicComplaintLookupResult | null> {
+  const complaint = await getComplaintCoreByTrackingCode(trackingCode);
+
+  if (!complaint) {
+    return null;
+  }
+
+  const summary = mapPublicComplaintSummary(complaint);
+
+  if (user?.role === 'citizen' && complaint.user_id === user.id) {
+    return {
+      access: 'owner',
+      complaint: summary,
+      redirect_to: `/citizen/tracker?id=${encodeURIComponent(complaint.complaint_id)}`,
+    };
+  }
+
+  return {
+    access: 'public',
+    complaint: summary,
+  };
 }
 
 export async function getComplaintTimelineForUser(

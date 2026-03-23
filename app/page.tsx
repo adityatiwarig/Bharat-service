@@ -99,16 +99,12 @@ function getCitizenPath(path: string, isLoggedIn: boolean) {
   return isLoggedIn ? path : `/auth?mode=signup&next=${encodeURIComponent(path)}`
 }
 
-function getCitizenLoginPath(path: string, isLoggedIn: boolean) {
-  return isLoggedIn ? path : `/auth?mode=login&next=${encodeURIComponent(path)}`
-}
-
 export default async function Home() {
   const user = await getCurrentUser()
   const isCitizenLoggedIn = user?.role === 'citizen'
   const primaryHref = getCitizenPath('/citizen/submit', isCitizenLoggedIn)
   const secondaryHref = isCitizenLoggedIn ? '/citizen' : '/auth?mode=signup&next=%2Fcitizen%2Fsubmit'
-  const trackerHref = getCitizenLoginPath('/citizen/tracker', isCitizenLoggedIn)
+  const trackerHref = '/track'
   const lastUpdated = new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: '2-digit',

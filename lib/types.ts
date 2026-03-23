@@ -111,6 +111,20 @@ export interface ComplaintProofData {
   rating?: Rating | null;
 }
 
+export interface PublicComplaintSummary {
+  complaint_id: string;
+  status: string;
+  current_stage: string;
+  department: string;
+  last_updated: string;
+}
+
+export interface PublicComplaintLookupResult {
+  access: 'public' | 'owner';
+  complaint: PublicComplaintSummary;
+  redirect_to?: string;
+}
+
 export interface AppNotification {
   id: string;
   user_id: string;

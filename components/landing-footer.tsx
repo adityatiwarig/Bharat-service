@@ -15,7 +15,7 @@ import {
 
 const citizenLinks = [
   { label: 'Lodge Complaint', href: '/citizen/submit', icon: FileText },
-  { label: 'Track Complaint', href: '/citizen/tracker', icon: SearchCheck },
+  { label: 'Track Complaint', href: '/track', icon: SearchCheck },
   { label: 'FAQs', href: '#footer-faqs', icon: CircleHelp },
   { label: 'How it Works', href: '#how-it-works', icon: ShieldCheck },
 ]
