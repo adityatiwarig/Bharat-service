@@ -169,7 +169,7 @@ function buildComplaintReportPdf({
     ['Complaint ID', complaint.complaint_id],
     ['Status', tracker.humanStatus],
     ['Department', tracker.departmentLabel],
-    ['Assigned Worker', complaint.worker_assigned ? tracker.workerName || 'Assigned' : 'Not assigned'],
+    ['Assigned Supervisor', tracker.assignmentLabel || 'Not assigned'],
     ['Current Stage', tracker.currentStageTitle],
     ['Last Updated', tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : 'Not yet updated'],
     ['Last Synced', lastSyncedAt ? formatTrackerDateTime(lastSyncedAt) : 'Not yet updated'],
@@ -442,10 +442,11 @@ function buildComplaintReportPdf({
   addSectionHeading('Official Progress Log');
   tracker.timeline.forEach((step, index) => addProgressRecord(step, index));
 
-  addSectionHeading('Assigned Officer Details');
-  addDetailRow('Assigned Officer', getPdfText(tracker.workerName, 'Not assigned'));
+  addSectionHeading('Assigned Supervisor Details');
+  addDetailRow('Assigned Supervisor', getPdfText(tracker.assignmentLabel, 'Not assigned'));
   addDetailRow('Department', getPdfText(tracker.departmentLabel));
-  addDetailRow('Status', complaint.worker_assigned ? 'Active' : 'Pending assignment');
+  addDetailRow('Status', getPdfText(tracker.assignmentStatusLabel));
+  addDetailRow('Assignment Note', getPdfText(tracker.assignmentDescription));
 
   addSectionHeading('Administrative Update Log');
   if (complaint.updates?.length) {
@@ -717,7 +718,7 @@ function handleExportReport() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-950">Citizen Complaint Tracking System</h1>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-                  This portal provides structured status visibility, official progress records, work completion evidence, and citizen feedback submission.
+                  This portal provides structured L1, L2, and L3 supervisor visibility, official progress records, work completion evidence, and citizen feedback submission.
                 </p>
               </div>
               <Button
@@ -786,8 +787,8 @@ function handleExportReport() {
                   <SummaryField label="Complaint ID" value={complaint.complaint_id} />
                   <SummaryField label="Department" value={tracker.departmentLabel} />
                   <SummaryField
-                    label="Assigned Worker"
-                    value={complaint.worker_assigned ? tracker.workerName || 'Assigned' : 'Not assigned'}
+                    label="Assigned Supervisor"
+                    value={tracker.assignmentLabel || 'Not assigned'}
                   />
                   <SummaryField label="Current Stage" value={tracker.currentStageTitle} />
                   <SummaryField label="Status" value={tracker.humanStatus} />
@@ -848,23 +849,27 @@ function handleExportReport() {
 
               <div className="space-y-6">
                 <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title="Assigned Officer Details" description="Current departmental or field assignment record." />
+                  <SectionHeading title="Assigned Supervisor Details" description="Current L1, L2, or L3 assignment record without exposing officer identity." />
                   <CardContent className="px-5 py-5">
                     {detailsLoading ? (
-                      <LoadingSummary label="Fetching latest updates..." description="Officer assignment details are being loaded." className="rounded-none" />
+                      <LoadingSummary label="Fetching latest updates..." description="Supervisor assignment details are being loaded." className="rounded-none" />
                     ) : (
                       <div className="border border-slate-200 bg-slate-50">
                         <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">Assigned Officer</div>
-                          <div className="text-slate-700">{tracker.workerName || 'Not assigned'}</div>
+                          <div className="font-semibold text-slate-900">Assigned Supervisor</div>
+                          <div className="text-slate-700">{tracker.assignmentLabel || 'Not assigned'}</div>
                         </div>
                         <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
                           <div className="font-semibold text-slate-900">Department</div>
                           <div className="text-slate-700">{tracker.departmentLabel}</div>
                         </div>
-                        <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
+                        <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
                           <div className="font-semibold text-slate-900">Status</div>
-                          <div className="text-slate-700">{complaint.worker_assigned ? 'Active' : 'Pending assignment'}</div>
+                          <div className="text-slate-700">{tracker.assignmentStatusLabel}</div>
+                        </div>
+                        <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
+                          <div className="font-semibold text-slate-900">Assignment Note</div>
+                          <div className="text-slate-700">{tracker.assignmentDescription || 'Not yet updated'}</div>
                         </div>
                       </div>
                     )}
@@ -1006,10 +1011,10 @@ function handleExportReport() {
                   Use the complaint ID search above anytime to reopen this same complaint view.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Department messages and work completion evidence will appear here once published.
+                  Supervisor movement, department messages, and work completion evidence will appear here once published.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  After resolution, you can review the proof and submit formal citizen feedback.
+                  After Level 3 resolution, you can review the proof and submit formal citizen feedback for Level 2 review.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
                   Closed complaints remain available for reference and audit purposes.

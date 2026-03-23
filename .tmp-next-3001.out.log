@@ -2,3 +2,9 @@
 > my-project@0.1.0 dev
 > next dev --port 3001
 
+▲ Next.js 16.2.0 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.12:3001
+- Environments: .env.local, .env
+✓ Ready in 797ms
+[?25h

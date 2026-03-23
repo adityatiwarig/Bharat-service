@@ -119,12 +119,14 @@ function CitizenAuthContent() {
           return null;
         }
 
-        return response.json() as Promise<{ user?: { role: string } }>;
+        return response.json() as Promise<{ user?: { role: string; redirect_to?: string } }>;
       })
       .then((data) => {
         if (data?.user?.role) {
           window.location.replace(
-            data.user.role === 'citizen' ? nextPath : getHomeByRole(data.user.role),
+            data.user.role === 'citizen'
+              ? nextPath
+              : data.user.redirect_to || getHomeByRole(data.user.role),
           );
         }
       })
@@ -156,14 +158,18 @@ function CitizenAuthContent() {
 
       const data = (await response.json()) as {
         error?: string;
-        user?: { role: string };
+        redirect_to?: string;
+        user?: { role: string; redirect_to?: string };
       };
 
       if (!response.ok || !data.user) {
         throw new Error(data.error || `Unable to ${mode}.`);
       }
 
-      const nextPath = getSafeNextPath(searchParams.get('next'), getHomeByRole(data.user.role));
+      const nextPath = getSafeNextPath(
+        searchParams.get('next'),
+        data.redirect_to || data.user.redirect_to || getHomeByRole(data.user.role),
+      );
       toast.success(mode === 'login' ? 'Signed in successfully.' : 'Citizen account created successfully.');
       window.location.assign(nextPath);
     } catch (error) {

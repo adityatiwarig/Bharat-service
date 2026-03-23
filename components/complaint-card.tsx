@@ -1,4 +1,5 @@
 import { AlertCircle, Clock, MapPin } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/status-badge'
@@ -10,6 +11,8 @@ interface ComplaintCardProps {
   ward?: Ward
   onViewDetails?: () => void
   compact?: boolean
+  badgeExtras?: ReactNode
+  footer?: ReactNode
 }
 
 export function ComplaintCard({
@@ -17,6 +20,8 @@ export function ComplaintCard({
   ward,
   onViewDetails,
   compact = false,
+  badgeExtras,
+  footer,
 }: ComplaintCardProps) {
   const categoryColors = {
     pothole: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
@@ -57,6 +62,7 @@ export function ComplaintCard({
                   {complaint.category}
                 </span>
                 <StatusBadge status={complaint.status} />
+                {badgeExtras}
                 {hasWorkProof ? <WorkCompletedBadge /> : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -68,6 +74,7 @@ export function ComplaintCard({
               <p className="mt-2 text-xs text-slate-500">
                 {ward?.name ?? 'Unknown ward'} / {daysAgo} days ago
               </p>
+              {footer ? <div className="mt-3">{footer}</div> : null}
             </div>
             <AlertCircle className={cn('h-5 w-5', priorityColors[complaint.priority])} />
           </div>
@@ -111,6 +118,7 @@ export function ComplaintCard({
             {complaint.department.replace('_', ' ')}
           </span>
           <StatusBadge status={complaint.status} />
+          {badgeExtras}
           <PriorityBadge priority={complaint.priority} />
           {hasWorkProof ? <WorkCompletedBadge /> : null}
           <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
@@ -134,6 +142,7 @@ export function ComplaintCard({
             </div>
           </div>
         </div>
+        {footer ? <div>{footer}</div> : null}
       </CardContent>
     </Card>
   )

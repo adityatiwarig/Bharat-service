@@ -11,7 +11,10 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "seed:officers": "node scripts/seed-officers-from-csv.mjs",
+    "escalation:worker": "node scripts/escalation-worker.mjs",
+    "escalation:run-once": "node scripts/escalation-worker.mjs --once"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

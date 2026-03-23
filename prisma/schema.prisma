@@ -20,20 +20,111 @@ model User {
   complaints        Complaint[]
   notifications     notifications[]
   worker_profile    Worker?
+  officer_profile   Officer?
 
   @@index([role, department], map: "idx_users_role_department")
   @@map("users")
 }
 
-model Ward {
+model Zone {
   id         Int         @id @default(autoincrement())
   name       String      @unique
-  city       String      @default("Delhi")
   created_at DateTime    @default(now()) @db.Timestamptz(6)
   complaints Complaint[]
-  workers    Worker[]
+  mappings   OfficerMapping[]
+  officers   Officer[]
+  wards      Ward[]
 
+  @@map("zones")
+}
+
+model Ward {
+  id              Int              @id @default(autoincrement())
+  name            String           @unique
+  zone_id         Int?
+  city            String           @default("Delhi")
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  complaints      Complaint[]
+  mappings        OfficerMapping[]
+  officers        Officer[]
+  workers         Worker[]
+  zone            Zone?            @relation(fields: [zone_id], references: [id], onDelete: SetNull)
+
+  @@index([zone_id], map: "idx_wards_zone_id")
   @@map("wards")
+}
+
+model DepartmentRecord {
+  id         Int              @id @default(autoincrement())
+  name       String           @unique
+  created_at DateTime         @default(now()) @db.Timestamptz(6)
+  categories Category[]
+  complaints Complaint[]
+  mappings   OfficerMapping[]
+  officers   Officer[]
+
+  @@map("departments")
+}
+
+model Category {
+  id            Int              @id @default(autoincrement())
+  name          String
+  department_id Int
+  created_at    DateTime         @default(now()) @db.Timestamptz(6)
+  complaints    Complaint[]
+  department    DepartmentRecord @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  mappings      OfficerMapping[]
+
+  @@unique([department_id, name], map: "idx_categories_department_name")
+  @@index([department_id], map: "idx_categories_department_id")
+  @@map("categories")
+}
+
+model Officer {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id            String?          @unique @db.Uuid
+  name               String
+  email              String           @unique
+  password           String
+  role               OfficerRole
+  department_id      Int
+  zone_id            Int?
+  ward_id            Int?
+  designation        String?
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime         @default(now()) @db.Timestamptz(6)
+  assignedComplaints Complaint[]      @relation("ComplaintOfficerAssignment")
+  user               User?            @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  department_record  DepartmentRecord @relation(fields: [department_id], references: [id], onDelete: Restrict)
+  ward               Ward?            @relation(fields: [ward_id], references: [id], onDelete: SetNull)
+  zone               Zone?            @relation(fields: [zone_id], references: [id], onDelete: SetNull)
+
+  @@index([department_id, role], map: "idx_officers_department_role")
+  @@index([zone_id], map: "idx_officers_zone_id")
+  @@index([ward_id], map: "idx_officers_ward_id")
+  @@index([zone_id, ward_id, department_id, role], map: "idx_officers_scope_role")
+  @@map("officers")
+}
+
+model OfficerMapping {
+  id            Int              @id @default(autoincrement())
+  zone_id       Int
+  ward_id       Int
+  department_id Int
+  category_id   Int
+  l1_officer_id String           @db.Uuid
+  l2_officer_id String           @db.Uuid
+  l3_officer_id String           @db.Uuid
+  sla_l1        Int
+  sla_l2        Int
+  sla_l3        Int
+  zone          Zone             @relation(fields: [zone_id], references: [id], onDelete: Cascade)
+  ward          Ward             @relation(fields: [ward_id], references: [id], onDelete: Cascade)
+  department    DepartmentRecord @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  category      Category         @relation(fields: [category_id], references: [id], onDelete: Cascade)
+
+  @@unique([zone_id, ward_id, department_id, category_id], map: "idx_officer_mapping_lookup")
+  @@map("officer_mapping")
 }
 
 model Worker {
@@ -53,52 +144,70 @@ model Worker {
 }
 
 model Complaint {
-  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tracking_code      String            @unique
-  user_id            String            @db.Uuid
-  applicant_name     String?
-  applicant_mobile   String?
-  applicant_email    String?
-  applicant_address  String?
-  applicant_gender   String?
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tracking_code        String            @unique
+  user_id              String            @db.Uuid
+  applicant_name       String?
+  applicant_mobile     String?
+  applicant_email      String?
+  applicant_address    String?
+  applicant_gender     String?
   previous_complaint_id String?
-  ward_id            Int
-  department         DepartmentName    @default(roads)
-  assigned_worker_id String?           @db.Uuid
-  title              String
-  text               String
-  category           ComplaintCategory @default(other)
-  status             ComplaintStatus   @default(submitted)
-  priority           ComplaintPriority @default(medium)
-  risk_score         Decimal           @default(0) @db.Decimal(6, 2)
-  sentiment_score    Decimal           @default(0) @db.Decimal(6, 2)
-  frequency_score    Decimal           @default(0) @db.Decimal(6, 2)
-  hotspot_count      Int               @default(0)
-  is_hotspot         Boolean           @default(false)
-  is_spam            Boolean           @default(false)
-  spam_reasons       Json              @default("[]")
-  attachments        Json              @default("[]")
-  proof_image        Json?
-  proof_text         String?
-  department_message String?
-  location_address   String?
-  latitude           Decimal?          @db.Decimal(10, 7)
-  longitude          Decimal?          @db.Decimal(10, 7)
-  resolved_at        DateTime?         @db.Timestamptz(6)
-  resolution_notes   String?
-  created_at         DateTime          @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
-  complaint_id       String            @unique(map: "idx_complaints_complaint_id")
-  progress           String            @default("pending")
-  dept_head_viewed   Boolean           @default(false)
-  worker_assigned    Boolean           @default(false)
-  updates            ComplaintUpdate[]
-  assigned_worker    Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id])
-  user               User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  ward               Ward              @relation(fields: [ward_id], references: [id])
-  notifications      notifications[]
-  rating             Rating?
+  zone_id              Int?
+  ward_id              Int
+  department_id        Int?
+  department           DepartmentName    @default(roads)
+  assigned_officer_id  String?           @db.Uuid
+  assigned_worker_id   String?           @db.Uuid
+  title                String
+  text                 String
+  category_id          Int?
+  category             ComplaintCategory @default(other)
+  status               ComplaintStatus   @default(submitted)
+  current_level        ComplaintLevel    @default(L1)
+  priority             ComplaintPriority @default(medium)
+  risk_score           Decimal           @default(0) @db.Decimal(6, 2)
+  sentiment_score      Decimal           @default(0) @db.Decimal(6, 2)
+  frequency_score      Decimal           @default(0) @db.Decimal(6, 2)
+  hotspot_count        Int               @default(0)
+  is_hotspot           Boolean           @default(false)
+  is_spam              Boolean           @default(false)
+  spam_reasons         Json              @default("[]")
+  attachments          Json              @default("[]")
+  proof_image          Json?
+  proof_text           String?
+  department_message   String?
+  street_address       String?
+  location_address     String?
+  latitude             Decimal?          @db.Decimal(10, 7)
+  longitude            Decimal?          @db.Decimal(10, 7)
+  deadline             DateTime?         @db.Timestamptz(6)
+  resolved_at          DateTime?         @db.Timestamptz(6)
+  resolution_notes     String?
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime          @default(now()) @db.Timestamptz(6)
+  complaint_id         String            @unique(map: "idx_complaints_complaint_id")
+  progress             String            @default("pending")
+  dept_head_viewed     Boolean           @default(false)
+  worker_assigned      Boolean           @default(false)
+  history              ComplaintHistory[]
+  updates              ComplaintUpdate[]
+  assigned_officer     Officer?          @relation("ComplaintOfficerAssignment", fields: [assigned_officer_id], references: [id])
+  assigned_worker      Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id])
+  category_record      Category?         @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  department_record    DepartmentRecord? @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  zone                 Zone?             @relation(fields: [zone_id], references: [id], onDelete: SetNull)
+  user                 User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ward                 Ward              @relation(fields: [ward_id], references: [id])
+  notifications        notifications[]
+  proofs               ComplaintProof[]
+  rating               Rating?
 
+  @@index([zone_id], map: "idx_complaints_zone_id")
+  @@index([department_id], map: "idx_complaints_department_id")
+  @@index([category_id], map: "idx_complaints_category_id")
+  @@index([assigned_officer_id], map: "idx_complaints_assigned_officer_id")
+  @@index([current_level, deadline], map: "idx_complaints_current_level_deadline")
   @@index([ward_id, priority, status, created_at(sort: Desc)])
   @@index([status, created_at(sort: Desc)])
   @@index([user_id, created_at(sort: Desc)])
@@ -108,6 +217,20 @@ model Complaint {
   @@index([ward_id, priority, status, created_at(sort: Desc)], map: "idx_complaints_ward_priority_status_created")
   @@index([department, ward_id, status, created_at(sort: Desc)], map: "idx_complaints_department_ward_status_created")
   @@map("complaints")
+}
+
+model ComplaintHistory {
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id String                 @db.Uuid
+  action       ComplaintHistoryAction
+  from_officer String?                @db.Uuid
+  to_officer   String?                @db.Uuid
+  level        ComplaintLevel
+  timestamp    DateTime               @default(now()) @db.Timestamptz(6)
+  complaint    Complaint              @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@index([complaint_id, timestamp(sort: Desc)], map: "idx_complaint_history_complaint_timestamp")
+  @@map("complaint_history")
 }
 
 model ComplaintUpdate {
@@ -134,6 +257,18 @@ model Rating {
   complaint    Complaint @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
 
   @@map("ratings")
+}
+
+model ComplaintProof {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  complaint_id String    @db.Uuid
+  image_url    String
+  description  String?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  complaint    Complaint @relation(fields: [complaint_id], references: [id], onDelete: Cascade)
+
+  @@index([complaint_id, created_at(sort: Desc)], map: "idx_complaint_proofs_complaint")
+  @@map("complaint_proofs")
 }
 
 model notifications {
@@ -179,6 +314,31 @@ enum ComplaintPriority {
   critical
 
   @@map("complaint_priority")
+}
+
+enum ComplaintLevel {
+  L1
+  L2
+  L3
+
+  @@map("complaint_level")
+}
+
+enum OfficerRole {
+  L1
+  L2
+  L3
+  ADMIN
+
+  @@map("officer_role")
+}
+
+enum ComplaintHistoryAction {
+  assigned
+  escalated
+  resolved
+
+  @@map("complaint_history_action")
 }
 
 enum ComplaintCategory {

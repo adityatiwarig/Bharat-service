@@ -2,7 +2,13 @@ import 'server-only';
 
 import { query } from '@/lib/server/db';
 import { mapComplaintRow, type ComplaintRow } from '@/lib/server/complaints';
-import type { ComplaintAnalyticsSummary, ComplaintWardComparisonSummary, User, WorkerDashboardSummary } from '@/lib/types';
+import type {
+  ComplaintAnalyticsSummary,
+  ComplaintWardComparisonSummary,
+  OfficerDashboardSummary,
+  User,
+  WorkerDashboardSummary,
+} from '@/lib/types';
 
 function getDepartmentScope(user?: User) {
   if (user?.role !== 'leader') {
@@ -365,6 +371,133 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
     resolved: Number(summary?.resolved || 0),
     urgent_queue: Number(summary?.urgent_queue || 0),
     items: complaints,
+  };
+}
+
+export async function getOfficerDashboardSummary(user: User): Promise<OfficerDashboardSummary> {
+  if (!user.officer_id) {
+    return {
+      assigned_total: 0,
+      assigned_open: 0,
+      pending_level: 0,
+      resolved: 0,
+      overdue: 0,
+      items: [],
+    };
+  }
+
+  const [totals, rows] = await Promise.all([
+    query<{
+      assigned_total: string;
+      assigned_open: string;
+      pending_level: string;
+      resolved: string;
+      overdue: string;
+    }>(
+      `
+        SELECT
+          COUNT(*)::text AS assigned_total,
+          COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed', 'rejected'))::text AS assigned_open,
+          COUNT(*) FILTER (
+            WHERE c.current_level = $2
+              AND c.status NOT IN ('resolved', 'closed', 'rejected')
+          )::text AS pending_level,
+          COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed'))::text AS resolved,
+          COUNT(*) FILTER (
+            WHERE c.deadline IS NOT NULL
+              AND c.deadline < NOW()
+              AND c.status NOT IN ('resolved', 'closed', 'rejected')
+          )::text AS overdue
+        FROM complaints c
+        WHERE c.assigned_officer_id = $1
+      `,
+      [user.officer_id, user.officer_level],
+    ),
+    query<ComplaintRow>(
+      `
+        SELECT
+          c.id,
+          c.complaint_id,
+          c.tracking_code,
+          c.user_id,
+          c.ward_id,
+          c.department_id,
+          d.name AS department_name,
+          c.department,
+          c.assigned_officer_id,
+          o.name AS assigned_officer_name,
+          c.assigned_worker_id,
+          c.title,
+          c.text,
+          c.category_id,
+          cat.name AS category_name,
+          c.category,
+          c.status,
+          c.progress,
+          c.dept_head_viewed,
+          c.worker_assigned,
+          c.priority,
+          c.risk_score,
+          c.sentiment_score,
+          c.frequency_score,
+          c.hotspot_count,
+          c.is_hotspot,
+          c.is_spam,
+          c.spam_reasons,
+          c.attachments,
+          c.proof_image,
+          c.proof_text,
+          c.department_message,
+          c.street_address,
+          c.location_address,
+          c.latitude,
+          c.longitude,
+          c.current_level,
+          c.deadline,
+          c.resolved_at,
+          c.resolution_notes,
+          c.created_at,
+          c.updated_at,
+          w.name AS ward_name,
+          u.name AS citizen_name,
+          c.zone_id,
+          z.name AS zone_name
+        FROM complaints c
+        INNER JOIN wards w ON w.id = c.ward_id
+        INNER JOIN users u ON u.id = c.user_id
+        LEFT JOIN officers o ON o.id = c.assigned_officer_id
+        LEFT JOIN departments d ON d.id = c.department_id
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        LEFT JOIN zones z ON z.id = c.zone_id
+        WHERE c.assigned_officer_id = $1
+        ORDER BY
+          CASE
+            WHEN c.deadline IS NOT NULL AND c.deadline < NOW() AND c.status NOT IN ('resolved', 'closed', 'rejected') THEN 0
+            ELSE 1
+          END,
+          CASE c.priority
+            WHEN 'critical' THEN 0
+            WHEN 'high' THEN 1
+            WHEN 'medium' THEN 2
+            ELSE 3
+          END,
+          c.deadline ASC NULLS LAST,
+          c.updated_at DESC
+        LIMIT 8
+      `,
+      [user.officer_id],
+    ),
+  ]);
+
+  const summary = totals.rows[0];
+
+  return {
+    assigned_total: Number(summary?.assigned_total || 0),
+    assigned_open: Number(summary?.assigned_open || 0),
+    pending_level: Number(summary?.pending_level || 0),
+    resolved: Number(summary?.resolved || 0),
+    overdue: Number(summary?.overdue || 0),
+    items: rows.rows.map(mapComplaintRow),
   };
 }
 

@@ -1,25 +1,17 @@
 import type { ComplaintCategory, ComplaintDepartment, ComplaintPriority, ComplaintStatus, Ward } from '@/lib/types';
 
 export const DELHI_WARDS: Ward[] = [
-  { id: 1, name: 'Rohini', city: 'Delhi' },
-  { id: 2, name: 'Dwarka', city: 'Delhi' },
-  { id: 3, name: 'Saket', city: 'Delhi' },
-  { id: 4, name: 'Laxmi Nagar', city: 'Delhi' },
-  { id: 5, name: 'Karol Bagh', city: 'Delhi' },
+  { id: 1, name: 'Rohini Sector 1', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
+  { id: 2, name: 'Rohini Sector 7', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
+  { id: 3, name: 'Rohini Sector 16', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
+  { id: 4, name: 'Dev Nagar', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
+  { id: 5, name: 'Karol Bagh Ward', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
+  { id: 6, name: 'Paharganj', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
 ];
 
 export function getWardLoginSlug(wardName: string) {
   const normalized = wardName.trim().toLowerCase();
-
-  if (normalized === 'laxmi nagar') {
-    return 'laxmi';
-  }
-
-  if (normalized === 'karol bagh') {
-    return 'karol';
-  }
-
-  return normalized.split(/\s+/)[0] || normalized;
+  return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 export const DELHI_WARD_LOGIN_OPTIONS = DELHI_WARDS.map((ward) => ({

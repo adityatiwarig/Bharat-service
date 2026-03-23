@@ -14,9 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { fetchWards } from '@/lib/client/complaints';
-import { COMPLAINT_CATEGORIES, COMPLAINT_DEPARTMENTS } from '@/lib/constants';
-import type { Ward } from '@/lib/types';
+import { fetchGrievanceMapping } from '@/lib/client/complaints';
+import type { GrievanceMappingResponse } from '@/lib/types';
 
 const GENDER_OPTIONS = [
   { value: 'male', label: 'Male' },
@@ -24,7 +23,8 @@ const GENDER_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
-const controlClassName = 'w-full rounded-md border-gray-300 bg-white focus-visible:ring-2 focus-visible:ring-[#1d4f91] focus-visible:ring-offset-0';
+const controlClassName =
+  'w-full rounded-md border-gray-300 bg-white focus-visible:ring-2 focus-visible:ring-[#1d4f91] focus-visible:ring-offset-0';
 
 const selectClassName = 'w-full rounded-md border-gray-300 bg-white focus:ring-2 focus:ring-[#1d4f91] focus:ring-offset-0';
 
@@ -40,31 +40,36 @@ function RequiredLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function SubmitComplaintPage() {
-  const router = useRouter();
-  const session = useSession();
-  const [wards, setWards] = useState<Ward[]>([]);
-  const [loadingWards, setLoadingWards] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [capturingLocation, setCapturingLocation] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
-  const [form, setForm] = useState({
+function createInitialForm(session?: { name?: string | null; phone?: string | null; email?: string | null }) {
+  return {
     applicant_name: session?.name || '',
     applicant_mobile: session?.phone || '',
     applicant_email: session?.email || '',
     applicant_address: '',
     applicant_gender: '',
-    department: '',
-    category: '',
+    zone_id: '',
+    ward_id: '',
+    department_id: '',
+    category_id: '',
+    street_address: '',
     title: '',
     text: '',
-    ward_id: '',
-    location_address: '',
     previous_complaint_id: '',
     latitude: '',
     longitude: '',
-  });
+  };
+}
+
+export default function SubmitComplaintPage() {
+  const router = useRouter();
+  const session = useSession();
+  const [mapping, setMapping] = useState<GrievanceMappingResponse | null>(null);
+  const [loadingMapping, setLoadingMapping] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [form, setForm] = useState(() => createInitialForm(session || undefined));
 
   useEffect(() => {
     setForm((current) => ({
@@ -76,33 +81,53 @@ export default function SubmitComplaintPage() {
   }, [session?.email, session?.name, session?.phone]);
 
   useEffect(() => {
-    fetchWards()
-      .then(setWards)
-      .finally(() => setLoadingWards(false));
+    fetchGrievanceMapping()
+      .then(setMapping)
+      .catch((error) => {
+        console.error('Failed to load grievance mapping', error);
+        toast.error('Unable to load complaint mapping data.');
+      })
+      .finally(() => setLoadingMapping(false));
   }, []);
 
+  const filteredWards = useMemo(() => {
+    if (!mapping || !form.zone_id) {
+      return [];
+    }
+
+    return mapping.wards.filter((ward) => String(ward.zone_id) === form.zone_id);
+  }, [form.zone_id, mapping]);
+
+  const filteredCategories = useMemo(() => {
+    if (!mapping || !form.department_id) {
+      return [];
+    }
+
+    return mapping.categories.filter((category) => String(category.department_id) === form.department_id);
+  }, [form.department_id, mapping]);
+
+  const selectedZone = useMemo(
+    () => mapping?.zones.find((zone) => String(zone.id) === form.zone_id) || null,
+    [form.zone_id, mapping],
+  );
+
   const selectedWard = useMemo(
-    () => wards.find((ward) => String(ward.id) === form.ward_id),
-    [form.ward_id, wards],
+    () => mapping?.wards.find((ward) => String(ward.id) === form.ward_id) || null,
+    [form.ward_id, mapping],
+  );
+
+  const selectedDepartment = useMemo(
+    () => mapping?.departments.find((department) => String(department.id) === form.department_id) || null,
+    [form.department_id, mapping],
+  );
+
+  const selectedCategory = useMemo(
+    () => mapping?.categories.find((category) => String(category.id) === form.category_id) || null,
+    [form.category_id, mapping],
   );
 
   function handleReset() {
-    setForm({
-      applicant_name: session?.name || '',
-      applicant_mobile: session?.phone || '',
-      applicant_email: session?.email || '',
-      applicant_address: '',
-      applicant_gender: '',
-      department: '',
-      category: '',
-      title: '',
-      text: '',
-      ward_id: '',
-      location_address: '',
-      previous_complaint_id: '',
-      latitude: '',
-      longitude: '',
-    });
+    setForm(createInitialForm(session || undefined));
     setFiles([]);
   }
 
@@ -147,12 +172,13 @@ export default function SubmitComplaintPage() {
       payload.set('applicant_email', form.applicant_email);
       payload.set('applicant_address', form.applicant_address);
       payload.set('applicant_gender', form.applicant_gender);
-      payload.set('department', form.department);
-      payload.set('category', form.category);
+      payload.set('zone_id', form.zone_id);
+      payload.set('ward_id', form.ward_id);
+      payload.set('department_id', form.department_id);
+      payload.set('category_id', form.category_id);
+      payload.set('street_address', form.street_address);
       payload.set('title', form.title);
       payload.set('text', form.text);
-      payload.set('ward_id', form.ward_id);
-      payload.set('location_address', form.location_address);
       payload.set('previous_complaint_id', form.previous_complaint_id);
       if (form.latitude) payload.set('latitude', form.latitude);
       if (form.longitude) payload.set('longitude', form.longitude);
@@ -211,7 +237,6 @@ export default function SubmitComplaintPage() {
             </div>
 
             <div className="rounded-md border border-slate-300 bg-white">
-
               <div className="p-6">
                 {submitting ? (
                   <LoadingSummary
@@ -280,7 +305,7 @@ export default function SubmitComplaintPage() {
                       </FieldGroup>
                       <FieldGroup className="md:col-span-2">
                         <Field>
-                          <RequiredLabel>Address</RequiredLabel>
+                          <RequiredLabel>Residential Address</RequiredLabel>
                           <Textarea
                             value={form.applicant_address}
                             onChange={(event) => setForm((current) => ({ ...current, applicant_address: event.target.value }))}
@@ -294,22 +319,28 @@ export default function SubmitComplaintPage() {
                   </div>
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">
-                    <SectionTitle>2. Complaint Details</SectionTitle>
+                    <SectionTitle>2. Complaint Classification</SectionTitle>
                     <div className="grid gap-4 md:grid-cols-2">
                       <FieldGroup>
                         <Field>
-                          <FieldLabel className="text-sm font-medium text-slate-700">Department</FieldLabel>
+                          <RequiredLabel>Department</RequiredLabel>
                           <Select
-                            value={form.department}
-                            onValueChange={(value) => setForm((current) => ({ ...current, department: value }))}
+                            value={form.department_id}
+                            onValueChange={(value) =>
+                              setForm((current) => ({
+                                ...current,
+                                department_id: value,
+                                category_id: '',
+                              }))
+                            }
                           >
                             <SelectTrigger className={selectClassName}>
-                              <SelectValue placeholder="Select department" />
+                              <SelectValue placeholder={loadingMapping ? 'Loading departments...' : 'Select department'} />
                             </SelectTrigger>
                             <SelectContent>
-                              {COMPLAINT_DEPARTMENTS.map((department) => (
-                                <SelectItem key={department.value} value={department.value}>
-                                  {department.label}
+                              {mapping?.departments.map((department) => (
+                                <SelectItem key={department.id} value={String(department.id)}>
+                                  {department.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -318,18 +349,27 @@ export default function SubmitComplaintPage() {
                       </FieldGroup>
                       <FieldGroup>
                         <Field>
-                          <FieldLabel className="text-sm font-medium text-slate-700">Grievance Category</FieldLabel>
+                          <RequiredLabel>Category</RequiredLabel>
                           <Select
-                            value={form.category}
-                            onValueChange={(value) => setForm((current) => ({ ...current, category: value }))}
+                            value={form.category_id}
+                            onValueChange={(value) => setForm((current) => ({ ...current, category_id: value }))}
+                            disabled={!form.department_id}
                           >
                             <SelectTrigger className={selectClassName}>
-                              <SelectValue placeholder="Select grievance category" />
+                              <SelectValue
+                                placeholder={
+                                  !form.department_id
+                                    ? 'Select department first'
+                                    : loadingMapping
+                                      ? 'Loading categories...'
+                                      : 'Select category'
+                                }
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              {COMPLAINT_CATEGORIES.map((category) => (
-                                <SelectItem key={category.value} value={category.value}>
-                                  {category.label}
+                              {filteredCategories.map((category) => (
+                                <SelectItem key={category.id} value={String(category.id)}>
+                                  {category.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -338,7 +378,7 @@ export default function SubmitComplaintPage() {
                       </FieldGroup>
                       <FieldGroup className="md:col-span-2">
                         <Field>
-                          <RequiredLabel>Complaint Title</RequiredLabel>
+                          <RequiredLabel>Subject</RequiredLabel>
                           <Input
                             value={form.title}
                             onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
@@ -363,22 +403,28 @@ export default function SubmitComplaintPage() {
                   </div>
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">
-                    <SectionTitle>3. Location Details</SectionTitle>
+                    <SectionTitle>3. Complaint Location</SectionTitle>
                     <div className="grid gap-4 md:grid-cols-2">
                       <FieldGroup>
                         <Field>
-                          <RequiredLabel>Area / Ward</RequiredLabel>
+                          <RequiredLabel>Zone</RequiredLabel>
                           <Select
-                            value={form.ward_id}
-                            onValueChange={(value) => setForm((current) => ({ ...current, ward_id: value }))}
+                            value={form.zone_id}
+                            onValueChange={(value) =>
+                              setForm((current) => ({
+                                ...current,
+                                zone_id: value,
+                                ward_id: '',
+                              }))
+                            }
                           >
                             <SelectTrigger className={selectClassName}>
-                              <SelectValue placeholder={loadingWards ? 'Loading wards...' : 'Select ward'} />
+                              <SelectValue placeholder={loadingMapping ? 'Loading zones...' : 'Select zone'} />
                             </SelectTrigger>
                             <SelectContent>
-                              {wards.map((ward) => (
-                                <SelectItem key={ward.id} value={String(ward.id)}>
-                                  {ward.name}
+                              {mapping?.zones.map((zone) => (
+                                <SelectItem key={zone.id} value={String(zone.id)}>
+                                  {zone.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -387,11 +433,44 @@ export default function SubmitComplaintPage() {
                       </FieldGroup>
                       <FieldGroup>
                         <Field>
-                          <FieldLabel className="text-sm font-medium text-slate-700">Nearest Landmark</FieldLabel>
-                          <Input
-                            value={form.location_address}
-                            onChange={(event) => setForm((current) => ({ ...current, location_address: event.target.value }))}
+                          <RequiredLabel>Ward</RequiredLabel>
+                          <Select
+                            value={form.ward_id}
+                            onValueChange={(value) => setForm((current) => ({ ...current, ward_id: value }))}
+                            disabled={!form.zone_id}
+                          >
+                            <SelectTrigger className={selectClassName}>
+                              <SelectValue
+                                placeholder={
+                                  !form.zone_id
+                                    ? 'Select zone first'
+                                    : loadingMapping
+                                      ? 'Loading wards...'
+                                      : 'Select ward'
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {filteredWards.map((ward) => (
+                                <SelectItem key={ward.id} value={String(ward.id)}>
+                                  {ward.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      </FieldGroup>
+                      <FieldGroup className="md:col-span-2">
+                        <Field>
+                          <FieldLabel className="text-sm font-medium text-slate-700">
+                            Street / Landmark / Additional Location Detail
+                          </FieldLabel>
+                          <Textarea
+                            value={form.street_address}
+                            onChange={(event) => setForm((current) => ({ ...current, street_address: event.target.value }))}
+                            rows={3}
                             className={controlClassName}
+                            placeholder="Optional"
                           />
                         </Field>
                       </FieldGroup>
@@ -404,7 +483,7 @@ export default function SubmitComplaintPage() {
                             Auto Fetch Current Location
                           </div>
                           <div className="mt-1 text-sm text-slate-600">
-                            Optional. This helps the field team reach the complaint spot faster.
+                            Optional. This helps the field team reach the complaint location faster.
                           </div>
                         </div>
                         <Button
@@ -433,9 +512,22 @@ export default function SubmitComplaintPage() {
                         </div>
                       ) : null}
                     </div>
-                    {selectedWard ? (
+                    {selectedZone || selectedWard || selectedDepartment || selectedCategory ? (
                       <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        Selected Ward: <span className="font-medium text-slate-800">{selectedWard.name}, {selectedWard.city}</span>
+                        <div>
+                          Selected location:
+                          {' '}
+                          <span className="font-medium text-slate-800">
+                            {[selectedWard?.name, selectedZone?.name].filter(Boolean).join(', ') || 'Not selected'}
+                          </span>
+                        </div>
+                        <div className="mt-1">
+                          Complaint classification:
+                          {' '}
+                          <span className="font-medium text-slate-800">
+                            {[selectedDepartment?.name, selectedCategory?.name].filter(Boolean).join(' / ') || 'Not selected'}
+                          </span>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -461,13 +553,15 @@ export default function SubmitComplaintPage() {
                   </div>
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">
-                    <SectionTitle>5. Additional</SectionTitle>
+                    <SectionTitle>5. Additional Information</SectionTitle>
                     <FieldGroup>
                       <Field>
                         <FieldLabel className="text-sm font-medium text-slate-700">Previous Complaint ID</FieldLabel>
                         <Input
                           value={form.previous_complaint_id}
-                          onChange={(event) => setForm((current) => ({ ...current, previous_complaint_id: event.target.value }))}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, previous_complaint_id: event.target.value }))
+                          }
                           className={controlClassName}
                         />
                       </Field>
@@ -475,9 +569,9 @@ export default function SubmitComplaintPage() {
                   </div>
 
                   <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    After submission, your complaint will be assigned to the relevant department. You can track status in
+                    After submission, your complaint will be routed to the concerned department. You can track its status in
                     {' '}
-                    <span className="font-medium text-slate-800">'My Complaints'</span>.
+                    <span className="font-medium text-slate-800">My Complaints</span>.
                   </div>
 
                   {submitted ? (
@@ -494,7 +588,7 @@ export default function SubmitComplaintPage() {
                     <Button
                       type="submit"
                       className="h-11 w-full flex-1 rounded-md bg-green-600 text-white hover:bg-green-700"
-                      disabled={submitting || loadingWards}
+                      disabled={submitting || loadingMapping}
                     >
                       {submitting ? (
                         <Spinner label="Submitting complaint..." />
@@ -524,3 +618,4 @@ export default function SubmitComplaintPage() {
     </DashboardLayout>
   );
 }
+

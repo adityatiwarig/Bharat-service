@@ -9,7 +9,7 @@ const REDIS_URL = process.env.REDIS_URL || '';
 const REDIS_REQUEST_TIMEOUT_MS = 800;
 const REDIS_RETRY_BACKOFF_MS = 5000;
 
-type RedisCommandArgument = string | number;
+export type RedisCommandArgument = string | number;
 type RedisResponse<T> = {
   result?: T;
   error?: string;
@@ -347,6 +347,10 @@ async function executeRedisCommand<T>(command: RedisCommandArgument[]) {
     markRedisFailure();
     return null;
   }
+}
+
+export async function runRedisCommand<T>(command: RedisCommandArgument[]) {
+  return executeRedisCommand<T>(command);
 }
 
 export async function getRedisJson<T>(key: string) {

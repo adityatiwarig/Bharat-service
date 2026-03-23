@@ -1,4 +1,5 @@
 export type UserRole = 'citizen' | 'worker' | 'admin' | 'leader';
+export type AuthSource = 'user' | 'officer';
 
 export type ComplaintStatus =
   | 'submitted'
@@ -21,6 +22,9 @@ export type ComplaintDepartment =
   | 'streetlight';
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+export type OfficerLevel = 'L1' | 'L2' | 'L3';
+export type OfficerRole = OfficerLevel | 'ADMIN';
+export type ComplaintHistoryAction = 'assigned' | 'escalated' | 'resolved';
 
 export type ComplaintCategory =
   | 'pothole'
@@ -37,9 +41,39 @@ export interface Ward {
   id: number;
   name: string;
   city: string;
+  zone_id?: number | null;
+  zone_name?: string | null;
   code?: string;
   population?: number;
   created_at?: string;
+}
+
+export interface Zone {
+  id: number;
+  name: string;
+}
+
+export interface GrievanceDepartmentOption {
+  id: number;
+  name: string;
+}
+
+export interface GrievanceCategoryOption {
+  id: number;
+  name: string;
+  department_id: number;
+}
+
+export interface GrievanceMappingResponse {
+  source_file: string;
+  zones: Zone[];
+  wards: Ward[];
+  departments: GrievanceDepartmentOption[];
+  categories: GrievanceCategoryOption[];
+  relationships: {
+    wards_by_zone: Record<string, number[]>;
+    categories_by_department: Record<string, number[]>;
+  };
 }
 
 export interface UserSession {
@@ -47,9 +81,18 @@ export interface UserSession {
   name: string;
   email: string;
   role: UserRole;
+  auth_source?: AuthSource;
   phone?: string | null;
   ward_id?: number | null;
   department?: ComplaintDepartment | null;
+  officer_id?: string | null;
+  officer_level?: OfficerLevel | null;
+  officer_role?: OfficerRole | null;
+  officer_department_id?: number | null;
+  officer_department_name?: string | null;
+  officer_zone_id?: number | null;
+  officer_ward_id?: number | null;
+  redirect_to?: string;
 }
 
 export interface User extends UserSession {
@@ -69,6 +112,48 @@ export interface Worker {
   created_at: string;
   user?: User;
   ward?: Ward;
+}
+
+export interface Officer {
+  id: string;
+  user_id?: string | null;
+  name: string;
+  email: string;
+  role: OfficerRole;
+  department_id: number;
+  password?: string;
+  department_name?: string | null;
+  zone_id?: number | null;
+  zone_name?: string | null;
+  ward_id?: number | null;
+  ward_name?: string | null;
+  designation?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OfficerMapping {
+  id: number;
+  zone_id: number;
+  ward_id: number;
+  department_id: number;
+  category_id: number;
+  l1_officer_id: string;
+  l2_officer_id: string;
+  l3_officer_id: string;
+  sla_l1: number;
+  sla_l2: number;
+  sla_l3: number;
+}
+
+export interface ComplaintHistoryEntry {
+  id: string;
+  complaint_id: string;
+  action: ComplaintHistoryAction;
+  from_officer?: string | null;
+  to_officer?: string | null;
+  level: OfficerLevel;
+  timestamp: string;
 }
 
 export interface ComplaintAttachment {
@@ -110,6 +195,15 @@ export interface ComplaintProofData {
   resolved_at?: string | null;
   resolution_notes?: string | null;
   rating?: Rating | null;
+  proofs?: ComplaintProofRecord[];
+}
+
+export interface ComplaintProofRecord {
+  id: string;
+  complaint_id: string;
+  image_url: string;
+  description?: string | null;
+  created_at?: string;
 }
 
 export interface PublicComplaintSummary {
@@ -149,11 +243,17 @@ export interface Complaint {
   applicant_address?: string | null;
   applicant_gender?: string | null;
   previous_complaint_id?: string | null;
+  zone_id?: number | null;
+  zone_name?: string | null;
   ward_id: number;
+  department_id?: number | null;
+  department_name?: string | null;
   department: ComplaintDepartment;
   title: string;
   text: string;
   description?: string;
+  category_id?: number | null;
+  category_name?: string | null;
   category: ComplaintCategory;
   status: ComplaintStatus;
   progress: ComplaintProgress;
@@ -168,6 +268,7 @@ export interface Complaint {
   is_spam?: boolean;
   spam_reasons?: string[];
   department_message?: string;
+  street_address?: string | null;
   location_address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -176,15 +277,21 @@ export interface Complaint {
   proof_images?: ComplaintAttachment[];
   proof_text?: string | null;
   assigned_worker_id?: string | null;
+  assigned_officer_id?: string | null;
+  assigned_officer_name?: string | null;
   assigned_to?: string | null;
   ward_name?: string;
   citizen_name?: string;
   created_at: string;
   updated_at: string;
+  current_level?: OfficerLevel | null;
+  deadline?: string | null;
   resolved_at?: string | null;
   resolution_notes?: string | null;
   updates?: ComplaintUpdate[];
+  history?: ComplaintHistoryEntry[];
   rating?: Rating | null;
+  proof_count?: number;
 }
 
 export interface PaginatedResult<T> {
@@ -224,6 +331,15 @@ export interface WorkerDashboardSummary {
   in_progress: number;
   resolved: number;
   urgent_queue: number;
+  items: Complaint[];
+}
+
+export interface OfficerDashboardSummary {
+  assigned_total: number;
+  assigned_open: number;
+  pending_level: number;
+  resolved: number;
+  overdue: number;
   items: Complaint[];
 }
 

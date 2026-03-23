@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 
-import { COMPLAINT_CATEGORIES, COMPLAINT_DEPARTMENTS } from '@/lib/constants';
+import { buildComplaintSiteAddress, resolveGrievanceSelection } from '@/lib/grievance-mapping';
 import { AuthError, requireApiUser } from '@/lib/server/auth';
-import { createComplaintForUser, listComplaintsForUser, resolveComplaintDepartment } from '@/lib/server/complaints';
-import { listWards } from '@/lib/server/wards';
+import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/complaints';
 
 export const runtime = 'nodejs';
 
@@ -74,46 +73,58 @@ export async function POST(request: Request) {
     const applicant_email = String(formData.get('applicant_email') || '').trim().toLowerCase();
     const applicant_address = String(formData.get('applicant_address') || '').trim();
     const applicant_gender = String(formData.get('applicant_gender') || '').trim();
-    const category = String(formData.get('category') || 'other').trim().toLowerCase();
     const previous_complaint_id = String(formData.get('previous_complaint_id') || '').trim();
+    const zone_id = Number(formData.get('zone_id') || 0);
     const ward_id = Number(formData.get('ward_id') || 0);
-    const submittedDepartment = String(formData.get('department') || '').trim().toLowerCase();
-    const location_address = String(formData.get('location_address') || '').trim();
+    const department_id = Number(formData.get('department_id') || 0);
+    const category_id = Number(formData.get('category_id') || 0);
+    const street_address = String(formData.get('street_address') || '').trim();
     const latitude = formData.get('latitude') ? Number(formData.get('latitude')) : undefined;
     const longitude = formData.get('longitude') ? Number(formData.get('longitude')) : undefined;
     const attachments = formData
       .getAll('attachments')
       .filter((value): value is File => value instanceof File && value.size > 0);
 
-    if (!applicant_name || !applicant_mobile || !applicant_address || !title || !text || !Number.isFinite(ward_id) || ward_id <= 0) {
+    if (
+      !applicant_name ||
+      !applicant_mobile ||
+      !applicant_address ||
+      !title ||
+      !text ||
+      !Number.isFinite(zone_id) ||
+      zone_id <= 0 ||
+      !Number.isFinite(ward_id) ||
+      ward_id <= 0 ||
+      !Number.isFinite(department_id) ||
+      department_id <= 0 ||
+      !Number.isFinite(category_id) ||
+      category_id <= 0
+    ) {
       return NextResponse.json(
-        { error: 'Applicant details, complaint details, and ward are required.' },
+        { error: 'Zone, ward, department, category, applicant details, and complaint details are required.' },
         { status: 400 },
       );
     }
 
-    const wards = await listWards();
-    const wardExists = wards.some((ward) => ward.id === ward_id);
-    const resolvedDepartment = resolveComplaintDepartment({
-      department: submittedDepartment,
-      category,
-      title,
-      text,
+    const selection = resolveGrievanceSelection({
+      zone_id,
+      ward_id,
+      department_id,
+      category_id,
     });
-    const departmentExists = COMPLAINT_DEPARTMENTS.some((item) => item.value === resolvedDepartment);
-    const categoryExists = COMPLAINT_CATEGORIES.some((item) => item.value === category);
 
-    if (!wardExists) {
-      return NextResponse.json({ error: 'Please choose a valid ward before submitting.' }, { status: 400 });
+    if (!selection) {
+      return NextResponse.json(
+        { error: 'The selected zone, ward, department, and category combination is invalid.' },
+        { status: 400 },
+      );
     }
 
-    if (!departmentExists) {
-      return NextResponse.json({ error: 'Unable to detect a valid department for this complaint.' }, { status: 400 });
-    }
-
-    if (!categoryExists) {
-      return NextResponse.json({ error: 'Please choose a valid grievance category.' }, { status: 400 });
-    }
+    const location_address = buildComplaintSiteAddress({
+      zoneName: selection.zone.name,
+      wardName: selection.ward.name,
+      streetAddress: street_address,
+    });
 
     const complaint = await createComplaintForUser(
       user,
@@ -124,11 +135,15 @@ export async function POST(request: Request) {
         applicant_address,
         applicant_gender: applicant_gender || undefined,
         previous_complaint_id: previous_complaint_id || undefined,
+        zone_id,
         title,
         text,
-        category: category as never,
-        department: resolvedDepartment as never,
+        category: selection.legacy_category,
+        category_id,
+        department: selection.legacy_department,
+        department_id,
         ward_id,
+        street_address,
         location_address,
         latitude,
         longitude,

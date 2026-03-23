@@ -7,9 +7,11 @@ import type {
   ComplaintProofData,
   ComplaintPriority,
   ComplaintStatus,
+  OfficerDashboardSummary,
   ComplaintTimelineData,
   ComplaintTrendSummary,
   ComplaintWardComparisonSummary,
+  GrievanceMappingResponse,
   PaginatedResult,
   PublicComplaintLookupResult,
   Rating,
@@ -183,6 +185,13 @@ export async function fetchWards() {
   return data.wards;
 }
 
+export async function fetchGrievanceMapping(options: { zoneId?: number; departmentId?: number } = {}) {
+  return fetchJson<GrievanceMappingResponse>(withSearchParams('/api/grievance-mapping', {
+    zoneId: options.zoneId,
+    departmentId: options.departmentId,
+  }));
+}
+
 export async function fetchAdminDashboard() {
   return fetchJson<{
     summary: {
@@ -208,6 +217,10 @@ export async function fetchWorkerDashboard() {
       items: Complaint[];
     };
   }>('/api/dashboard/worker');
+}
+
+export async function fetchOfficerDashboard() {
+  return fetchJson<{ summary: OfficerDashboardSummary }>('/api/dashboard/officer');
 }
 
 export async function fetchLeaderTrendSummary() {
@@ -251,5 +264,120 @@ export async function assignComplaintWorker(complaintId: string, worker_id: stri
 
   invalidateComplaintCache(complaintId);
   return data.complaint;
+}
+
+export async function forwardComplaintToNextLevel(complaintId: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    escalation: {
+      complaint_id: string;
+      next_level: 'L2' | 'L3';
+      assigned_officer_id: string;
+      deadline: string;
+    };
+  }>(`/api/complaints/${complaintId}/escalate`, {
+    method: 'PATCH',
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.escalation;
+}
+
+export async function markComplaintReachedByL3(complaintId: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'in_progress';
+    };
+  }>(`/api/complaints/${complaintId}/l3`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reached' }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function uploadComplaintProofByL3(
+  complaintId: string,
+  input: { image: File; description?: string },
+) {
+  const body = new FormData();
+  body.set('image', input.image);
+
+  if (input.description?.trim()) {
+    body.set('description', input.description.trim());
+  }
+
+  const data = await fetchJson<{
+    success: boolean;
+    proof: {
+      id: string;
+      complaint_id: string;
+      image_url: string;
+      description?: string | null;
+      created_at: string;
+    };
+  }>(`/api/complaints/${complaintId}/proofs`, {
+    method: 'POST',
+    body,
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.proof;
+}
+
+export async function markComplaintResolvedByL3(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'resolved';
+    };
+  }>(`/api/complaints/${complaintId}/l3`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'resolved', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function closeComplaintByL2Review(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'closed';
+    };
+  }>(`/api/complaints/${complaintId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'close', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function reopenComplaintByL2Review(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'assigned';
+      current_level: 'L3';
+    };
+  }>(`/api/complaints/${complaintId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reopen', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
 }
 

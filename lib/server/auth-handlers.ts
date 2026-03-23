@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 
-import { AuthError, getCurrentUser, loginUser, signupCitizen, toSessionUser } from '@/lib/server/auth';
-import { attachSessionCookie, clearSessionCookie } from '@/lib/server/session';
+import {
+  AuthError,
+  getCurrentUser,
+  getHomePathForUser,
+  loginUser,
+  signupCitizen,
+  toSessionUser,
+} from '@/lib/server/auth';
+import { attachSessionCookie, clearSessionCookie, createSessionToken } from '@/lib/server/session';
 
 export async function loginHandler(request: Request) {
   try {
@@ -14,28 +21,35 @@ export async function loginHandler(request: Request) {
     const user = await loginUser({
       email: body.email,
       password: body.password,
+      portal: body.portal,
     });
 
-    if (body.portal === 'citizen' && user.role !== 'citizen') {
-      return NextResponse.json({ error: 'This login page is only for citizens.' }, { status: 403 });
-    }
-
-    if (body.portal === 'internal' && user.role === 'citizen') {
-      return NextResponse.json({ error: 'Citizens should use the citizen portal login.' }, { status: 403 });
-    }
+    const sessionUser = toSessionUser(user);
+    const token = createSessionToken(sessionUser);
+    const redirect_to = user.redirect_to || getHomePathForUser(user);
 
     const response = NextResponse.json({
+      token,
+      redirect_to,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
+        auth_source: user.auth_source,
         ward_id: user.ward_id,
         department: user.department,
+        officer_id: user.officer_id,
+        officer_level: user.officer_level,
+        officer_role: user.officer_role,
+        officer_department_id: user.officer_department_id,
+        officer_department_name: user.officer_department_name,
+        officer_zone_id: user.officer_zone_id,
+        officer_ward_id: user.officer_ward_id,
       },
     });
 
-    attachSessionCookie(response, toSessionUser(user));
+    attachSessionCookie(response, sessionUser);
     return response;
   } catch (error) {
     if (error instanceof AuthError) {
@@ -67,17 +81,30 @@ export async function signupHandler(request: Request) {
       phone: body.phone,
     });
 
+    const sessionUser = toSessionUser(user);
+    const token = createSessionToken(sessionUser);
+    const redirect_to = user.redirect_to || getHomePathForUser(user);
     const response = NextResponse.json({
+      token,
+      redirect_to,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
+        auth_source: user.auth_source,
         ward_id: user.ward_id,
+        officer_id: user.officer_id,
+        officer_level: user.officer_level,
+        officer_role: user.officer_role,
+        officer_department_id: user.officer_department_id,
+        officer_department_name: user.officer_department_name,
+        officer_zone_id: user.officer_zone_id,
+        officer_ward_id: user.officer_ward_id,
       },
     });
 
-    attachSessionCookie(response, toSessionUser(user));
+    attachSessionCookie(response, sessionUser);
     return response;
   } catch (error) {
     if (error instanceof AuthError) {
@@ -102,8 +129,17 @@ export async function sessionMeHandler() {
       name: user.name,
       email: user.email,
       role: user.role,
+      auth_source: user.auth_source,
       ward_id: user.ward_id,
       department: user.department,
+      officer_id: user.officer_id,
+      officer_level: user.officer_level,
+      officer_role: user.officer_role,
+      officer_department_id: user.officer_department_id,
+      officer_department_name: user.officer_department_name,
+      officer_zone_id: user.officer_zone_id,
+      officer_ward_id: user.officer_ward_id,
+      redirect_to: user.redirect_to,
     },
   });
 }
