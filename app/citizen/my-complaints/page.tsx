@@ -25,6 +25,92 @@ const statuses = [
 
 type ComplaintFilterStatus = (typeof statuses)[number]['value'];
 
+function normalizeComplaintStatus(value?: ComplaintStatus | null) {
+  return value || 'submitted';
+}
+
+function formatStatusLabel(value?: ComplaintStatus | null) {
+  const normalizedValue = normalizeComplaintStatus(value);
+
+  if (normalizedValue === 'submitted' || normalizedValue === 'received' || normalizedValue === 'assigned') {
+    return 'Pending';
+  }
+
+  if (normalizedValue === 'l1_deadline_missed' || normalizedValue === 'l2_deadline_missed' || normalizedValue === 'reopened') {
+    return 'Under Review';
+  }
+
+  if (normalizedValue === 'in_progress') {
+    return 'In Progress';
+  }
+
+  if (normalizedValue === 'resolved' || normalizedValue === 'closed') {
+    return 'Resolved';
+  }
+
+  if (normalizedValue === 'expired') {
+    return 'Expired';
+  }
+
+  return 'Rejected';
+}
+
+function getStatusClassName(value?: ComplaintStatus | null) {
+  const normalizedValue = normalizeComplaintStatus(value);
+
+  if (normalizedValue === 'submitted' || normalizedValue === 'received' || normalizedValue === 'assigned') {
+    return 'text-orange-600';
+  }
+
+  if (normalizedValue === 'l1_deadline_missed' || normalizedValue === 'l2_deadline_missed' || normalizedValue === 'reopened') {
+    return 'text-rose-600';
+  }
+
+  if (normalizedValue === 'in_progress') {
+    return 'text-blue-600';
+  }
+
+  if (normalizedValue === 'resolved' || normalizedValue === 'closed') {
+    return 'text-green-600';
+  }
+
+  if (normalizedValue === 'expired') {
+    return 'text-slate-600';
+  }
+
+  return 'text-rose-600';
+}
+
+function formatDepartment(value?: string | null) {
+  if (!value?.trim()) {
+    return 'Not assigned';
+  }
+
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatSubmittedDate(value?: string | null) {
+  if (!value) {
+    return 'Not available';
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return 'Not available';
+  }
+
+  return parsedDate.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function getComplaintTrackerIdentifier(complaint: Complaint) {
+  return complaint.complaint_id || complaint.tracking_code || complaint.id;
+}
+
 export default function MyComplaintsPage() {
   const router = useRouter();
   const [allComplaints, setAllComplaints] = useState<Complaint[]>([]);
@@ -54,7 +140,7 @@ export default function MyComplaintsPage() {
     })
       .then((result) => {
         if (mounted) {
-          setAllComplaints(result.items);
+          setAllComplaints(Array.isArray(result.items) ? result.items : []);
           setError('');
         }
       })
@@ -80,20 +166,21 @@ export default function MyComplaintsPage() {
 
     const filtered = allComplaints.filter((complaint) => {
       const complaintDate = new Date(complaint.created_at);
+      const normalizedStatus = normalizeComplaintStatus(complaint.status);
 
-      if (status === 'pending' && !['submitted', 'received', 'assigned'].includes(complaint.status)) {
+      if (status === 'pending' && !['submitted', 'received', 'assigned'].includes(normalizedStatus)) {
         return false;
       }
 
-      if (status === 'in_progress' && complaint.status !== 'in_progress') {
+      if (status === 'in_progress' && normalizedStatus !== 'in_progress') {
         return false;
       }
 
-      if (status === 'resolved' && complaint.status !== 'resolved') {
+      if (status === 'resolved' && normalizedStatus !== 'resolved') {
         return false;
       }
 
-      if (status === 'closed' && complaint.status !== 'closed') {
+      if (status === 'closed' && normalizedStatus !== 'closed') {
         return false;
       }
 
@@ -139,66 +226,6 @@ export default function MyComplaintsPage() {
     setStatus(draftStatus);
     setFromDate(draftFromDate);
     setToDate(draftToDate);
-  }
-
-  function formatStatusLabel(value: ComplaintStatus) {
-    if (value === 'submitted' || value === 'received' || value === 'assigned') {
-      return 'Pending';
-    }
-
-    if (value === 'l1_deadline_missed' || value === 'l2_deadline_missed' || value === 'reopened') {
-      return 'Under Review';
-    }
-
-    if (value === 'in_progress') {
-      return 'In Progress';
-    }
-
-    if (value === 'resolved' || value === 'closed') {
-      return 'Resolved';
-    }
-
-    if (value === 'expired') {
-      return 'Expired';
-    }
-
-    return 'Rejected';
-  }
-
-  function getStatusClassName(value: ComplaintStatus) {
-    if (value === 'submitted' || value === 'received' || value === 'assigned') {
-      return 'text-orange-600';
-    }
-
-    if (value === 'l1_deadline_missed' || value === 'l2_deadline_missed' || value === 'reopened') {
-      return 'text-rose-600';
-    }
-
-    if (value === 'in_progress') {
-      return 'text-blue-600';
-    }
-
-    if (value === 'resolved' || value === 'closed') {
-      return 'text-green-600';
-    }
-
-    if (value === 'expired') {
-      return 'text-slate-600';
-    }
-
-    return 'text-rose-600';
-  }
-
-  function formatDepartment(value: string) {
-    return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-  }
-
-  function formatSubmittedDate(value: string) {
-    return new Date(value).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
   }
 
   const rangeStart = totalItems ? (page - 1) * PAGE_SIZE + 1 : 0;
@@ -326,10 +353,10 @@ export default function MyComplaintsPage() {
                         <tr
                           key={complaint.id}
                           className="cursor-pointer border-b border-gray-200 hover:bg-gray-50"
-                          onClick={() => router.push(`/citizen/tracker?id=${encodeURIComponent(complaint.complaint_id)}`)}
+                          onClick={() => router.push(`/citizen/tracker?id=${encodeURIComponent(getComplaintTrackerIdentifier(complaint))}`)}
                         >
-                          <td className="px-4 py-3 text-sm text-slate-700">{complaint.complaint_id}</td>
-                          <td className="px-4 py-3 text-sm text-slate-900">{complaint.title}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{getComplaintTrackerIdentifier(complaint)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-900">{complaint.title || 'Untitled complaint'}</td>
                           <td className="px-4 py-3 text-sm text-slate-700">{formatDepartment(complaint.department)}</td>
                           <td className={`px-4 py-3 text-sm font-medium ${getStatusClassName(complaint.status)}`}>
                             {formatStatusLabel(complaint.status)}
@@ -342,7 +369,7 @@ export default function MyComplaintsPage() {
                                 className="text-left text-[#1d4f91] hover:underline"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  router.push(`/citizen/tracker?id=${encodeURIComponent(complaint.complaint_id)}`);
+                                  router.push(`/citizen/tracker?id=${encodeURIComponent(getComplaintTrackerIdentifier(complaint))}`);
                                 }}
                               >
                                 View Details
@@ -352,7 +379,7 @@ export default function MyComplaintsPage() {
                                 className="text-left text-[#1d4f91] hover:underline"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  router.push(`/citizen/tracker?id=${encodeURIComponent(complaint.complaint_id)}`);
+                                  router.push(`/citizen/tracker?id=${encodeURIComponent(getComplaintTrackerIdentifier(complaint))}`);
                                 }}
                               >
                                 View Timeline
