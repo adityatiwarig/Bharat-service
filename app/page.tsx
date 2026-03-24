@@ -7,16 +7,14 @@ import {
   ClipboardCheck,
   Construction,
   FileText,
-  Globe2,
   MapPinned,
-  PhoneCall,
   ShieldAlert,
   ShieldCheck,
   Trash2,
-  Users,
   Volume2,
 } from 'lucide-react'
 
+import { DeferredLandingWardHeatmap } from '@/components/deferred-landing-ward-heatmap'
 import { HeroSliderSection } from '@/components/hero-slider-section'
 import { LandingFooter } from '@/components/landing-footer'
 import { MidPageBannerCarousel } from '@/components/mid-page-banner-carousel'
@@ -348,67 +346,21 @@ export default async function Home() {
 
         <section className="gov-directory-section overflow-hidden bg-[#f8fafc] py-16">
           <div className="relative z-[2] mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-10 lg:grid-cols-[1fr_0.92fr]">
-              <div>
-                <p className="text-sm font-semibold tracking-[0.24em] text-[#0b3c5d] uppercase">Public Trust Markers</p>
+            <div className="rounded-[1.25rem] border border-[#cfd8e3] bg-white p-6 sm:p-8 lg:p-10">
+              <div className="max-w-3xl">
+                <p className="text-sm font-semibold tracking-[0.24em] text-[#0b3c5d] uppercase">
+                  Ward-wise Complaint Distribution
+                </p>
                 <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-                  Clear authority, visible ownership, and accountable grievance handling
+                  Ward-wise Complaint Distribution
                 </h2>
-
-                <div className="mt-6 grid gap-3">
-                  {[
-                    { label: 'Authority', value: 'Municipal Corporation of Delhi' },
-                    { label: 'Technology Partner', value: 'NIC-aligned digital workflow' },
-                    { label: 'Policy Support', value: 'SLA visibility, escalation flow, and structured tracking' },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="gov-directory-card flex flex-col gap-1 rounded-[12px] bg-white px-4 py-4 ring-1 ring-[#d9e2ea] sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="text-xs font-semibold tracking-[0.18em] text-[#0b3c5d] uppercase">{item.label}</div>
-                      <div className="text-sm text-slate-700">{item.value}</div>
-                    </div>
-                  ))}
-                </div>
+                <p className="mt-4 text-base leading-7 text-slate-600">
+                  Live overview of complaint volume across wards
+                </p>
               </div>
 
-              <div className="space-y-3">
-                {[
-                  {
-                    icon: Users,
-                    title: 'Citizen Access',
-                    description: 'File complaints, track status updates, and view complaint movement with your complaint ID.',
-                  },
-                  {
-                    icon: PhoneCall,
-                    title: 'Department Access',
-                    description: 'Officers sign in separately to handle assignment, field action, and resolution workflow.',
-                  },
-                  {
-                    icon: Globe2,
-                    title: 'Multi-language Direction',
-                    description: 'The interface remains English-first for now, with Hindi support planned for broader access.',
-                  },
-                ].map((item) => {
-                  const Icon = item.icon
-
-                  return (
-                    <div
-                      key={item.title}
-                      className="gov-directory-card rounded-[12px] bg-white px-5 py-5 ring-1 ring-[#d9e2ea] transition"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center bg-[#eef5fb] text-[#0b3c5d] ring-1 ring-[#d8e4ef]">
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <div className="text-lg font-semibold text-slate-950">{item.title}</div>
-                          <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="mt-8">
+                <DeferredLandingWardHeatmap />
               </div>
             </div>
           </div>

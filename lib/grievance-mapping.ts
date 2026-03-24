@@ -16,12 +16,12 @@ const ZONES: Zone[] = [
 ];
 
 const WARDS: Ward[] = [
-  { id: 1, name: 'Rohini Sector 1', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
-  { id: 2, name: 'Rohini Sector 7', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
-  { id: 3, name: 'Rohini Sector 16', city: 'Delhi', zone_id: 1, zone_name: 'Rohini' },
-  { id: 4, name: 'Dev Nagar', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
-  { id: 5, name: 'Karol Bagh Ward', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
-  { id: 6, name: 'Paharganj', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh' },
+  { id: 1, name: 'Rohini Sector 1', city: 'Delhi', zone_id: 1, zone_name: 'Rohini', lat: 28.7376, lng: 77.1177 },
+  { id: 2, name: 'Rohini Sector 7', city: 'Delhi', zone_id: 1, zone_name: 'Rohini', lat: 28.7218, lng: 77.1236 },
+  { id: 3, name: 'Rohini Sector 16', city: 'Delhi', zone_id: 1, zone_name: 'Rohini', lat: 28.7448, lng: 77.1308 },
+  { id: 4, name: 'Dev Nagar', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh', lat: 28.6519, lng: 77.1894 },
+  { id: 5, name: 'Karol Bagh Ward', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh', lat: 28.6506, lng: 77.1909 },
+  { id: 6, name: 'Paharganj', city: 'Delhi', zone_id: 2, zone_name: 'Karol Bagh', lat: 28.6434, lng: 77.2163 },
 ];
 
 const DEPARTMENTS: GrievanceDepartmentOption[] = [

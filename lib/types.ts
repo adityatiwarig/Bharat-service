@@ -57,6 +57,8 @@ export interface Ward {
   city: string;
   zone_id?: number | null;
   zone_name?: string | null;
+  lat?: number;
+  lng?: number;
   code?: string;
   population?: number;
   created_at?: string;
@@ -441,5 +443,44 @@ export interface ComplaintWardComparisonSummary {
     complaints_last_24_hours: number;
     hotspot_watch: boolean;
   }>;
+  generated_at: string;
+}
+
+export interface WardHeatmapPoint {
+  ward_id: number;
+  ward: string;
+  count: number;
+  lat: number | null;
+  lng: number | null;
+  zone_name?: string | null;
+  point_count?: number;
+  normalized_intensity?: number;
+  resolution?: 'low' | 'mid' | 'high' | 'detail';
+  kind?: 'cell' | 'ward';
+}
+
+export interface WardHeatmapResponse {
+  points: WardHeatmapPoint[];
+  zoom_tier: 'low' | 'mid' | 'high' | 'detail';
+  normalization_cap: number;
+  generated_at: string;
+}
+
+export interface PublicWardComplaintDistributionRow {
+  ward_id: number;
+  ward_name: string;
+  zone_id?: number | null;
+  zone_name?: string | null;
+  city?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  count: number;
+}
+
+export interface PublicWardComplaintDistributionSummary {
+  wards: PublicWardComplaintDistributionRow[];
+  total_complaints: number;
+  active_wards: number;
+  max_count: number;
   generated_at: string;
 }
