@@ -321,7 +321,7 @@ export function OfficerDashboard({
             <div>
               <h2 className="text-3xl font-semibold text-slate-950">{level} Complaint Queue</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                This panel only loads complaints currently assigned to your officer account. Forwarding is manual and strictly limited to the next level only.
+                This panel only loads complaints currently assigned to your officer account. Manual forwarding stays available, and overdue complaints now auto-escalate to the next mapped level when their due time expires.
               </p>
               <div className="mt-4 flex flex-wrap gap-3 text-xs font-medium text-slate-600">
                 {departmentName ? (
@@ -352,7 +352,7 @@ export function OfficerDashboard({
             </div>
           </div>
           <div className="mt-6 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600">
-            Visible queue is limited to complaints currently assigned to this officer. {level === 'L3' ? 'L3 can mark reached, upload proof, and resolve.' : `${level} can only forward to ${nextLevel}.`}
+            Visible queue is limited to complaints currently assigned to this officer. {level === 'L3' ? 'L3 can mark reached, upload proof, and resolve.' : `${level} can still forward to ${nextLevel}, and missed due times will auto-escalate.`}
           </div>
         </div>
 

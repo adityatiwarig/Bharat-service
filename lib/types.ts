@@ -185,6 +185,7 @@ export interface Rating {
 export interface ComplaintTimelineData {
   complaint_id: string;
   updates: ComplaintUpdate[];
+  history?: ComplaintHistoryEntry[];
 }
 
 export interface ComplaintProofData {

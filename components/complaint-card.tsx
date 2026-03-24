@@ -47,6 +47,19 @@ export function ComplaintCard({
   const now = new Date()
   const daysAgo = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
   const hasWorkProof = Boolean(complaint.proof_image || complaint.proof_text)
+  const isOverdue = Boolean(
+    complaint.deadline &&
+      !['resolved', 'closed', 'rejected'].includes(complaint.status) &&
+      new Date(complaint.deadline).getTime() < now.getTime(),
+  )
+  const dueLabel = complaint.deadline
+    ? new Intl.DateTimeFormat('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(complaint.deadline))
+    : null
 
   if (compact) {
     return (
@@ -74,6 +87,11 @@ export function ComplaintCard({
               <p className="mt-2 text-xs text-slate-500">
                 {ward?.name ?? 'Unknown ward'} / {daysAgo} days ago
               </p>
+              {dueLabel ? (
+                <p className={cn('mt-1 text-[11px]', isOverdue ? 'text-rose-600' : 'text-slate-500')}>
+                  {`Due ${dueLabel}${complaint.current_level ? ` | ${complaint.current_level}` : ''}${isOverdue ? ' | Overdue' : ''}`}
+                </p>
+              ) : null}
               {footer ? <div className="mt-3">{footer}</div> : null}
             </div>
             <AlertCircle className={cn('h-5 w-5', priorityColors[complaint.priority])} />

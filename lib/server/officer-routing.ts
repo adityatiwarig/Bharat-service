@@ -2,7 +2,9 @@ import 'server-only';
 
 import { revalidateTag } from 'next/cache';
 
+import { computeComplaintDeadline } from '@/lib/server/complaint-sla';
 import { invalidateComplaintCache } from '@/lib/server/complaint-cache';
+import { removeComplaintEscalation, scheduleComplaintEscalation } from '@/lib/server/escalation-queue';
 import { AuthError } from '@/lib/server/auth';
 import type { DbTransactionClient } from '@/lib/server/db';
 import { query, withTransaction } from '@/lib/server/db';
@@ -53,6 +55,7 @@ type ComplaintRoutingRow = {
   category_id: number | null;
   assigned_officer_id: string | null;
   current_level: OfficerLevel | null;
+  priority: Complaint['priority'];
   deadline: string | null;
   status: string;
   ward_name: string | null;
@@ -182,6 +185,7 @@ async function getComplaintRoutingRow(client: DbTransactionClient, complaintId: 
         c.category_id,
         c.assigned_officer_id,
         c.current_level,
+        c.priority,
         c.deadline,
         c.status,
         w.name AS ward_name,
@@ -279,12 +283,6 @@ async function getOfficerMapping(
   return result.rows[0] || null;
 }
 
-function computeDeadline(days: number) {
-  const deadline = new Date();
-  deadline.setUTCDate(deadline.getUTCDate() + Math.max(1, days));
-  return deadline;
-}
-
 function getOfficerHomePath(role: OfficerRole) {
   if (role === 'L1') return '/l1';
   if (role === 'L2') return '/l2';
@@ -348,6 +346,7 @@ export async function assignComplaintToInitialOfficer(
     ward_id: number;
     department_id: number | null;
     category_id: number | null;
+    priority: Complaint['priority'];
   },
 ) {
   if (!complaint.zone_id || !complaint.department_id || !complaint.category_id) {
@@ -365,7 +364,7 @@ export async function assignComplaintToInitialOfficer(
     throw new AuthError('No officer mapping exists for the selected zone, ward, department, and category.', 400);
   }
 
-  const deadline = computeDeadline(mapping.sla_l1);
+  const deadline = computeComplaintDeadline(mapping.sla_l1, complaint.priority);
 
   await client.query(
     `
@@ -432,6 +431,7 @@ export async function listComplaintsForOfficer(user: User) {
         c.category_id,
         c.assigned_officer_id,
         c.current_level,
+        c.priority,
         c.deadline,
         c.status,
         w.name AS ward_name,
@@ -457,12 +457,14 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
     throw new AuthError('Only L1 and L2 officers can forward complaints.', 403);
   }
 
-  let result: {
+  type ForwardResult = {
     complaint_id: string;
     next_level: OfficerLevel;
     assigned_officer_id: string;
     deadline: string;
-  } | null = null;
+  };
+
+  let result: ForwardResult | null = null;
 
   await withTransaction(async (client) => {
     const complaint = await getComplaintRoutingRow(client, complaintId);
@@ -510,7 +512,7 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
       throw new AuthError(`This complaint is already pending at ${nextLevel}.`, 400);
     }
 
-    const deadline = computeDeadline(nextSlaDays);
+    const deadline = computeComplaintDeadline(nextSlaDays, complaint.priority);
     const toOfficerName = await getOfficerName(client, toOfficerId);
 
     await client.query(
@@ -585,7 +587,15 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
     throw new AuthError('Unable to forward complaint right now.', 500);
   }
 
-  return result;
+  const finalizedResult = result as ForwardResult;
+
+  if (finalizedResult.next_level === 'L2') {
+    await scheduleComplaintEscalation(finalizedResult.complaint_id, finalizedResult.deadline);
+  } else {
+    await removeComplaintEscalation(finalizedResult.complaint_id);
+  }
+
+  return finalizedResult;
 }
 
 async function requireComplaintAssignedToOfficerLevel(
@@ -626,6 +636,7 @@ export async function queueComplaintForL2ReviewAfterCitizenFeedback(
     category_id: number | null;
     assigned_officer_id: string | null;
     current_level: OfficerLevel | null;
+    priority: Complaint['priority'];
     updated_by_user_id?: string | null;
   },
 ) {
@@ -650,7 +661,7 @@ export async function queueComplaintForL2ReviewAfterCitizenFeedback(
     return null;
   }
 
-  const deadline = computeDeadline(mapping.sla_l2);
+  const deadline = computeComplaintDeadline(mapping.sla_l2, input.priority);
   const toOfficerName = await getOfficerName(client, mapping.l2_officer_id);
 
   await client.query(
@@ -752,12 +763,14 @@ export async function markComplaintReachedByL3(user: User, complaintId: string) 
     throw new AuthError('Unable to mark complaint as reached right now.', 500);
   }
 
-  await invalidateComplaintReadCaches(updatedComplaint);
+  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
+
+  await invalidateComplaintReadCaches(finalizedComplaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
 
   return {
-    complaint_id: updatedComplaint.id,
+    complaint_id: finalizedComplaint.id,
     status: 'in_progress' as const,
   };
 }
@@ -985,12 +998,15 @@ export async function markComplaintResolvedByL3(user: User, complaintId: string,
     throw new AuthError('Unable to resolve complaint right now.', 500);
   }
 
-  await invalidateComplaintReadCaches(updatedComplaint);
+  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
+
+  await invalidateComplaintReadCaches(finalizedComplaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  await removeComplaintEscalation(finalizedComplaint.id);
 
   return {
-    complaint_id: updatedComplaint.id,
+    complaint_id: finalizedComplaint.id,
     status: 'resolved' as const,
   };
 }
@@ -1069,12 +1085,15 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     throw new AuthError('Unable to close complaint right now.', 500);
   }
 
-  await invalidateComplaintReadCaches(updatedComplaint);
+  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
+
+  await invalidateComplaintReadCaches(finalizedComplaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  await removeComplaintEscalation(finalizedComplaint.id);
 
   return {
-    complaint_id: updatedComplaint.id,
+    complaint_id: finalizedComplaint.id,
     status: 'closed' as const,
   };
 }
@@ -1117,7 +1136,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
       throw new AuthError('No L3 officer is mapped for this complaint.', 400);
     }
 
-    const deadline = computeDeadline(mapping.sla_l3);
+    const deadline = computeComplaintDeadline(mapping.sla_l3, complaint.priority);
     const l3OfficerName = await getOfficerName(client, mapping.l3_officer_id);
 
     if (hasComplaintProofsTable) {
@@ -1208,12 +1227,15 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     throw new AuthError('Unable to reopen complaint right now.', 500);
   }
 
-  await invalidateComplaintReadCaches(updatedComplaint);
+  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
+
+  await invalidateComplaintReadCaches(finalizedComplaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  await removeComplaintEscalation(finalizedComplaint.id);
 
   return {
-    complaint_id: updatedComplaint.id,
+    complaint_id: finalizedComplaint.id,
     status: 'assigned' as const,
     current_level: 'L3' as const,
   };

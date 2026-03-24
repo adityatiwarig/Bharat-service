@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { query } from '@/lib/server/db';
+import { maybeProcessDueComplaintEscalations } from '@/lib/server/complaint-escalations';
 import { mapComplaintRow, type ComplaintRow } from '@/lib/server/complaints';
 import type {
   ComplaintAnalyticsSummary,
@@ -35,6 +36,8 @@ function getDepartmentScope(user?: User) {
 }
 
 export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAnalyticsSummary> {
+  await maybeProcessDueComplaintEscalations();
+
   const { whereClause, complaintAliasWhereClause, params } = getDepartmentScope(user);
 
   const [totals, categories, urgentIssues, wards, hotspots] = await Promise.all([
@@ -274,6 +277,8 @@ export async function getLeaderWardComparisonSummary(user: User): Promise<Compla
 }
 
 export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashboardSummary> {
+  await maybeProcessDueComplaintEscalations();
+
   const [totals, rows] = await Promise.all([
     query<{
       assigned_total: string
@@ -375,6 +380,8 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
 }
 
 export async function getOfficerDashboardSummary(user: User): Promise<OfficerDashboardSummary> {
+  await maybeProcessDueComplaintEscalations();
+
   if (!user.officer_id) {
     return {
       assigned_total: 0,

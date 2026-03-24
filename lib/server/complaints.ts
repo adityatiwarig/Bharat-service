@@ -17,6 +17,8 @@ import {
   getCachedWorkerInfoByUserId,
   invalidateComplaintCache,
 } from '@/lib/server/complaint-cache';
+import { maybeProcessDueComplaintEscalations } from '@/lib/server/complaint-escalations';
+import { scheduleComplaintEscalation } from '@/lib/server/escalation-queue';
 import { analyzeComplaint, detectDepartment } from '@/lib/server/ai';
 import { AuthError } from '@/lib/server/auth';
 import type { DbTransactionClient } from '@/lib/server/db';
@@ -30,6 +32,7 @@ import { saveAttachments, saveProofImage, saveProofImages } from '@/lib/server/u
 import type {
   Complaint,
   ComplaintAttachment,
+  ComplaintHistoryEntry,
   ComplaintDepartment,
   ComplaintListFilters,
   ComplaintProofRecord,
@@ -107,6 +110,16 @@ type ComplaintUpdateRow = {
   updated_at: string;
   updated_by_user_id: string | null;
   updated_by_name: string | null;
+};
+
+type ComplaintHistoryRow = {
+  id: string;
+  complaint_id: string;
+  action: 'assigned' | 'escalated' | 'resolved';
+  from_officer: string | null;
+  to_officer: string | null;
+  level: 'L1' | 'L2' | 'L3';
+  timestamp: string;
 };
 
 type RatingRow = {
@@ -583,6 +596,35 @@ async function getComplaintUpdates(complaintId: string) {
   return result.rows;
 }
 
+async function getComplaintHistoryEntries(complaintId: string): Promise<ComplaintHistoryEntry[]> {
+  const result = await query<ComplaintHistoryRow>(
+    `
+      SELECT
+        id,
+        complaint_id,
+        action,
+        from_officer,
+        to_officer,
+        level,
+        timestamp
+      FROM complaint_history
+      WHERE complaint_id = $1
+      ORDER BY timestamp DESC
+    `,
+    [complaintId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    complaint_id: row.complaint_id,
+    action: row.action,
+    from_officer: row.from_officer,
+    to_officer: row.to_officer,
+    level: row.level,
+    timestamp: row.timestamp,
+  }));
+}
+
 async function getComplaintRating(complaintId: string) {
   const result = await query<RatingRow>(
     `
@@ -737,6 +779,8 @@ export async function listComplaintsForUser(
   user: User,
   filters: ComplaintListFilters = {},
 ): Promise<PaginatedResult<Complaint>> {
+  await maybeProcessDueComplaintEscalations();
+
   const page = Math.max(1, Number(filters.page || 1));
   const maxPageSize = user.role === 'leader' ? 100 : 20;
   const pageSize = Math.min(maxPageSize, Math.max(1, Number(filters.page_size || 10)));
@@ -901,6 +945,8 @@ export async function getComplaintSummaryForUser(
   user: User,
   complaintId: string,
 ) {
+  await maybeProcessDueComplaintEscalations();
+
   const identifier = complaintId.trim();
   const cachedComplaintId = isUuid(identifier)
     ? await getCachedComplaintAlias(identifier)
@@ -969,6 +1015,7 @@ export async function getComplaintTimelineForUser(
   const timeline = {
     complaint_id: complaint.complaint_id,
     updates: await getComplaintUpdates(complaint.id),
+    history: await getComplaintHistoryEntries(complaint.id),
   };
 
   await cacheComplaintTimeline(timeline);
@@ -985,6 +1032,7 @@ async function getComplaintTimelineByComplaint(complaint: Pick<Complaint, 'id' |
   const timeline = {
     complaint_id: complaint.complaint_id,
     updates: await getComplaintUpdates(complaint.id),
+    history: await getComplaintHistoryEntries(complaint.id),
   };
 
   await cacheComplaintTimeline(timeline);
@@ -1093,6 +1141,8 @@ export async function getComplaintByIdForUser(
   complaintId: string,
   options: { view?: ComplaintDetailView } = {},
 ) {
+  await maybeProcessDueComplaintEscalations();
+
   const identifier = complaintId.trim();
   const requestedView = options.view || 'full';
 
@@ -1121,6 +1171,7 @@ export async function getComplaintByIdForUser(
   ]);
 
   complaint.updates = timeline?.updates || [];
+  complaint.history = timeline?.history || [];
   complaint.proof_image = proof?.proof_image || null;
   complaint.proof_images = proof?.proof_images || [];
   complaint.proof_text = proof?.proof_text || null;
@@ -1172,6 +1223,44 @@ export async function createComplaintForUser(
   const normalizedCurrentLevel = input.current_level || 'L1';
 
   const complaint = await withTransaction(async (client) => {
+    const repeatedResult = await client.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM complaints
+        WHERE user_id = $1
+          AND ward_id = $2
+          AND created_at >= NOW() - INTERVAL '24 hours'
+          AND (
+            ($3 <> 'other'::complaint_category AND category = $3)
+            OR ($3 = 'other'::complaint_category AND department = $4)
+          )
+      `,
+      [user.id, input.ward_id, input.category, resolvedDepartment],
+    );
+
+    const sameIssueResult = await client.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM complaints
+        WHERE ward_id = $1
+          AND created_at >= NOW() - INTERVAL '24 hours'
+          AND (
+            ($2 <> 'other'::complaint_category AND category = $2)
+            OR ($2 = 'other'::complaint_category AND department = $3)
+          )
+      `,
+      [input.ward_id, input.category, resolvedDepartment],
+    );
+
+    const repeatedCount = Number(repeatedResult.rows[0]?.count || 0);
+    const sameIssueCountLast24Hours = Number(sameIssueResult.rows[0]?.count || 0) + 1;
+    const analysis = analyzeComplaint({
+      title: input.title,
+      text: input.text,
+      same_issue_count_last_24_hours: sameIssueCountLast24Hours,
+      repeated_count: repeatedCount,
+    });
+
     const insertColumns: string[] = [];
     const insertValues: string[] = [];
     const insertParams: unknown[] = [];
@@ -1250,18 +1339,26 @@ export async function createComplaintForUser(
       `'pending'`,
       'FALSE',
       'FALSE',
-      `'medium'`,
-      '0',
-      '0',
-      '0',
-      '0',
-      'FALSE',
-      'FALSE',
-      `'[]'::jsonb`,
+      bind(analysis.priority),
+      bind(analysis.risk_score),
+      bind(analysis.sentiment_score),
+      bind(analysis.frequency_score),
+      bind(analysis.hotspot_count),
+      bind(analysis.is_hotspot),
+      bind(analysis.is_spam),
+      bind(JSON.stringify(analysis.spam_reasons), 'jsonb'),
       bind(JSON.stringify(attachments), 'jsonb'),
       'NULL::jsonb',
       'NULL',
-      bind('Complaint submitted successfully. Department review is pending.'),
+      bind(
+        analysis.is_spam
+          ? 'Complaint submitted and flagged for officer verification before action.'
+          : analysis.priority === 'critical' || analysis.priority === 'high'
+            ? 'Complaint submitted with elevated AI priority and routed for immediate officer action.'
+            : analysis.is_hotspot
+              ? 'Complaint submitted and matched a ward hotspot, so the officer queue has been prioritised.'
+              : 'Complaint submitted successfully and routed to the mapped officer queue.'
+      ),
       bind(input.location_address?.trim() || null),
       bind(input.latitude || null),
       bind(input.longitude || null),
@@ -1341,6 +1438,7 @@ export async function createComplaintForUser(
       ward_id: input.ward_id,
       department_id: input.department_id || null,
       category_id: input.category_id || null,
+      priority: analysis.priority,
     });
 
     await createNotificationForUser(client, {
@@ -1362,6 +1460,9 @@ export async function createComplaintForUser(
 
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  if (complaint.deadline && complaint.current_level && complaint.current_level !== 'L3') {
+    await scheduleComplaintEscalation(complaint.id, complaint.deadline);
+  }
   await cacheComplaintSummary(complaint);
   return complaint;
 }
@@ -1549,6 +1650,7 @@ export async function addComplaintRatingForUser(
   const feedbackNote = trimmedFeedback
     ? `Citizen feedback submitted (${input.rating}/5): ${trimmedFeedback}`
     : `Citizen submitted a ${input.rating}/5 resolution rating.`;
+  let reviewRouting: { assigned_officer_id: string; current_level: 'L2'; deadline: string } | null = null;
 
   await withTransaction(async (client) => {
     await client.query(
@@ -1571,7 +1673,7 @@ export async function addComplaintRatingForUser(
       updated_by_user_id: user.id,
     });
 
-    await queueComplaintForL2ReviewAfterCitizenFeedback(client, {
+    reviewRouting = await queueComplaintForL2ReviewAfterCitizenFeedback(client, {
       complaint_id: complaint.id,
       complaint_code: complaint.complaint_id,
       title: complaint.title,
@@ -1582,6 +1684,7 @@ export async function addComplaintRatingForUser(
       category_id: complaint.category_id ?? null,
       assigned_officer_id: complaint.assigned_officer_id ?? null,
       current_level: complaint.current_level ?? null,
+      priority: complaint.priority,
       updated_by_user_id: user.id,
     });
 
@@ -1616,6 +1719,10 @@ export async function addComplaintRatingForUser(
   await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
+  const finalizedReviewRouting = reviewRouting as { assigned_officer_id: string; current_level: 'L2'; deadline: string } | null;
+  if (finalizedReviewRouting?.deadline) {
+    await scheduleComplaintEscalation(complaint.id, finalizedReviewRouting.deadline);
+  }
   return getComplaintRating(complaint.id);
 }
 

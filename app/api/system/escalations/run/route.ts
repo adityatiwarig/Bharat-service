@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiUser } from '@/lib/server/auth';
+import { processDueComplaintEscalations } from '@/lib/server/complaint-escalations';
 
 export async function POST() {
   try {
     await requireApiUser(['admin']);
-    return NextResponse.json(
-      {
-        error: 'Automatic SLA escalation is disabled. Use the officer forward API instead.',
-      },
-      { status: 410 },
-    );
+    const results = await processDueComplaintEscalations(25);
+    return NextResponse.json({
+      success: true,
+      processed: results.length,
+      escalated: results.filter((item) => item.action === 'escalated').length,
+      results,
+    });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
