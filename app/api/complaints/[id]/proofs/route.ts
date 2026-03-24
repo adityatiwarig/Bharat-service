@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiL1Officer } from '@/lib/server/auth';
-import { uploadComplaintProofByL3 } from '@/lib/server/officer-routing';
+import { uploadComplaintProofByL1 } from '@/lib/server/officer-routing';
 
 export const runtime = 'nodejs';
 
@@ -20,7 +20,7 @@ export async function POST(
       return NextResponse.json({ error: 'Proof image is required.' }, { status: 400 });
     }
 
-    const proof = await uploadComplaintProofByL3(user, id, {
+    const proof = await uploadComplaintProofByL1(user, id, {
       image,
       description,
     });

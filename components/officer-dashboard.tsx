@@ -131,11 +131,20 @@ function isDeadlineExpired(complaint: Complaint, now: number) {
 }
 
 function isL1DeadlineMissed(complaint: Complaint, now: number) {
-  return complaint.current_level === 'L1' && (complaint.status === 'l1_deadline_missed' || isDeadlineExpired(complaint, now));
+  return (
+    complaint.current_level === 'L2' &&
+    complaint.status === 'l1_deadline_missed'
+  ) || (
+    complaint.current_level === 'L1' &&
+    (complaint.status === 'l1_deadline_missed' || isDeadlineExpired(complaint, now))
+  );
 }
 
 function isL2DeadlineMissed(complaint: Complaint, now: number) {
   return (
+    complaint.current_level === 'L3' &&
+    complaint.status === 'l2_deadline_missed'
+  ) || (
     (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') &&
     (complaint.status === 'l2_deadline_missed' || isDeadlineExpired(complaint, now))
   );
@@ -166,27 +175,31 @@ function formatCountdown(deadline?: string | null, now = Date.now()) {
 }
 
 function recomputeSummary(items: Complaint[], level: 'L1' | 'L2' | 'L3'): OfficerDashboardSummary {
+  const visibleItems = items.filter((item) => {
+    if (level === 'L1') {
+      return !['closed', 'rejected', 'expired'].includes(item.status);
+    }
+
+    if (level === 'L2') {
+      return item.current_level === 'L2' || item.current_level === 'L2_ESCALATED';
+    }
+
+    return item.current_level === 'L3';
+  });
+
   return {
-    assigned_total: items.length,
-    assigned_open: items.filter((item) => !isTerminalComplaint(item)).length,
-    pending_level: items.filter((item) => (
-      (
-        item.current_level === level ||
-        (level === 'L2' && item.current_level === 'L2_ESCALATED') ||
-        (level === 'L2' && item.current_level === 'L1' && isDeadlineExpired(item, Date.now())) ||
-        (level === 'L3' && (item.current_level === 'L2' || item.current_level === 'L2_ESCALATED') && isDeadlineExpired(item, Date.now()))
-      ) &&
-      !['closed', 'rejected'].includes(item.status)
-    )).length,
-    resolved: items.filter((item) => item.status === 'resolved' || item.status === 'closed').length,
-    overdue: items.filter((item) => {
+    assigned_total: visibleItems.length,
+    assigned_open: visibleItems.filter((item) => !isTerminalComplaint(item)).length,
+    pending_level: visibleItems.filter((item) => !['closed', 'rejected', 'expired'].includes(item.status)).length,
+    resolved: visibleItems.filter((item) => item.status === 'resolved' || item.status === 'closed').length,
+    overdue: visibleItems.filter((item) => {
       if (isTerminalComplaint(item) || !item.deadline) {
         return false;
       }
 
       return new Date(item.deadline).getTime() < Date.now();
     }).length,
-    items,
+    items: visibleItems,
   };
 }
 
@@ -523,10 +536,10 @@ export function OfficerDashboard({
               <h2 className="text-3xl font-semibold text-slate-950">{level} Complaint Queue</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
                 {level === 'L1'
-                  ? 'This panel only loads complaints currently assigned to your officer account. L1 is the field-execution desk and must update viewed, on-site, work progress, proof, and citizen-facing completion in order.'
+                  ? 'This panel loads complaints mapped to your L1 field desk. L1 handles all ground execution, uploads proof, and completes work before citizen feedback is collected.'
                   : level === 'L2'
-                    ? 'This panel only loads complaints currently assigned to your officer account. L2 monitors overdue L1 complaints, sends reminders, and handles citizen-feedback closure review after the L1 review window expires.'
-                    : 'This panel only loads complaints currently assigned to your officer account. L3 monitors overdue L2 review cases, sends escalation reminders, and takes the final closure or reopen decision when Level 3 review is activated.'}
+                    ? 'This panel loads complaints whose L1 due window has expired and which now require L2 monitoring or final review after citizen feedback.'
+                    : 'This panel loads complaints whose L2 due window has expired and which now require L3 monitoring or final review after citizen feedback.'}
               </p>
               <div className="mt-4 flex flex-wrap gap-3 text-xs font-medium text-slate-600">
                 {departmentName ? (
@@ -557,7 +570,7 @@ export function OfficerDashboard({
             </div>
           </div>
           <div className="mt-6 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600">
-            Visible queue is limited to complaints assigned to this desk or temporarily exposed under its monitoring window. {level === 'L1' ? 'Field action follows Pending -> Viewed by L1 -> On Site -> Work Started -> Proof Uploaded -> Awaiting Citizen Feedback.' : level === 'L2' ? 'L2 does not perform ground work. It monitors missed L1 deadlines and becomes the review desk when citizen feedback is routed upward.' : 'L3 does not perform ground work. It monitors missed L2 review windows and becomes the final review desk only when Level 2 review times out.'}
+            Visible queue follows the new workflow only. {level === 'L1' ? 'L1 is the only execution desk: Pending -> Viewed by L1 -> On Site -> Work Started -> Proof Uploaded -> Awaiting Citizen Feedback.' : level === 'L2' ? 'L2 never performs field work. It monitors overdue L1 complaints, reminds L1, and takes close/reopen decisions once citizen feedback arrives on overdue complaints.' : 'L3 never performs field work. It monitors overdue L2 complaints, reminds L2, and takes the final close/reopen decision once citizen feedback arrives on L3-stage complaints.'}
           </div>
         </div>
 
@@ -595,21 +608,20 @@ export function OfficerDashboard({
                   !((level === 'L1' && l1DeadlineMissed) || (level === 'L2' && l2DeadlineMissed));
                 const canMonitorMissedL1 =
                   level === 'L2' &&
-                  complaint.current_level === 'L1' &&
+                  complaint.current_level === 'L2' &&
                   !isTerminalComplaint(complaint) &&
-                  isDeadlineExpired(complaint, currentTime);
+                  complaint.status !== 'resolved';
                 const canMonitorMissedL2 =
                   level === 'L3' &&
-                  (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') &&
+                  complaint.current_level === 'L3' &&
                   !['closed', 'rejected'].includes(complaint.status) &&
-                  isDeadlineExpired(complaint, currentTime);
+                  complaint.status !== 'resolved';
                 const waitingForCitizenAtDesk =
                   operationalLevel === level &&
                   complaint.status === 'resolved' &&
                   !feedbackRecorded;
                 const canExecuteAtL1 =
                   level === 'L1' &&
-                  complaint.current_level === 'L1' &&
                   complaint.status !== 'resolved' &&
                   complaint.status !== 'closed' &&
                   complaint.status !== 'expired' &&
@@ -748,7 +760,7 @@ export function OfficerDashboard({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-rose-700">
                             <span>
-                              L2 missed the review window. L3 now monitors this complaint, can send escalation reminders, and will later become the final review desk if the case returns after citizen feedback.
+                              L2 missed its supervisory window. L3 now monitors this complaint, can remind L2, and will take the final close or reopen decision once citizen feedback is submitted.
                             </span>
                             <span>{deadlineCountdown}</span>
                           </div>
@@ -770,7 +782,7 @@ export function OfficerDashboard({
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-slate-500">
-                              L2 remains responsible for coordinating with L1 until fresh work is completed, while L3 tracks delay and compliance from this panel.
+                              L1 still performs the field work. L3 only supervises delay, reminds L2, and waits for the citizen-feedback review stage.
                             </div>
                             <Button
                               type="button"
@@ -794,7 +806,7 @@ export function OfficerDashboard({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-rose-700">
                             <span>
-                              L1 missed the field-action deadline. L2 can now monitor live progress, issue reminders, and later handle closure review if citizen feedback is routed upward.
+                              L1 missed the execution deadline. L2 now monitors the complaint, sends reminders to L1, and becomes the review desk after citizen feedback is submitted.
                             </span>
                             <span>{deadlineCountdown}</span>
                           </div>
@@ -816,7 +828,7 @@ export function OfficerDashboard({
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-slate-500">
-                              Ground work still remains with L1. Monitor work-status updates, proof uploads, and repeat delays from here without taking over field execution.
+                              Ground work remains with L1 only. Use this panel to remind L1 and later review citizen feedback on the overdue complaint.
                             </div>
                             <Button
                               type="button"
@@ -840,11 +852,13 @@ export function OfficerDashboard({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                             <span>
-                              {l1DeadlineMissed
-                                ? 'L1 deadline has passed. L2 monitoring is active, but the L1 field team must still complete the work immediately.'
+                              {complaint.current_level === 'L2' || complaint.current_level === 'L3'
+                                ? `This complaint is under ${complaint.current_level} supervision, but L1 must still complete the field work and upload proof.`
+                                : l1DeadlineMissed
+                                  ? 'L1 deadline has passed. L2 monitoring is active, but the L1 field team must still complete the work immediately.'
                                 : `Current work status: ${workStatus}. Follow the strict L1 execution sequence.`}
                             </span>
-                            <span>{l1DeadlineMissed ? 'L2 monitoring active' : deadlineCountdown}</span>
+                            <span>{complaint.current_level === 'L2' ? 'L2 supervising' : complaint.current_level === 'L3' ? 'L3 supervising' : l1DeadlineMissed ? 'L2 monitoring active' : deadlineCountdown}</span>
                           </div>
 
                           <div className="flex flex-wrap gap-2">

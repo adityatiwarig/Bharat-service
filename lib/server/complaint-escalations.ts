@@ -3,9 +3,8 @@ import 'server-only';
 import { revalidateTag } from 'next/cache';
 
 import {
-  computeComplaintDeadline,
+  computeL2ComplaintDeadline,
   computeL3ComplaintDeadline,
-  normalizeOfficerMappingSlaMinutes,
 } from '@/lib/server/complaint-sla';
 import { invalidateComplaintCache } from '@/lib/server/complaint-cache';
 import type { DbTransactionClient } from '@/lib/server/db';
@@ -13,7 +12,7 @@ import { query, withTransaction } from '@/lib/server/db';
 import { createNotificationForUser } from '@/lib/server/notifications';
 import { removeComplaintEscalation, scheduleComplaintEscalation } from '@/lib/server/escalation-queue';
 import { getResolvedOfficerMapping } from '@/lib/server/officer-mapping';
-import type { ComplaintLevel, ComplaintPriority, OfficerLevel, OfficerRole } from '@/lib/types';
+import type { ComplaintLevel, ComplaintPriority } from '@/lib/types';
 
 type ComplaintEscalationRow = {
   id: string;
@@ -72,45 +71,16 @@ async function getOfficerUserId(client: DbTransactionClient, officerId: string) 
   return result.rows[0]?.user_id || null;
 }
 
-async function getOfficerName(client: DbTransactionClient, officerId: string) {
-  const result = await client.query<{ name: string }>(
-    `
-      SELECT name
-      FROM officers
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [officerId],
-  );
-
-  return result.rows[0]?.name || null;
-}
-
-function getEscalatedDepartmentMessage(currentLevel: OfficerLevel, nextLevel: OfficerLevel, _priority: ComplaintPriority) {
-  if (nextLevel !== 'L3') {
-    return `Complaint automatically escalated to ${nextLevel} after the ${currentLevel} due time expired.`;
-  }
-
-  return `Complaint automatically escalated to ${nextLevel} after the ${currentLevel} due time expired and is now under the fixed 1-day L3 SLA window.`;
-}
-
 function getL3ExpiredDepartmentMessage() {
   return 'L3 failed to resolve the complaint within 1 day. The complaint has expired and a new complaint must be created for further action.';
 }
 
 function getL1DeadlineMissedDepartmentMessage() {
-  return 'L1 missed the complaint deadline. The complaint remains assigned to L1 and is now visible to L2 for monitoring and reminders.';
+  return 'L1 missed the complaint deadline. The complaint is now under L2 supervision for reminders and final review authority.';
 }
 
 function getL2DeadlineMissedDepartmentMessage() {
-  return 'L2 missed the complaint review deadline. The complaint remains assigned to L2 and is now visible to L3 for monitoring and strict reminders.';
-}
-
-function getOfficerHomePath(role: OfficerRole) {
-  if (role === 'L1') return '/l1';
-  if (role === 'L2') return '/l2';
-  if (role === 'L3') return '/l3';
-  return '/admin';
+  return 'L2 missed the complaint review deadline. The complaint is now under L3 supervision for reminders and final review authority.';
 }
 
 async function selectDueComplaintIds(limit: number) {
@@ -121,11 +91,7 @@ async function selectDueComplaintIds(limit: number) {
       WHERE deadline IS NOT NULL
         AND deadline <= NOW()
         AND current_level IN ('L1', 'L2', 'L2_ESCALATED', 'L3')
-        AND status NOT IN ('closed', 'rejected', 'expired', 'l1_deadline_missed', 'l2_deadline_missed')
-        AND (
-          current_level NOT IN ('L2', 'L2_ESCALATED')
-          OR status IN ('assigned', 'resolved', 'reopened', 'l3_failed_back_to_l2')
-        )
+        AND status NOT IN ('closed', 'rejected', 'expired')
       ORDER BY deadline ASC, updated_at ASC
       LIMIT $1
     `,
@@ -173,13 +139,10 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
       };
     }
 
-    const isPendingAtL2 = complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
-
     if (
       complaint.status === 'closed' ||
       complaint.status === 'rejected' ||
-      complaint.status === 'expired' ||
-      (complaint.status === 'resolved' && !isPendingAtL2)
+      complaint.status === 'expired'
     ) {
       return {
         complaint_id: complaint.id,
@@ -281,21 +244,23 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
     }
 
     if (complaint.current_level === 'L1') {
-      const l1OfficerUserId = complaint.assigned_officer_id
-        ? await getOfficerUserId(client, complaint.assigned_officer_id)
-        : null;
+      const nextDeadline = computeL2ComplaintDeadline().toISOString();
+      const l1OfficerUserId = await getOfficerUserId(client, mapping.l1_officer_id);
       const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
 
       await client.query(
         `
           UPDATE complaints
           SET
-            status = 'l1_deadline_missed',
+            assigned_officer_id = $2,
+            current_level = 'L2',
+            deadline = $3,
+            status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'l1_deadline_missed' END,
             updated_at = NOW(),
-            department_message = $2
+            department_message = $4
           WHERE id = $1
         `,
-        [complaint.id, getL1DeadlineMissedDepartmentMessage()],
+        [complaint.id, mapping.l2_officer_id, nextDeadline, getL1DeadlineMissedDepartmentMessage()],
       );
 
       await client.query(
@@ -307,6 +272,14 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
           complaint.id,
           'L1 deadline missed. The complaint remains assigned to L1 and is now visible to L2 for monitoring.',
         ],
+      );
+
+      await client.query(
+        `
+          INSERT INTO complaint_history (complaint_id, action, from_officer, to_officer, level)
+          VALUES ($1, 'escalated', $2, $3, 'L2')
+        `,
+        [complaint.id, mapping.l1_officer_id, mapping.l2_officer_id],
       );
 
       if (l1OfficerUserId) {
@@ -341,28 +314,31 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
         complaint_id: complaint.id,
         complaint_code: complaint.complaint_id,
         tracking_code: complaint.tracking_code,
-        action: 'locked' as const,
+        action: 'escalated' as const,
         current_level: complaint.current_level,
-        deadline: complaint.deadline,
+        next_level: 'L2',
+        deadline: nextDeadline,
       };
     }
 
     if (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') {
-      const l2OfficerUserId = complaint.assigned_officer_id
-        ? await getOfficerUserId(client, complaint.assigned_officer_id)
-        : null;
+      const nextDeadline = computeL3ComplaintDeadline(complaint.priority).toISOString();
+      const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
       const l3OfficerUserId = await getOfficerUserId(client, mapping.l3_officer_id);
 
       await client.query(
         `
           UPDATE complaints
           SET
-            status = 'l2_deadline_missed',
+            assigned_officer_id = $2,
+            current_level = 'L3',
+            deadline = $3,
+            status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'l2_deadline_missed' END,
             updated_at = NOW(),
-            department_message = $2
+            department_message = $4
           WHERE id = $1
         `,
-        [complaint.id, getL2DeadlineMissedDepartmentMessage()],
+        [complaint.id, mapping.l3_officer_id, nextDeadline, getL2DeadlineMissedDepartmentMessage()],
       );
 
       await client.query(
@@ -374,6 +350,14 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
           complaint.id,
           'L2 deadline missed. The complaint remains assigned to L2 and is now visible to L3 for monitoring.',
         ],
+      );
+
+      await client.query(
+        `
+          INSERT INTO complaint_history (complaint_id, action, from_officer, to_officer, level)
+          VALUES ($1, 'escalated', $2, $3, 'L3')
+        `,
+        [complaint.id, mapping.l2_officer_id, mapping.l3_officer_id],
       );
 
       if (l2OfficerUserId) {
@@ -408,121 +392,20 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
         complaint_id: complaint.id,
         complaint_code: complaint.complaint_id,
         tracking_code: complaint.tracking_code,
-        action: 'locked' as const,
+        action: 'escalated' as const,
         current_level: complaint.current_level,
-        deadline: complaint.deadline,
+        next_level: 'L3',
+        deadline: nextDeadline,
       };
     }
-
-    const nextLevel: OfficerLevel | null = complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED'
-      ? 'L3'
-      : null;
-    const currentOfficerLevel: OfficerLevel = complaint.current_level === 'L2_ESCALATED' ? 'L2' : complaint.current_level;
-    const nextOfficerId = complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED'
-      ? mapping.l3_officer_id
-      : null;
-    const nextSla = complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED'
-      ? mapping.sla_l3
-      : null;
-
-    if (!nextLevel || !nextOfficerId || !nextSla) {
-      return {
-        complaint_id: complaint.id,
-        complaint_code: complaint.complaint_id,
-        action: 'skipped' as const,
-        current_level: complaint.current_level,
-        deadline: complaint.deadline,
-        reason: 'No higher officer is mapped for automatic escalation.',
-      };
-    }
-
-    if (complaint.assigned_officer_id === nextOfficerId) {
-      return {
-        complaint_id: complaint.id,
-        complaint_code: complaint.complaint_id,
-        action: 'skipped' as const,
-        current_level: complaint.current_level,
-        deadline: complaint.deadline,
-        reason: `Complaint is already pending at ${nextLevel}.`,
-      };
-    }
-
-    const nextDeadline = (
-      nextLevel === 'L3'
-        ? computeL3ComplaintDeadline(complaint.priority)
-        : computeComplaintDeadline(normalizeOfficerMappingSlaMinutes(nextSla), complaint.priority)
-    ).toISOString();
-    const toOfficerName = await getOfficerName(client, nextOfficerId);
-
-    await client.query(
-      `
-        UPDATE complaints
-        SET
-          assigned_officer_id = $2,
-          current_level = $3,
-          deadline = $4,
-          status = 'assigned',
-          progress = 'pending',
-          updated_at = NOW(),
-          department_message = $5
-        WHERE id = $1
-      `,
-      [
-        complaint.id,
-        nextOfficerId,
-        nextLevel,
-        nextDeadline,
-        getEscalatedDepartmentMessage(currentOfficerLevel, nextLevel, complaint.priority),
-      ],
-    );
-
-    await client.query(
-      `
-        INSERT INTO complaint_updates (complaint_id, status, note)
-        VALUES ($1, 'assigned', $2)
-      `,
-      [
-        complaint.id,
-        `Complaint auto-escalated into ${nextLevel} higher-level monitoring after the ${complaint.current_level} due time expired${toOfficerName ? ` and is now under ${toOfficerName}` : ''}.`,
-      ],
-    );
-
-    await client.query(
-      `
-        INSERT INTO complaint_history (complaint_id, action, from_officer, to_officer, level)
-        VALUES ($1, 'escalated', $2, $3, $4)
-      `,
-      [complaint.id, complaint.assigned_officer_id, nextOfficerId, nextLevel],
-    );
-
-    const nextOfficerUserId = await getOfficerUserId(client, nextOfficerId);
-
-    if (nextOfficerUserId) {
-      await createNotificationForUser(client, {
-        user_id: nextOfficerUserId,
-        complaint_id: complaint.id,
-        title: 'Higher-level monitoring activated',
-        message: `${complaint.title} crossed its ${complaint.current_level} due time and now requires your ${nextLevel} monitoring.`,
-        href: getOfficerHomePath(nextLevel),
-      });
-    }
-
-    await createNotificationForUser(client, {
-      user_id: complaint.user_id,
-      complaint_id: complaint.id,
-      title: 'Higher-level monitoring activated',
-      message: `${complaint.title} missed the ${complaint.current_level} review window and has moved to ${nextLevel} for higher-level monitoring.`,
-      href: `/citizen/tracker?id=${complaint.complaint_id}`,
-    });
 
     return {
       complaint_id: complaint.id,
       complaint_code: complaint.complaint_id,
-      tracking_code: complaint.tracking_code,
-      action: 'escalated' as const,
+      action: 'skipped' as const,
       current_level: complaint.current_level,
-      next_level: nextLevel,
-      deadline: nextDeadline,
+      deadline: complaint.deadline,
+      reason: 'Complaint level is not eligible for escalation.',
     };
   });
 
@@ -532,7 +415,7 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
       [outcome.complaint_id, outcome.tracking_code].filter((value): value is string => Boolean(value)),
     );
 
-    if ((outcome.next_level === 'L3' || outcome.next_level === 'L2_ESCALATED') && outcome.deadline) {
+    if (outcome.deadline) {
       await scheduleComplaintEscalation(outcome.complaint_id, outcome.deadline);
     } else {
       await removeComplaintEscalation(outcome.complaint_id);

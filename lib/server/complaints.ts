@@ -102,6 +102,10 @@ export type ComplaintRow = {
   completed_at: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
+  rating_id?: string | null;
+  rating_value?: number | null;
+  rating_feedback?: string | null;
+  rating_created_at?: string | null;
   created_at: string;
   updated_at: string;
   ward_name: string;
@@ -530,6 +534,16 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     completed_at: row.completed_at,
     resolved_at: row.resolved_at,
     resolution_notes: row.resolution_notes,
+    rating: row.rating_id
+      ? {
+          id: row.rating_id,
+          complaint_id: row.id,
+          rating: Number(row.rating_value || 0),
+          feedback: row.rating_feedback || null,
+          satisfaction: Number(row.rating_value || 0) >= 4 ? 'satisfied' : 'not_satisfied',
+          created_at: row.rating_created_at || undefined,
+        }
+      : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ward_name: row.ward_name,

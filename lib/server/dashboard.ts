@@ -511,35 +511,17 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
           COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed', 'rejected', 'expired'))::text AS assigned_open,
           COUNT(*) FILTER (
             WHERE (
-              c.current_level = $2
-              OR ($2 = 'L2' AND c.current_level = 'L2_ESCALATED')
-              OR (
-                $2 = 'L2'
-                AND c.current_level = 'L1'
-                AND c.deadline IS NOT NULL
-                AND c.deadline < NOW()
-                AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
-                AND om.l2_officer_id = $1
-              )
-              OR (
-                $2 = 'L3'
-                AND c.current_level IN ('L2', 'L2_ESCALATED')
-                AND c.deadline IS NOT NULL
-                AND c.deadline < NOW()
-                AND c.status NOT IN ('closed', 'rejected')
-                AND om.l3_officer_id = $1
-              )
+              ($2 = 'L1' AND om.l1_officer_id = $1)
+              OR ($2 = 'L2' AND c.current_level IN ('L2', 'L2_ESCALATED') AND c.assigned_officer_id = $1)
+              OR ($2 = 'L3' AND c.current_level = 'L3' AND c.assigned_officer_id = $1)
             )
-              AND (
-                c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
-                OR ($2 = 'L3' AND c.current_level IN ('L2', 'L2_ESCALATED'))
-              )
+              AND c.status NOT IN ('closed', 'rejected', 'expired')
           )::text AS pending_level,
           COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed'))::text AS resolved,
           COUNT(*) FILTER (
             WHERE c.deadline IS NOT NULL
               AND c.deadline < NOW()
-              AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+              AND c.status NOT IN ('closed', 'rejected', 'expired')
           )::text AS overdue
         FROM complaints c
         LEFT JOIN officer_mapping om
@@ -547,22 +529,22 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
          AND om.ward_id = c.ward_id
          AND om.department_id = c.department_id
          AND om.category_id = c.category_id
-        WHERE c.assigned_officer_id = $1
+        WHERE (
+             $2 = 'L1'
+             AND om.l1_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
+           )
            OR (
              $2 = 'L2'
-             AND c.current_level = 'L1'
-             AND c.deadline IS NOT NULL
-             AND c.deadline < NOW()
-             AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
-             AND om.l2_officer_id = $1
+             AND c.current_level IN ('L2', 'L2_ESCALATED')
+             AND c.assigned_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
            )
            OR (
              $2 = 'L3'
-             AND c.current_level IN ('L2', 'L2_ESCALATED')
-             AND c.deadline IS NOT NULL
-             AND c.deadline < NOW()
-             AND c.status NOT IN ('closed', 'rejected')
-             AND om.l3_officer_id = $1
+             AND c.current_level = 'L3'
+             AND c.assigned_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
            )
       `,
       [user.officer_id, user.officer_level],
@@ -613,6 +595,10 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
           c.completed_at,
           c.resolved_at,
           c.resolution_notes,
+          r.id AS rating_id,
+          r.rating AS rating_value,
+          r.feedback AS rating_feedback,
+          r.created_at AS rating_created_at,
           c.created_at,
           c.updated_at,
           w.name AS ward_name,
@@ -626,36 +612,34 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN categories cat ON cat.id = c.category_id
         LEFT JOIN zones z ON z.id = c.zone_id
+        LEFT JOIN ratings r ON r.complaint_id = c.id
         LEFT JOIN officer_mapping om
           ON om.zone_id = c.zone_id
          AND om.ward_id = c.ward_id
          AND om.department_id = c.department_id
          AND om.category_id = c.category_id
-        WHERE c.assigned_officer_id = $1
+        WHERE (
+             $2 = 'L1'
+             AND om.l1_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
+           )
            OR (
              $2 = 'L2'
-             AND c.current_level = 'L1'
-             AND c.deadline IS NOT NULL
-             AND c.deadline < NOW()
-             AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
-             AND om.l2_officer_id = $1
+             AND c.current_level IN ('L2', 'L2_ESCALATED')
+             AND c.assigned_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
            )
            OR (
              $2 = 'L3'
-             AND c.current_level IN ('L2', 'L2_ESCALATED')
-             AND c.deadline IS NOT NULL
-             AND c.deadline < NOW()
-             AND c.status NOT IN ('closed', 'rejected')
-             AND om.l3_officer_id = $1
+             AND c.current_level = 'L3'
+             AND c.assigned_officer_id = $1
+             AND c.status NOT IN ('closed', 'rejected', 'expired')
            )
         ORDER BY
           CASE
             WHEN c.deadline IS NOT NULL
               AND c.deadline < NOW()
-              AND (
-                c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
-                OR c.current_level IN ('L2', 'L2_ESCALATED')
-              ) THEN 0
+              AND c.status NOT IN ('closed', 'rejected', 'expired') THEN 0
             ELSE 1
           END,
           CASE c.priority
