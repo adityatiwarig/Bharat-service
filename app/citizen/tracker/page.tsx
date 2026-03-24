@@ -17,7 +17,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import {
   buildComplaintTrackerSnapshot,
-  formatAdministrativeUpdate,
   formatTrackerDateTime,
   type ComplaintTrackerSnapshot,
 } from '@/lib/complaint-tracker';
@@ -305,25 +304,6 @@ function buildComplaintReportPdf({
     y = recordBottom - 4;
   }
 
-  function addUpdateRecord(title: string, timestamp: string, details: string) {
-    const detailLines = wrapPdfText(details, PDF_CONTENT_WIDTH - 24, 10);
-    const recordHeight = Math.max(52, 38 + detailLines.length * 12);
-
-    ensureSpace(recordHeight + 4);
-
-    const recordBottom = y - recordHeight;
-
-    pushCommand(drawPdfStrokedRect(PDF_MARGIN, recordBottom, PDF_CONTENT_WIDTH, recordHeight));
-    pushCommand(drawPdfText(title, PDF_MARGIN + 10, y - 14, 10.5, 'F2'));
-    pushCommand(drawPdfText(timestamp, PDF_MARGIN + 338, y - 14, 9.5, 'F1', [0.345, 0.396, 0.471]));
-
-    detailLines.forEach((line, index) => {
-      pushCommand(drawPdfText(line, PDF_MARGIN + 10, y - 32 - index * 12, 10, 'F1', [0.196, 0.231, 0.286]));
-    });
-
-    y = recordBottom - 4;
-  }
-
   function finalizePdfDocument(pageCommands: string[][]) {
     const pageCount = pageCommands.length;
     const fontRegularObjectId = 3;
@@ -461,20 +441,6 @@ function buildComplaintReportPdf({
   addDetailRow('Department', getPdfText(tracker.departmentLabel));
   addDetailRow('Status', getPdfText(tracker.assignmentStatusLabel));
   addDetailRow('Assignment Note', getPdfText(tracker.assignmentDescription));
-
-  addSectionHeading('Administrative Update Log');
-  if (complaint.updates?.length) {
-    complaint.updates.forEach((update) => {
-      const administrativeUpdate = formatAdministrativeUpdate(update);
-      addUpdateRecord(
-        administrativeUpdate.title,
-        formatTrackerDateTime(update.updated_at),
-        getPdfText(administrativeUpdate.detail, 'Status update recorded by the department.'),
-      );
-    });
-  } else {
-    addParagraphBlock('No administrative records available.');
-  }
 
   addSectionHeading('Work Completion Evidence');
   addDetailRow('Description', getPdfText(complaint.proof_text));
@@ -904,30 +870,6 @@ function handleExportReport() {
                     ) : null}
                   </div>
 
-                  {detailsLoading ? (
-                    <LoadingSummary label="Fetching latest updates..." description="Administrative records are being loaded." className="rounded-none" />
-                  ) : complaint.updates?.length ? (
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold text-slate-950">Administrative Update Log</div>
-                      {complaint.updates.map((update) => {
-                        const administrativeUpdate = formatAdministrativeUpdate(update);
-
-                        return (
-                          <div key={update.id} className="border border-slate-200 bg-white px-4 py-4">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-semibold text-slate-950">{administrativeUpdate.title}</div>
-                                <div className="mt-1 text-sm leading-6 text-slate-600">
-                                  {administrativeUpdate.detail}
-                                </div>
-                              </div>
-                              <div className="text-xs text-slate-500 sm:max-w-[11rem] sm:text-right">{formatTrackerDateTime(update.updated_at)}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
                 </CardContent>
               </Card>
 
