@@ -173,81 +173,22 @@ export function normalizeCitizenFacingNote(note?: string | null) {
 export function formatAdministrativeUpdate(update: ComplaintUpdate) {
   const rawNote = update.note?.trim() || '';
   const lower = rawNote.toLowerCase();
+  const statusLabel = formatStatusTitle(update.status);
+  const actorName = update.updated_by_name?.trim() || null;
 
-  let title: string;
+  let sourceLine = 'Recorded automatically by the workflow.';
 
-  if (lower.includes('complaint assigned automatically to the mapped level 1 officer')) {
-    title = 'Assigned To L1 Field Desk';
-  } else if (lower.includes('complaint viewed by the assigned l1 officer')) {
-    title = 'L1 Review Started';
-  } else if (
-    lower.includes('assigned l1 officer reached the complaint location') ||
-    lower.includes('level 3 officer marked the complaint as reached')
-  ) {
-    title = 'Field Team Reached Site';
-  } else if (
-    lower.includes('assigned l1 officer started work on the complaint') ||
-    lower.includes('level 3 officer started work while uploading resolution proof')
-  ) {
-    title = 'Field Work Started';
-  } else if (lower.includes('uploaded proof')) {
-    title = 'Completion Evidence Uploaded';
-  } else if (lower.includes('awaiting citizen feedback')) {
-    title = 'Awaiting Citizen Verification';
-  } else if (lower.includes('citizen feedback submitted')) {
-    title = 'Citizen Feedback Recorded';
-  } else if (lower.includes('citizen feedback received and the complaint is pending level 1 review')) {
-    title = 'Sent To L1 Review Desk';
-  } else if (lower.includes('citizen feedback received and the complaint has been routed to l2')) {
-    title = 'Sent To L2 Review Desk';
-  } else if (lower.includes('citizen feedback received and the complaint has been routed to l3')) {
-    title = 'Sent To L3 Review Desk';
-  } else if (lower.includes('l2 reminder sent to l1')) {
-    title = 'L2 Reminder To L1';
-  } else if (lower.includes('l3 reminder sent to l2')) {
-    title = 'L3 Reminder To L2';
-  } else if (lower.includes('complaint closed by')) {
-    title = 'Complaint Closed';
-  } else if (lower.includes('complaint reopened by')) {
-    title = 'Returned To L1 For Rework';
-  } else {
-    switch (update.status) {
-      case 'assigned':
-        title = 'Assignment Update';
-        break;
-      case 'in_progress':
-        title = 'Field Action Update';
-        break;
-      case 'resolved':
-        title = 'Review Update';
-        break;
-      case 'l1_deadline_missed':
-        title = 'L2 Monitoring Active';
-        break;
-      case 'l2_deadline_missed':
-        title = 'L3 Monitoring Active';
-        break;
-      case 'reopened':
-        title = 'Reopened For Rework';
-        break;
-      case 'closed':
-        title = 'Complaint Closed';
-        break;
-      case 'rejected':
-        title = 'Review Halted';
-        break;
-      case 'expired':
-        title = 'Complaint Expired';
-        break;
-      default:
-        title = formatStatusTitle(update.status);
-        break;
-    }
+  if (actorName) {
+    sourceLine = `Recorded by ${actorName}.`;
+  } else if (update.updated_by_user_id) {
+    sourceLine = 'Recorded by a department user.';
+  } else if (lower.includes('citizen feedback') || lower.includes('citizen submitted feedback')) {
+    sourceLine = 'Recorded from citizen feedback.';
   }
 
   return {
-    title,
-    detail: normalizeCitizenFacingNote(rawNote) || 'Status update recorded by the department.',
+    title: statusLabel,
+    detail: rawNote ? `${sourceLine} ${rawNote}` : `${sourceLine} Status changed to ${statusLabel}.`,
   };
 }
 
