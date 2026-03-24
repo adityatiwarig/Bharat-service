@@ -17,8 +17,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import {
   buildComplaintTrackerSnapshot,
+  formatAdministrativeUpdate,
   formatTrackerDateTime,
-  normalizeCitizenFacingNote,
   type ComplaintTrackerSnapshot,
 } from '@/lib/complaint-tracker';
 import { fetchComplaintById, fetchComplaints, rateComplaint } from '@/lib/client/complaints';
@@ -464,11 +464,12 @@ function buildComplaintReportPdf({
 
   addSectionHeading('Administrative Update Log');
   if (complaint.updates?.length) {
-    complaint.updates.forEach((update, index) => {
+    complaint.updates.forEach((update) => {
+      const administrativeUpdate = formatAdministrativeUpdate(update);
       addUpdateRecord(
-        `Record ${complaint.updates ? complaint.updates.length - index : index + 1}`,
+        administrativeUpdate.title,
         formatTrackerDateTime(update.updated_at),
-        getPdfText(update.note, 'Status update recorded by the department.'),
+        getPdfText(administrativeUpdate.detail, 'Status update recorded by the department.'),
       );
     });
   } else {
@@ -746,7 +747,6 @@ function handleExportReport() {
       : [];
   const canRateResolution = complaint?.status === 'resolved' || tracker?.waitingForFeedback;
   const isExpiredComplaint = complaint?.status === 'expired';
-  const updateCount = complaint?.updates?.length || 0;
   const citizenRatingLabel = complaint?.rating
     ? `${complaint.rating.rating}/5${complaint.rating.rating >= 4 ? ' - Satisfied' : ' - Review Required'}`
     : tracker?.waitingForFeedback
@@ -909,19 +909,23 @@ function handleExportReport() {
                   ) : complaint.updates?.length ? (
                     <div className="space-y-3">
                       <div className="text-sm font-semibold text-slate-950">Administrative Update Log</div>
-                      {complaint.updates.map((update, index) => (
-                        <div key={update.id} className="border border-slate-200 bg-white px-4 py-4">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <div className="text-sm font-semibold text-slate-950">Record {updateCount - index}</div>
-                              <div className="mt-1 text-sm leading-6 text-slate-600">
-                                {normalizeCitizenFacingNote(update.note) || 'Status update recorded by the department.'}
+                      {complaint.updates.map((update) => {
+                        const administrativeUpdate = formatAdministrativeUpdate(update);
+
+                        return (
+                          <div key={update.id} className="border border-slate-200 bg-white px-4 py-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-slate-950">{administrativeUpdate.title}</div>
+                                <div className="mt-1 text-sm leading-6 text-slate-600">
+                                  {administrativeUpdate.detail}
+                                </div>
                               </div>
+                              <div className="text-xs text-slate-500 sm:max-w-[11rem] sm:text-right">{formatTrackerDateTime(update.updated_at)}</div>
                             </div>
-                            <div className="text-xs text-slate-500">{formatTrackerDateTime(update.updated_at)}</div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : null}
                 </CardContent>

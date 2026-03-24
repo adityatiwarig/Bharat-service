@@ -67,7 +67,7 @@ export function normalizeCitizenFacingNote(note?: string | null) {
   const lower = normalized.toLowerCase();
 
   if (lower.includes('complaint assigned automatically to the mapped level 1 officer')) {
-    return 'Complaint received and assigned for initial field review.';
+    return 'Complaint received and assigned to the mapped L1 field desk for action.';
   }
 
   if (
@@ -75,7 +75,7 @@ export function normalizeCitizenFacingNote(note?: string | null) {
     lower.includes('auto-escalated into l2') ||
     lower.includes('pending at l2 for official review')
   ) {
-    return 'The first action timeline was crossed, and the complaint is now under Level 2 monitoring.';
+    return 'The L1 action window was missed, so L2 supervisory monitoring is now active.';
   }
 
   if (
@@ -84,39 +84,171 @@ export function normalizeCitizenFacingNote(note?: string | null) {
     lower.includes('pending at l3 under the final 1-day review window') ||
     lower.includes('pending at l3 for official review')
   ) {
-    return 'The supervisory review timeline was crossed, and the complaint is now under Level 3 monitoring.';
+    return 'The L2 review window was missed, so L3 senior monitoring is now active.';
+  }
+
+  if (lower.includes('complaint viewed by the assigned l1 officer')) {
+    return 'The assigned L1 desk reviewed the complaint and prepared the next field step.';
+  }
+
+  if (lower.includes('assigned l1 officer reached the complaint location')) {
+    return 'The assigned field team has reached the complaint location.';
   }
 
   if (
     lower.includes('level 3 officer marked the complaint as reached') ||
     lower.includes('level 3 officer has reached the complaint location and started final resolution work')
   ) {
-    return 'Field work has started on the complaint location.';
+    return 'The assigned field team has reached the complaint location.';
   }
 
-  if (lower.includes('level 3 officer started work while uploading resolution proof')) {
-    return 'Field work started and evidence upload began for this complaint.';
+  if (
+    lower.includes('assigned l1 officer started work on the complaint') ||
+    lower.includes('level 3 officer started work while uploading resolution proof')
+  ) {
+    return 'Field work has started on the complaint location.';
   }
 
   if (
     lower.includes('complaint resolved by the level 3 officer') ||
-    lower.includes('resolved at l3 with uploaded proof')
+    lower.includes('resolved at l3 with uploaded proof') ||
+    lower.includes('complaint completed by the assigned l1 officer and is awaiting citizen feedback')
   ) {
     return 'Work completion has been recorded and citizen verification is pending.';
   }
 
   if (
+    lower.includes('assigned l1 officer uploaded proof') ||
+    lower.includes('assigned l1 officer uploaded proof:') ||
+    lower.includes('uploaded proof.') ||
+    lower.includes('uploaded proof:') ||
     lower.includes('proof image uploaded by the assigned l3 officer') ||
     lower.includes('resolution proof uploaded by the assigned l3 officer')
   ) {
-    return 'Work completion evidence has been uploaded to the complaint record.';
+    const description = normalized.split(/uploaded proof:\s*/i)[1]?.trim();
+    return description
+      ? `Completion evidence has been uploaded to the complaint record. Note: ${description}`
+      : 'Completion evidence has been uploaded to the complaint record.';
   }
 
-  if (lower.includes('citizen feedback has been routed to l2') || lower.includes('citizen feedback has been routed to l3')) {
-    return 'Citizen feedback has been recorded and moved into official review.';
+  if (
+    lower.includes('citizen feedback has been routed to l2') ||
+    lower.includes('citizen feedback has been routed to l3') ||
+    lower.includes('citizen feedback received and the complaint is pending level 1 review') ||
+    lower.includes('citizen feedback received and the complaint has been routed to l2') ||
+    lower.includes('citizen feedback received and the complaint has been routed to l3')
+  ) {
+    return 'Citizen feedback has been recorded and routed to the active review desk.';
+  }
+
+  if (lower.includes('l2 reminder sent to l1')) {
+    return 'L2 supervisory monitoring is active and a reminder has been sent to the L1 field desk.';
+  }
+
+  if (lower.includes('l3 reminder sent to l2')) {
+    return 'L3 senior monitoring is active and a reminder has been sent to the L2 review desk.';
+  }
+
+  if (
+    lower.includes('complaint closed by level 1 review desk') ||
+    lower.includes('complaint closed by level 2 review desk') ||
+    lower.includes('complaint closed by level 3 review desk') ||
+    lower.includes('complaint closed by the department head')
+  ) {
+    return 'The complaint has been formally closed after citizen feedback review.';
+  }
+
+  if (
+    lower.includes('complaint reopened by level 1 review desk') ||
+    lower.includes('complaint reopened by level 2 review desk') ||
+    lower.includes('complaint reopened by level 3 review desk') ||
+    lower.includes('complaint reopened by the department head')
+  ) {
+    return 'The complaint has been reopened and returned to the L1 field desk for fresh action.';
   }
 
   return normalized;
+}
+
+export function formatAdministrativeUpdate(update: ComplaintUpdate) {
+  const rawNote = update.note?.trim() || '';
+  const lower = rawNote.toLowerCase();
+
+  let title: string;
+
+  if (lower.includes('complaint assigned automatically to the mapped level 1 officer')) {
+    title = 'Assigned To L1 Field Desk';
+  } else if (lower.includes('complaint viewed by the assigned l1 officer')) {
+    title = 'L1 Review Started';
+  } else if (
+    lower.includes('assigned l1 officer reached the complaint location') ||
+    lower.includes('level 3 officer marked the complaint as reached')
+  ) {
+    title = 'Field Team Reached Site';
+  } else if (
+    lower.includes('assigned l1 officer started work on the complaint') ||
+    lower.includes('level 3 officer started work while uploading resolution proof')
+  ) {
+    title = 'Field Work Started';
+  } else if (lower.includes('uploaded proof')) {
+    title = 'Completion Evidence Uploaded';
+  } else if (lower.includes('awaiting citizen feedback')) {
+    title = 'Awaiting Citizen Verification';
+  } else if (lower.includes('citizen feedback submitted')) {
+    title = 'Citizen Feedback Recorded';
+  } else if (lower.includes('citizen feedback received and the complaint is pending level 1 review')) {
+    title = 'Sent To L1 Review Desk';
+  } else if (lower.includes('citizen feedback received and the complaint has been routed to l2')) {
+    title = 'Sent To L2 Review Desk';
+  } else if (lower.includes('citizen feedback received and the complaint has been routed to l3')) {
+    title = 'Sent To L3 Review Desk';
+  } else if (lower.includes('l2 reminder sent to l1')) {
+    title = 'L2 Reminder To L1';
+  } else if (lower.includes('l3 reminder sent to l2')) {
+    title = 'L3 Reminder To L2';
+  } else if (lower.includes('complaint closed by')) {
+    title = 'Complaint Closed';
+  } else if (lower.includes('complaint reopened by')) {
+    title = 'Returned To L1 For Rework';
+  } else {
+    switch (update.status) {
+      case 'assigned':
+        title = 'Assignment Update';
+        break;
+      case 'in_progress':
+        title = 'Field Action Update';
+        break;
+      case 'resolved':
+        title = 'Review Update';
+        break;
+      case 'l1_deadline_missed':
+        title = 'L2 Monitoring Active';
+        break;
+      case 'l2_deadline_missed':
+        title = 'L3 Monitoring Active';
+        break;
+      case 'reopened':
+        title = 'Reopened For Rework';
+        break;
+      case 'closed':
+        title = 'Complaint Closed';
+        break;
+      case 'rejected':
+        title = 'Review Halted';
+        break;
+      case 'expired':
+        title = 'Complaint Expired';
+        break;
+      default:
+        title = formatStatusTitle(update.status);
+        break;
+    }
+  }
+
+  return {
+    title,
+    detail: normalizeCitizenFacingNote(rawNote) || 'Status update recorded by the department.',
+  };
 }
 
 function formatHistoryActionTitle(action: string, level: string) {
@@ -925,14 +1057,18 @@ export function buildComplaintHistoryCard(complaint: Complaint): ComplaintHistor
   const locked = complaint.status === 'closed' || complaint.status === 'expired';
 
   const actionLog: ComplaintHistoryCardActionLogEntry[] = [
-    ...(complaint.updates || []).map((update) => ({
-      id: `update:${update.id}`,
-      kind: 'update' as const,
-      title: formatStatusTitle(update.status),
-      detail: normalizeCitizenFacingNote(update.note),
-      timestamp: update.updated_at,
-      status: update.status,
-    })),
+    ...(complaint.updates || []).map((update) => {
+      const administrativeUpdate = formatAdministrativeUpdate(update);
+
+      return {
+        id: `update:${update.id}`,
+        kind: 'update' as const,
+        title: administrativeUpdate.title,
+        detail: administrativeUpdate.detail,
+        timestamp: update.updated_at,
+        status: update.status,
+      };
+    }),
     ...(complaint.history || []).map((entry) => ({
       id: `history:${entry.id}`,
       kind: 'routing' as const,
