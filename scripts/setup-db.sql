@@ -7,7 +7,7 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'complaint_status') THEN
-    CREATE TYPE complaint_status AS ENUM ('submitted', 'received', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected');
+    CREATE TYPE complaint_status AS ENUM ('submitted', 'received', 'assigned', 'reopened', 'in_progress', 'l1_deadline_missed', 'l2_deadline_missed', 'l3_failed_back_to_l2', 'expired', 'resolved', 'closed', 'rejected');
   ELSIF NOT EXISTS (
     SELECT 1
     FROM pg_enum
@@ -15,6 +15,51 @@ BEGIN
       AND enumlabel = 'submitted'
   ) THEN
     ALTER TYPE complaint_status ADD VALUE 'submitted' BEFORE 'received';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_status'::regtype
+      AND enumlabel = 'reopened'
+  ) THEN
+    ALTER TYPE complaint_status ADD VALUE 'reopened' AFTER 'assigned';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_status'::regtype
+      AND enumlabel = 'l1_deadline_missed'
+  ) THEN
+    ALTER TYPE complaint_status ADD VALUE 'l1_deadline_missed' AFTER 'in_progress';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_status'::regtype
+      AND enumlabel = 'l2_deadline_missed'
+  ) THEN
+    ALTER TYPE complaint_status ADD VALUE 'l2_deadline_missed' AFTER 'l1_deadline_missed';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_status'::regtype
+      AND enumlabel = 'l3_failed_back_to_l2'
+  ) THEN
+    ALTER TYPE complaint_status ADD VALUE 'l3_failed_back_to_l2' AFTER 'in_progress';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_status'::regtype
+      AND enumlabel = 'expired'
+  ) THEN
+    ALTER TYPE complaint_status ADD VALUE 'expired' AFTER 'l3_failed_back_to_l2';
   END IF;
 
   IF NOT EXISTS (
@@ -31,7 +76,14 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'complaint_level') THEN
-    CREATE TYPE complaint_level AS ENUM ('L1', 'L2', 'L3');
+    CREATE TYPE complaint_level AS ENUM ('L1', 'L2', 'L3', 'L2_ESCALATED');
+  ELSIF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum
+    WHERE enumtypid = 'complaint_level'::regtype
+      AND enumlabel = 'L2_ESCALATED'
+  ) THEN
+    ALTER TYPE complaint_level ADD VALUE 'L2_ESCALATED' AFTER 'L3';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'officer_role') THEN
@@ -187,13 +239,16 @@ CREATE TABLE IF NOT EXISTS complaints (
   attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
   proof_image JSONB,
   proof_images JSONB,
+  proof_image_url TEXT,
   proof_text TEXT,
+  work_status TEXT DEFAULT 'Pending',
   department_message TEXT,
   street_address TEXT,
   location_address TEXT,
   latitude NUMERIC(10,7),
   longitude NUMERIC(10,7),
   deadline TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
   resolved_at TIMESTAMPTZ,
   resolution_notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -211,11 +266,15 @@ ALTER TABLE complaints ADD COLUMN IF NOT EXISTS dept_head_viewed BOOLEAN;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS worker_assigned BOOLEAN;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS category_id INTEGER;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS current_level complaint_level;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS priority complaint_priority;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_image JSONB;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_images JSONB;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_image_url TEXT;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS proof_text TEXT;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS work_status TEXT;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS street_address TEXT;
 ALTER TABLE complaints ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ;
+ALTER TABLE complaints ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS department department_name;
 ALTER TABLE workers ADD COLUMN IF NOT EXISTS department department_name;
 ALTER TABLE officers ADD COLUMN IF NOT EXISTS email TEXT;
@@ -285,7 +344,7 @@ WHERE progress IS NULL;
 
 UPDATE complaints
 SET dept_head_viewed = CASE
-  WHEN status IN ('assigned', 'in_progress', 'resolved', 'closed', 'rejected') THEN TRUE
+  WHEN status IN ('assigned', 'in_progress', 'resolved', 'closed', 'expired', 'rejected') THEN TRUE
   ELSE FALSE
 END
 WHERE dept_head_viewed IS NULL;
@@ -328,6 +387,35 @@ SET current_level = 'L1'
 WHERE current_level IS NULL;
 
 UPDATE complaints
+SET priority = 'medium'
+WHERE priority IS NULL;
+
+UPDATE complaints
+SET priority = 'high'
+WHERE priority::text = 'critical';
+
+UPDATE complaints
+SET proof_image_url = proof_image->>'url'
+WHERE proof_image_url IS NULL
+  AND proof_image IS NOT NULL
+  AND proof_image ? 'url';
+
+UPDATE complaints
+SET work_status = CASE
+  WHEN status IN ('resolved', 'closed') THEN 'Awaiting Citizen Feedback'
+  WHEN proof_image_url IS NOT NULL OR proof_image IS NOT NULL THEN 'Proof Uploaded'
+  WHEN status = 'in_progress' THEN 'Work Started'
+  WHEN status = 'assigned' AND current_level = 'L1' THEN 'Pending'
+  ELSE 'Pending'
+END
+WHERE work_status IS NULL;
+
+UPDATE complaints
+SET completed_at = COALESCE(resolved_at, updated_at)
+WHERE completed_at IS NULL
+  AND status IN ('resolved', 'closed');
+
+UPDATE complaints
 SET deadline = created_at + INTERVAL '7 days'
 WHERE deadline IS NULL;
 
@@ -337,7 +425,7 @@ SET
   current_level = COALESCE(c.current_level, 'L1'),
   deadline = COALESCE(c.deadline, NOW() + (om.sla_l1 * INTERVAL '1 minute')),
   status = CASE
-    WHEN c.status IN ('resolved', 'closed', 'rejected') THEN c.status
+    WHEN c.status IN ('resolved', 'closed', 'expired', 'rejected') THEN c.status
     ELSE 'assigned'::complaint_status
   END,
   progress = CASE
@@ -371,7 +459,10 @@ END $$;
 ALTER TABLE complaints ALTER COLUMN complaint_id SET NOT NULL;
 ALTER TABLE complaints ALTER COLUMN department SET NOT NULL;
 ALTER TABLE complaints ALTER COLUMN current_level SET DEFAULT 'L1';
+ALTER TABLE complaints ALTER COLUMN priority SET DEFAULT 'medium';
+ALTER TABLE complaints ALTER COLUMN priority SET NOT NULL;
 ALTER TABLE complaints ALTER COLUMN progress SET DEFAULT 'pending';
+ALTER TABLE complaints ALTER COLUMN work_status SET DEFAULT 'Pending';
 ALTER TABLE complaints ALTER COLUMN dept_head_viewed SET DEFAULT FALSE;
 ALTER TABLE complaints ALTER COLUMN worker_assigned SET DEFAULT FALSE;
 ALTER TABLE workers ALTER COLUMN department SET DEFAULT 'roads';

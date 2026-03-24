@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { AuthError, requireApiL3Officer } from '@/lib/server/auth';
+import { AuthError, requireApiExecutionOfficer } from '@/lib/server/auth';
 import { uploadComplaintProofByL3 } from '@/lib/server/officer-routing';
 
 export const runtime = 'nodejs';
@@ -10,7 +10,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireApiL3Officer(request);
+    const user = await requireApiExecutionOfficer(request);
     const { id } = await context.params;
     const formData = await request.formData();
     const description = String(formData.get('description') || '').trim() || undefined;

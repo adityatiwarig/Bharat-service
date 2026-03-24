@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiUser } from '@/lib/server/auth';
 import { addComplaintRatingForUser } from '@/lib/server/complaints';
+import type { ComplaintSatisfaction } from '@/lib/types';
 
 export async function POST(
   request: Request,
@@ -10,14 +11,24 @@ export async function POST(
   try {
     const user = await requireApiUser(['citizen']);
     const { id } = await context.params;
-    const body = (await request.json()) as { rating?: number; feedback?: string };
+    const body = (await request.json()) as {
+      rating?: number;
+      satisfaction?: ComplaintSatisfaction;
+      feedback?: string;
+    };
+    const normalizedRating = body.satisfaction === 'satisfied'
+      ? 5
+      : body.satisfaction === 'not_satisfied'
+        ? 1
+        : body.rating;
 
-    if (!body.rating || body.rating < 1 || body.rating > 5) {
-      return NextResponse.json({ error: 'Rating must be between 1 and 5.' }, { status: 400 });
+    if (!normalizedRating || normalizedRating < 1 || normalizedRating > 5) {
+      return NextResponse.json({ error: 'Feedback must be Satisfied, Not satisfied, or a rating between 1 and 5.' }, { status: 400 });
     }
 
     const rating = await addComplaintRatingForUser(user, id, {
-      rating: body.rating,
+      rating: normalizedRating,
+      satisfaction: body.satisfaction,
       feedback: body.feedback,
     });
 

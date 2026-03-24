@@ -46,7 +46,7 @@ export async function getLeaderTrendSummary(user: User): Promise<ComplaintTrendS
             WHERE status IN ('resolved', 'closed') AND updated_at >= NOW() - INTERVAL '7 days'
           )::text AS resolved_last_7_days,
           COUNT(*) FILTER (
-            WHERE priority::text IN ('high', 'critical', 'urgent') AND status NOT IN ('resolved', 'closed', 'rejected')
+            WHERE priority::text IN ('high', 'critical', 'urgent') AND status NOT IN ('resolved', 'closed', 'rejected', 'expired')
           )::text AS high_priority_open
         FROM complaints
         ${whereClause}
@@ -75,10 +75,11 @@ export async function getLeaderTrendSummary(user: User): Promise<ComplaintTrendS
             WHEN 'received' THEN 1
             WHEN 'assigned' THEN 2
             WHEN 'in_progress' THEN 3
-            WHEN 'resolved' THEN 4
-            WHEN 'closed' THEN 5
-            WHEN 'rejected' THEN 6
-            ELSE 7
+            WHEN 'expired' THEN 4
+            WHEN 'resolved' THEN 5
+            WHEN 'closed' THEN 6
+            WHEN 'rejected' THEN 7
+            ELSE 8
           END
       `,
       params,

@@ -3,13 +3,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'complaint_history_action') THEN
     CREATE TYPE complaint_history_action AS ENUM ('assigned', 'escalated', 'resolved');
   END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'officer_role') THEN
+    CREATE TYPE officer_role AS ENUM ('L1', 'L2', 'L3', 'ADMIN');
+  END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS officers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID UNIQUE REFERENCES users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
-  role complaint_level NOT NULL,
+  role officer_role NOT NULL,
   department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
   zone_id INTEGER REFERENCES zones(id) ON DELETE SET NULL,
   designation TEXT,
@@ -135,7 +139,7 @@ INSERT INTO officers (user_id, name, role, department_id, zone_id, designation)
 SELECT
   u.id,
   seed.name,
-  seed.role::complaint_level,
+  seed.role::officer_role,
   seed.department_id,
   seed.zone_id,
   seed.designation
@@ -210,29 +214,38 @@ resolved_rules AS (
   INNER JOIN default_rules dr ON dr.department_id = c.department_id
   LEFT JOIN category_rules cr ON cr.category_id = c.id
 ),
+canonical_officers AS (
+  SELECT
+    department_id,
+    role,
+    name,
+    MIN(id::text)::uuid AS officer_id
+  FROM officers
+  GROUP BY department_id, role, name
+),
 mapping_rows AS (
   SELECT
     w.zone_id,
     w.id AS ward_id,
     rr.department_id,
     rr.category_id,
-    l1.id AS l1_officer_id,
-    l2.id AS l2_officer_id,
-    l3.id AS l3_officer_id,
+    l1.officer_id AS l1_officer_id,
+    l2.officer_id AS l2_officer_id,
+    l3.officer_id AS l3_officer_id,
     rr.sla_l1,
     rr.sla_l2,
     rr.sla_l3
   FROM wards w
   INNER JOIN resolved_rules rr ON TRUE
-  INNER JOIN officers l1
+  INNER JOIN canonical_officers l1
     ON l1.name = rr.l1_name
    AND l1.role = 'L1'
    AND l1.department_id = rr.department_id
-  INNER JOIN officers l2
+  INNER JOIN canonical_officers l2
     ON l2.name = rr.l2_name
    AND l2.role = 'L2'
    AND l2.department_id = rr.department_id
-  INNER JOIN officers l3
+  INNER JOIN canonical_officers l3
     ON l3.name = rr.l3_name
    AND l3.role = 'L3'
    AND l3.department_id = rr.department_id
@@ -290,3 +303,6 @@ WHERE c.assigned_officer_id IS NULL
   AND c.ward_id = om.ward_id
   AND c.department_id = om.department_id
   AND c.category_id = om.category_id;
+
+
+

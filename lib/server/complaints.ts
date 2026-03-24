@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { revalidateTag } from 'next/cache';
 
-import { buildComplaintTrackerSnapshot } from '@/lib/complaint-tracker';
+import { buildComplaintHistoryCard, buildComplaintTrackerSnapshot } from '@/lib/complaint-tracker';
 import {
   cacheComplaintProof,
   cacheComplaintSummary,
@@ -28,15 +28,18 @@ import {
   assignComplaintToInitialOfficer,
   queueComplaintForL2ReviewAfterCitizenFeedback,
 } from '@/lib/server/officer-routing';
+import { computeL1ComplaintDeadline } from '@/lib/server/complaint-sla';
 import { saveAttachments, saveProofImage, saveProofImages } from '@/lib/server/uploads';
 import type {
   Complaint,
   ComplaintAttachment,
   ComplaintHistoryEntry,
   ComplaintDepartment,
+  ComplaintLevel,
   ComplaintListFilters,
   ComplaintProofRecord,
   ComplaintProofData,
+  ComplaintSatisfaction,
   ComplaintStatus,
   ComplaintTimelineData,
   PaginatedResult,
@@ -85,15 +88,18 @@ export type ComplaintRow = {
   spam_reasons: string[] | null;
   attachments: ComplaintAttachment[] | null;
   proof_image: ComplaintAttachment | null;
+  proof_image_url: string | null;
   proof_images?: ComplaintAttachment[] | null;
   proof_text: string | null;
+  work_status: string | null;
   department_message: string | null;
   street_address?: string | null;
   location_address: string | null;
   latitude: string | number | null;
   longitude: string | number | null;
-  current_level?: 'L1' | 'L2' | 'L3' | null;
+  current_level?: ComplaintLevel | null;
   deadline?: string | null;
+  completed_at: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
   created_at: string;
@@ -118,7 +124,7 @@ type ComplaintHistoryRow = {
   action: 'assigned' | 'escalated' | 'resolved';
   from_officer: string | null;
   to_officer: string | null;
-  level: 'L1' | 'L2' | 'L3';
+  level: ComplaintLevel;
   timestamp: string;
 };
 
@@ -126,6 +132,7 @@ type RatingRow = {
   id: string;
   complaint_id: string;
   rating: number;
+  satisfaction?: ComplaintSatisfaction | null;
   feedback?: string | null;
   created_at?: string;
 };
@@ -141,8 +148,10 @@ type WorkerRow = {
 
 type ComplaintProofRow = {
   proof_image: ComplaintAttachment | null;
+  proof_image_url: string | null;
   proof_images?: ComplaintAttachment[] | null;
   proof_text: string | null;
+  completed_at: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
 };
@@ -197,8 +206,10 @@ const COMPLAINT_SUMMARY_SELECT_COLUMNS = `
   c.is_spam,
   c.spam_reasons,
   '[]'::jsonb AS attachments,
-  NULL::jsonb AS proof_image,
+  c.proof_image,
+  c.proof_image_url,
   NULL::text AS proof_text,
+  c.work_status,
   c.department_message,
   c.street_address,
   c.location_address,
@@ -206,6 +217,7 @@ const COMPLAINT_SUMMARY_SELECT_COLUMNS = `
   c.longitude,
   c.current_level,
   c.deadline,
+  c.completed_at,
   c.resolved_at,
   NULL::text AS resolution_notes,
   c.created_at,
@@ -253,7 +265,9 @@ const COMPLAINT_DETAIL_SELECT_COLUMNS = `
   c.spam_reasons,
   c.attachments,
   c.proof_image,
+  c.proof_image_url,
   c.proof_text,
+  c.work_status,
   c.department_message,
   c.street_address,
   c.location_address,
@@ -261,6 +275,7 @@ const COMPLAINT_DETAIL_SELECT_COLUMNS = `
   c.longitude,
   c.current_level,
   c.deadline,
+  c.completed_at,
   c.resolved_at,
   c.resolution_notes,
   c.created_at,
@@ -296,11 +311,33 @@ function normalizeStatus(status: string) {
 }
 
 function normalizePriority(priority: string) {
-  return priority === 'urgent' ? 'critical' : priority;
+  if (priority === 'critical' || priority === 'urgent') {
+    return 'high';
+  }
+
+  return priority;
 }
 
 function normalizeDepartment(department: string) {
   return department.toLowerCase().replace(/\s+/g, '_') as ComplaintDepartment;
+}
+
+function normalizeCitizenSatisfaction(value?: string | null): ComplaintSatisfaction | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '_');
+
+  if (normalized === 'satisfied') {
+    return 'satisfied';
+  }
+
+  if (normalized === 'not_satisfied' || normalized === 'unsatisfied') {
+    return 'not_satisfied';
+  }
+
+  return null;
 }
 
 function isUuid(value: string) {
@@ -479,8 +516,10 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     spam_reasons: row.spam_reasons || [],
     attachments: row.attachments || [],
     proof_image: row.proof_image || null,
+    proof_image_url: row.proof_image_url || row.proof_image?.url || null,
     proof_images: normalizedProofImages,
     proof_text: row.proof_text || null,
+    work_status: row.work_status as Complaint['work_status'],
     department_message: row.department_message || 'Your complaint is being handled by the department.',
     street_address: row.street_address ?? null,
     location_address: row.location_address,
@@ -488,6 +527,7 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     longitude: row.longitude === null ? null : Number(row.longitude),
     current_level: row.current_level ?? null,
     deadline: row.deadline ?? null,
+    completed_at: row.completed_at,
     resolved_at: row.resolved_at,
     resolution_notes: row.resolution_notes,
     created_at: row.created_at,
@@ -636,7 +676,16 @@ async function getComplaintRating(complaintId: string) {
     [complaintId],
   );
 
-  return result.rows[0] || null;
+  const row = result.rows[0];
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    satisfaction: (row.rating >= 4 ? 'satisfied' : 'not_satisfied') as ComplaintSatisfaction,
+  };
 }
 
 async function listComplaintProofRecords(complaintId: string): Promise<ComplaintProofRecord[]> {
@@ -1062,8 +1111,10 @@ export async function getComplaintProofForUser(
       `
         SELECT
           proof_image,
+          proof_image_url,
           ${hasProofImagesColumn ? 'proof_images,' : ''}
           proof_text,
+          completed_at,
           resolved_at,
           resolution_notes
         FROM complaints
@@ -1081,7 +1132,9 @@ export async function getComplaintProofForUser(
     complaint_id: complaint.complaint_id,
     proof_image: proofRow?.proof_image || null,
     proof_images: normalizeProofImages(proofRow?.proof_image, proofRow?.proof_images),
+    proof_image_url: proofRow?.proof_image_url || proofRow?.proof_image?.url || null,
     proof_text: proofRow?.proof_text || null,
+    completed_at: proofRow?.completed_at || null,
     resolved_at: proofRow?.resolved_at || null,
     resolution_notes: proofRow?.resolution_notes || null,
     rating,
@@ -1106,8 +1159,10 @@ async function getComplaintProofByComplaint(complaint: Pick<Complaint, 'id' | 'c
       `
         SELECT
           proof_image,
+          proof_image_url,
           ${hasProofImagesColumn ? 'proof_images,' : ''}
           proof_text,
+          completed_at,
           resolved_at,
           resolution_notes
         FROM complaints
@@ -1125,7 +1180,9 @@ async function getComplaintProofByComplaint(complaint: Pick<Complaint, 'id' | 'c
     complaint_id: complaint.complaint_id,
     proof_image: proofRow?.proof_image || null,
     proof_images: normalizeProofImages(proofRow?.proof_image, proofRow?.proof_images),
+    proof_image_url: proofRow?.proof_image_url || proofRow?.proof_image?.url || null,
     proof_text: proofRow?.proof_text || null,
+    completed_at: proofRow?.completed_at || null,
     resolved_at: proofRow?.resolved_at || null,
     resolution_notes: proofRow?.resolution_notes || null,
     rating,
@@ -1174,10 +1231,16 @@ export async function getComplaintByIdForUser(
   complaint.history = timeline?.history || [];
   complaint.proof_image = proof?.proof_image || null;
   complaint.proof_images = proof?.proof_images || [];
+  complaint.proof_image_url = proof?.proof_image_url || complaint.proof_image?.url || null;
   complaint.proof_text = proof?.proof_text || null;
+  complaint.completed_at = proof?.completed_at || complaint.completed_at || null;
   complaint.resolved_at = proof?.resolved_at || null;
   complaint.resolution_notes = proof?.resolution_notes || null;
   complaint.rating = proof?.rating || null;
+  complaint.history_card = buildComplaintHistoryCard({
+    ...complaint,
+    proofs: proof?.proofs || [],
+  });
 
   return complaint;
 }
@@ -1203,7 +1266,7 @@ export async function createComplaintForUser(
     location_address?: string;
     latitude?: number;
     longitude?: number;
-    current_level?: 'L1' | 'L2' | 'L3';
+    current_level?: ComplaintLevel;
     deadline?: string;
   },
   files: File[],
@@ -1219,7 +1282,6 @@ export async function createComplaintForUser(
     title: input.title,
     text: input.text,
   });
-  const normalizedDeadline = input.deadline || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const normalizedCurrentLevel = input.current_level || 'L1';
 
   const complaint = await withTransaction(async (client) => {
@@ -1260,6 +1322,7 @@ export async function createComplaintForUser(
       same_issue_count_last_24_hours: sameIssueCountLast24Hours,
       repeated_count: repeatedCount,
     });
+    const normalizedDeadline = input.deadline || computeL1ComplaintDeadline(analysis.priority).toISOString();
 
     const insertColumns: string[] = [];
     const insertValues: string[] = [];
@@ -1453,14 +1516,15 @@ export async function createComplaintForUser(
     createdComplaint.status = 'assigned';
     createdComplaint.current_level = routingAssignment.current_level;
     createdComplaint.deadline = routingAssignment.deadline;
+    createdComplaint.work_status = 'Pending';
     createdComplaint.assigned_officer_id = routingAssignment.assigned_officer_id;
     createdComplaint.assigned_to = routingAssignment.assigned_officer_id;
     return createdComplaint;
-  });
+  }, { timeout_ms: 30000, max_wait_ms: 10000 });
 
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
-  if (complaint.deadline && complaint.current_level && complaint.current_level !== 'L3') {
+  if (complaint.deadline && complaint.current_level && complaint.current_level !== 'L2_ESCALATED') {
     await scheduleComplaintEscalation(complaint.id, complaint.deadline);
   }
   await cacheComplaintSummary(complaint);
@@ -1503,6 +1567,7 @@ export async function updateComplaintStatusForUser(
     assigned: ['in_progress'],
     in_progress: ['resolved'],
     resolved: [],
+    expired: [],
     closed: [],
     rejected: [],
   };
@@ -1632,7 +1697,7 @@ export async function updateComplaintStatusForUser(
 export async function addComplaintRatingForUser(
   user: User,
   complaintId: string,
-  input: { rating: number; feedback?: string },
+  input: { rating?: number; satisfaction?: ComplaintSatisfaction | null; feedback?: string },
 ) {
   const complaint = await getComplaintByIdForUser(user, complaintId);
 
@@ -1642,14 +1707,34 @@ export async function addComplaintRatingForUser(
 
   const currentStatus = normalizeStatus(complaint.status);
 
+  if (currentStatus === 'expired') {
+    throw new AuthError('This complaint has expired. Please create a new complaint if the issue still exists.', 400);
+  }
+
   if (currentStatus !== 'resolved') {
     throw new AuthError('Ratings can only be submitted after resolution.', 400);
   }
 
+  const satisfaction = normalizeCitizenSatisfaction(input.satisfaction) || null;
+  const normalizedRating = satisfaction === 'satisfied'
+    ? 5
+    : satisfaction === 'not_satisfied'
+      ? 1
+      : Number(input.rating || 0);
+
+  if (!Number.isFinite(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    throw new AuthError('Citizen feedback must be Satisfied, Not satisfied, or a rating between 1 and 5.', 400);
+  }
+
   const trimmedFeedback = input.feedback?.trim() || null;
+  const feedbackLabel = satisfaction === 'satisfied'
+    ? 'Satisfied'
+    : satisfaction === 'not_satisfied'
+      ? 'Not satisfied'
+      : `${normalizedRating}/5`;
   const feedbackNote = trimmedFeedback
-    ? `Citizen feedback submitted (${input.rating}/5): ${trimmedFeedback}`
-    : `Citizen submitted a ${input.rating}/5 resolution rating.`;
+    ? `Citizen feedback submitted (${feedbackLabel}): ${trimmedFeedback}`
+    : `Citizen submitted feedback: ${feedbackLabel}.`;
   let reviewRouting: { assigned_officer_id: string; current_level: 'L2'; deadline: string } | null = null;
 
   await withTransaction(async (client) => {
@@ -1663,7 +1748,7 @@ export async function addComplaintRatingForUser(
           feedback = EXCLUDED.feedback,
           created_at = NOW()
       `,
-      [complaint.id, input.rating, trimmedFeedback],
+      [complaint.id, normalizedRating, trimmedFeedback],
     );
 
     await appendComplaintUpdate(client, {
@@ -1688,6 +1773,10 @@ export async function addComplaintRatingForUser(
       updated_by_user_id: user.id,
     });
 
+    if (!reviewRouting) {
+      throw new AuthError('Citizen feedback could not be routed to Level 2 review.', 500);
+    }
+
     const deptHeadIds = await listLeaderUserIdsByScope(client, {
       department: complaint.department,
       ward_id: complaint.ward_id,
@@ -1698,7 +1787,7 @@ export async function addComplaintRatingForUser(
         user_id: deptHeadId,
         complaint_id: complaint.id,
         title: 'Citizen feedback received',
-        message: `${complaint.title} received a ${input.rating}/5 citizen rating for closure review.`,
+        message: `${complaint.title} received citizen feedback (${feedbackLabel}) for Level 2 closure review.`,
         href: '/leader',
       });
     }
@@ -1710,7 +1799,7 @@ export async function addComplaintRatingForUser(
         user_id: adminId,
         complaint_id: complaint.id,
         title: 'Citizen feedback received',
-        message: `${complaint.title} received citizen feedback and can now move through final review.`,
+        message: `${complaint.title} received citizen feedback and has been routed to Level 2 for final review.`,
         href: '/admin/complaints',
       });
     }
@@ -1809,8 +1898,8 @@ export async function reopenComplaintByDeptHead(
 
   const currentStatus = normalizeStatus(complaint.status);
 
-  if (currentStatus !== 'resolved' && currentStatus !== 'closed') {
-    throw new AuthError('Only resolved or closed complaints can be reopened.', 400);
+  if (currentStatus !== 'resolved') {
+    throw new AuthError('Closed complaints are locked permanently and cannot be reopened.', 400);
   }
 
   const trimmedNote = note?.trim() || null;
@@ -1875,6 +1964,10 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
     throw new AuthError('Complaint not found.', 404);
   }
 
+  if (normalizeStatus(complaint.status) === 'closed' || normalizeStatus(complaint.status) === 'expired') {
+    throw new AuthError('Finalized complaints are locked permanently and cannot be edited.', 400);
+  }
+
   await withTransaction(async (client) => {
     await client.query(
       `
@@ -1925,6 +2018,10 @@ export async function listAssignableWorkersForComplaint(user: User, complaintId:
     throw new AuthError('Complaint not found.', 404);
   }
 
+  if (normalizeStatus(complaint.status) === 'closed' || normalizeStatus(complaint.status) === 'expired') {
+    throw new AuthError('Finalized complaints are locked permanently and cannot be edited.', 400);
+  }
+
   const result = await query<WorkerRow>(
     `
       SELECT
@@ -1959,6 +2056,10 @@ export async function assignComplaintToWorkerByDeptHead(
 
   if (!complaint) {
     throw new AuthError('Complaint not found.', 404);
+  }
+
+  if (normalizeStatus(complaint.status) === 'closed' || normalizeStatus(complaint.status) === 'expired') {
+    throw new AuthError('Finalized complaints are locked permanently and cannot be edited.', 400);
   }
 
   if (!complaint.dept_head_viewed) {

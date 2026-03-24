@@ -146,12 +146,20 @@ export default function MyComplaintsPage() {
       return 'Pending';
     }
 
+    if (value === 'l1_deadline_missed' || value === 'l2_deadline_missed' || value === 'reopened') {
+      return 'Under Review';
+    }
+
     if (value === 'in_progress') {
       return 'In Progress';
     }
 
     if (value === 'resolved' || value === 'closed') {
       return 'Resolved';
+    }
+
+    if (value === 'expired') {
+      return 'Expired';
     }
 
     return 'Rejected';
@@ -162,12 +170,20 @@ export default function MyComplaintsPage() {
       return 'text-orange-600';
     }
 
+    if (value === 'l1_deadline_missed' || value === 'l2_deadline_missed' || value === 'reopened') {
+      return 'text-rose-600';
+    }
+
     if (value === 'in_progress') {
       return 'text-blue-600';
     }
 
     if (value === 'resolved' || value === 'closed') {
       return 'text-green-600';
+    }
+
+    if (value === 'expired') {
+      return 'text-slate-600';
     }
 
     return 'text-rose-600';

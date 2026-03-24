@@ -1,3 +1,7 @@
+ALTER TABLE officers ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE officers ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE officers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 WITH officer_seed AS (
   SELECT *
   FROM (VALUES
@@ -100,14 +104,16 @@ WITH officer_seed AS (
     ('Dr Kapoor', 'L3', 11, NULL::integer, 'Chief Vet')
   ) AS seed(name, role, department_id, zone_id, designation)
 )
-INSERT INTO officers (user_id, name, role, department_id, zone_id, designation)
+INSERT INTO officers (user_id, name, role, department_id, zone_id, designation, email, password)
 SELECT
   u.id,
   seed.name,
-  seed.role::complaint_level,
+  seed.role::officer_role,
   seed.department_id,
   seed.zone_id,
-  seed.designation
+  seed.designation,
+  u.email,
+  COALESCE(u.password, '123456')
 FROM officer_seed seed
 INNER JOIN departments d ON d.id = seed.department_id
 INNER JOIN users u
@@ -126,7 +132,10 @@ SET
   role = EXCLUDED.role,
   department_id = EXCLUDED.department_id,
   zone_id = EXCLUDED.zone_id,
-  designation = EXCLUDED.designation;
+  designation = EXCLUDED.designation,
+  email = EXCLUDED.email,
+  password = EXCLUDED.password,
+  updated_at = NOW();
 
 WITH default_rules AS (
   SELECT *
@@ -181,29 +190,38 @@ resolved_rules AS (
   INNER JOIN default_rules dr ON dr.department_id = c.department_id
   LEFT JOIN category_rules cr ON cr.category_id = c.id
 ),
+canonical_officers AS (
+  SELECT
+    department_id,
+    role,
+    name,
+    MIN(id::text)::uuid AS officer_id
+  FROM officers
+  GROUP BY department_id, role, name
+),
 mapping_rows AS (
   SELECT
     w.zone_id,
     w.id AS ward_id,
     rr.department_id,
     rr.category_id,
-    l1.id AS l1_officer_id,
-    l2.id AS l2_officer_id,
-    l3.id AS l3_officer_id,
+    l1.officer_id AS l1_officer_id,
+    l2.officer_id AS l2_officer_id,
+    l3.officer_id AS l3_officer_id,
     rr.sla_l1,
     rr.sla_l2,
     rr.sla_l3
   FROM wards w
   INNER JOIN resolved_rules rr ON TRUE
-  INNER JOIN officers l1
+  INNER JOIN canonical_officers l1
     ON l1.name = rr.l1_name
    AND l1.role = 'L1'
    AND l1.department_id = rr.department_id
-  INNER JOIN officers l2
+  INNER JOIN canonical_officers l2
     ON l2.name = rr.l2_name
    AND l2.role = 'L2'
    AND l2.department_id = rr.department_id
-  INNER JOIN officers l3
+  INNER JOIN canonical_officers l3
     ON l3.name = rr.l3_name
    AND l3.role = 'L3'
    AND l3.department_id = rr.department_id
@@ -277,3 +295,5 @@ WHERE c.assigned_officer_id IS NOT NULL
     WHERE h.complaint_id = c.id
       AND h.action = 'assigned'
   );
+
+

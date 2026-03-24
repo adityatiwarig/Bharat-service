@@ -175,13 +175,16 @@ model Complaint {
   spam_reasons         Json              @default("[]")
   attachments          Json              @default("[]")
   proof_image          Json?
+  proof_image_url      String?
   proof_text           String?
+  work_status          String?           @default("Pending")
   department_message   String?
   street_address       String?
   location_address     String?
   latitude             Decimal?          @db.Decimal(10, 7)
   longitude            Decimal?          @db.Decimal(10, 7)
   deadline             DateTime?         @db.Timestamptz(6)
+  completed_at         DateTime?         @db.Timestamptz(6)
   resolved_at          DateTime?         @db.Timestamptz(6)
   resolution_notes     String?
   created_at           DateTime          @default(now()) @db.Timestamptz(6)
@@ -299,7 +302,12 @@ enum ComplaintStatus {
   submitted
   received
   assigned
+  reopened
   in_progress
+  l1_deadline_missed
+  l2_deadline_missed
+  l3_failed_back_to_l2
+  expired
   resolved
   closed
   rejected
@@ -320,6 +328,7 @@ enum ComplaintLevel {
   L1
   L2
   L3
+  L2_ESCALATED
 
   @@map("complaint_level")
 }
@@ -367,3 +376,9 @@ enum DepartmentName {
 
   @@map("department_name")
 }
+
+
+
+
+
+

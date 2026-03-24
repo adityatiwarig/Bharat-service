@@ -5,7 +5,12 @@ export type ComplaintStatus =
   | 'submitted'
   | 'received'
   | 'assigned'
+  | 'reopened'
   | 'in_progress'
+  | 'l1_deadline_missed'
+  | 'l2_deadline_missed'
+  | 'l3_failed_back_to_l2'
+  | 'expired'
   | 'resolved'
   | 'closed'
   | 'rejected';
@@ -22,9 +27,18 @@ export type ComplaintDepartment =
   | 'streetlight';
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+export type ComplaintLevel = 'L1' | 'L2' | 'L3' | 'L2_ESCALATED';
 export type OfficerLevel = 'L1' | 'L2' | 'L3';
 export type OfficerRole = OfficerLevel | 'ADMIN';
 export type ComplaintHistoryAction = 'assigned' | 'escalated' | 'resolved';
+export type ComplaintSatisfaction = 'satisfied' | 'not_satisfied';
+export type ComplaintWorkStatus =
+  | 'Pending'
+  | 'Viewed by L1'
+  | 'On Site'
+  | 'Work Started'
+  | 'Proof Uploaded'
+  | 'Awaiting Citizen Feedback';
 
 export type ComplaintCategory =
   | 'pothole'
@@ -152,7 +166,7 @@ export interface ComplaintHistoryEntry {
   action: ComplaintHistoryAction;
   from_officer?: string | null;
   to_officer?: string | null;
-  level: OfficerLevel;
+  level: ComplaintLevel;
   timestamp: string;
 }
 
@@ -178,6 +192,7 @@ export interface Rating {
   id: string;
   complaint_id: string;
   rating: number;
+  satisfaction?: ComplaintSatisfaction | null;
   feedback?: string | null;
   created_at?: string;
 }
@@ -192,7 +207,9 @@ export interface ComplaintProofData {
   complaint_id: string;
   proof_image?: ComplaintAttachment | null;
   proof_images?: ComplaintAttachment[];
+  proof_image_url?: string | null;
   proof_text?: string | null;
+  completed_at?: string | null;
   resolved_at?: string | null;
   resolution_notes?: string | null;
   rating?: Rating | null;
@@ -205,6 +222,43 @@ export interface ComplaintProofRecord {
   image_url: string;
   description?: string | null;
   created_at?: string;
+}
+
+export interface ComplaintHistoryCardTimelineStep {
+  key: string;
+  title: string;
+  description: string;
+  timestamp: string | null;
+  timestampLabel: string;
+  state: 'completed' | 'current' | 'upcoming';
+}
+
+export interface ComplaintHistoryCardProof {
+  submitted: boolean;
+  proof_text?: string | null;
+  completed_at?: string | null;
+  resolved_at?: string | null;
+  resolution_notes?: string | null;
+  images: ComplaintProofRecord[];
+}
+
+export interface ComplaintHistoryCardActionLogEntry {
+  id: string;
+  kind: 'update' | 'routing';
+  title: string;
+  detail?: string | null;
+  timestamp: string;
+  status?: ComplaintStatus;
+  action?: ComplaintHistoryAction;
+  level?: ComplaintLevel;
+}
+
+export interface ComplaintHistoryCard {
+  locked: boolean;
+  closed_at?: string | null;
+  timeline: ComplaintHistoryCardTimelineStep[];
+  proof: ComplaintHistoryCardProof;
+  actions_log: ComplaintHistoryCardActionLogEntry[];
 }
 
 export interface PublicComplaintSummary {
@@ -276,7 +330,9 @@ export interface Complaint {
   attachments?: ComplaintAttachment[];
   proof_image?: ComplaintAttachment | null;
   proof_images?: ComplaintAttachment[];
+  proof_image_url?: string | null;
   proof_text?: string | null;
+  work_status?: ComplaintWorkStatus | null;
   assigned_worker_id?: string | null;
   assigned_officer_id?: string | null;
   assigned_officer_name?: string | null;
@@ -285,14 +341,17 @@ export interface Complaint {
   citizen_name?: string;
   created_at: string;
   updated_at: string;
-  current_level?: OfficerLevel | null;
+  current_level?: ComplaintLevel | null;
   deadline?: string | null;
+  completed_at?: string | null;
   resolved_at?: string | null;
   resolution_notes?: string | null;
   updates?: ComplaintUpdate[];
   history?: ComplaintHistoryEntry[];
   rating?: Rating | null;
   proof_count?: number;
+  proofs?: ComplaintProofRecord[];
+  history_card?: ComplaintHistoryCard | null;
 }
 
 export interface PaginatedResult<T> {

@@ -700,6 +700,7 @@ function handleExportReport() {
       ? [complaint.proof_image]
       : [];
   const canRateResolution = complaint?.status === 'resolved';
+  const isExpiredComplaint = complaint?.status === 'expired';
   const updateCount = complaint?.updates?.length || 0;
 
   return (
@@ -718,7 +719,7 @@ function handleExportReport() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-950">Citizen Complaint Tracking System</h1>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-                  This portal provides structured L1, L2, and L3 supervisor visibility, official progress records, work completion evidence, and citizen feedback submission.
+                  This portal provides structured L1, L2, and L3 visibility, live field-work progress, official proof records, and citizen feedback submission.
                 </p>
               </div>
               <Button
@@ -849,7 +850,7 @@ function handleExportReport() {
 
               <div className="space-y-6">
                 <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title="Assigned Supervisor Details" description="Current L1, L2, or L3 assignment record without exposing officer identity." />
+                  <SectionHeading title="Assigned Officer Details" description="Current L1, L2, or L3 assignment record without exposing officer identity." />
                   <CardContent className="px-5 py-5">
                     {detailsLoading ? (
                       <LoadingSummary label="Fetching latest updates..." description="Supervisor assignment details are being loaded." className="rounded-none" />
@@ -922,7 +923,19 @@ function handleExportReport() {
                   </CardContent>
                 </Card>
 
-                {(complaint.rating || canRateResolution) ? (
+                {isExpiredComplaint ? (
+                  <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
+                    <SectionHeading title="Complaint Expired" description="This complaint can no longer continue in the existing workflow." />
+                    <CardContent className="space-y-4 px-5 py-5">
+                      <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                        The complaint crossed the fixed 1-day Level 3 SLA and expired. If the issue still exists, please create a new complaint with the latest details and evidence.
+                      </div>
+                      <Button asChild className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]">
+                        <Link href="/citizen/submit">Create New Complaint</Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (complaint.rating || canRateResolution) ? (
                   <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
                     <SectionHeading title="Citizen Feedback" description="Rate the complaint resolution after evidence review." />
                     <CardContent className="space-y-5 px-5 py-5">
@@ -1014,10 +1027,10 @@ function handleExportReport() {
                   Supervisor movement, department messages, and work completion evidence will appear here once published.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  After Level 3 resolution, you can review the proof and submit formal citizen feedback for Level 2 review.
+                  After complaint completion, you can review the proof and submit formal citizen feedback from this page.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Closed complaints remain available for reference and audit purposes.
+                  Expired complaints remain available for reference, but further action requires filing a new complaint.
                 </div>
               </div>
             </section>

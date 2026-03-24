@@ -21,6 +21,11 @@ export interface DbTransactionClient {
   query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<QueryResult<T>>;
 }
 
+type TransactionOptions = {
+  timeout_ms?: number;
+  max_wait_ms?: number;
+};
+
 function isReturningQuery(text: string) {
   const normalized = text.trim().toLowerCase();
 
@@ -49,11 +54,18 @@ export async function query<T extends QueryResultRow>(text: string, params: unkn
   return runQuery<T>(db, text, params);
 }
 
-export async function withTransaction<T>(callback: (client: DbTransactionClient) => Promise<T>) {
+export async function withTransaction<T>(
+  callback: (client: DbTransactionClient) => Promise<T>,
+  options: TransactionOptions = {},
+) {
   return db.$transaction(async (tx) =>
     callback({
       query: <R extends QueryResultRow>(text: string, params: unknown[] = []) =>
         runQuery<R>(tx, text, params),
     }),
+    {
+      timeout: options.timeout_ms ?? 20000,
+      maxWait: options.max_wait_ms ?? 10000,
+    },
   );
 }

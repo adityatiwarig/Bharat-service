@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiOfficerUser } from '@/lib/server/auth';
-import { closeComplaintByL2Review, reopenComplaintFromL2Review } from '@/lib/server/officer-routing';
+import {
+  closeComplaintByL2Review,
+  remindL1OfficerFromL2,
+  remindL2OfficerFromL3,
+  reopenComplaintFromL2Review,
+} from '@/lib/server/officer-routing';
 
 export const runtime = 'nodejs';
 
@@ -10,10 +15,10 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireApiOfficerUser(['L2'], request);
+    const user = await requireApiOfficerUser(['L2', 'L3'], request);
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
-      action?: 'close' | 'reopen';
+      action?: 'close' | 'reopen' | 'remind_l1' | 'remind_l2';
       note?: string;
     };
 
@@ -27,13 +32,23 @@ export async function PATCH(
       return NextResponse.json({ success: true, result });
     }
 
-    return NextResponse.json({ error: 'Unsupported L2 review action.' }, { status: 400 });
+    if (body.action === 'remind_l1') {
+      const result = await remindL1OfficerFromL2(user, id, body.note);
+      return NextResponse.json({ success: true, result });
+    }
+
+    if (body.action === 'remind_l2') {
+      const result = await remindL2OfficerFromL3(user, id, body.note);
+      return NextResponse.json({ success: true, result });
+    }
+
+    return NextResponse.json({ error: 'Unsupported review action.' }, { status: 400 });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.error('Failed to process L2 review action', error);
-    return NextResponse.json({ error: 'Unable to process the L2 review action right now.' }, { status: 500 });
+    console.error('Failed to process review action', error);
+    return NextResponse.json({ error: 'Unable to process the review action right now.' }, { status: 500 });
   }
 }

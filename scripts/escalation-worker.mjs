@@ -20,11 +20,8 @@ const REDIS_REST_URL = process.env.REDIS_REST_URL || process.env.KV_REST_API_URL
 const REDIS_REST_TOKEN = process.env.REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
 const REDIS_URL = process.env.REDIS_URL || '';
 const ESCALATION_QUEUE_KEY = 'complaint:escalation:due';
-const LOOP_INTERVAL_MS = 10000;
+const LOOP_INTERVAL_MS = 3 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 1000;
-
-console.log('Automatic SLA escalation is disabled. Manual officer forwarding is now the only escalation path.');
-process.exit(0);
 
 if (!DATABASE_URL) {
   throw new Error('DATABASE_URL or DIRECT_URL is required.');
@@ -249,6 +246,29 @@ async function scheduleComplaint(complaintId, deadline) {
   await runRedisCommand(['ZADD', ESCALATION_QUEUE_KEY, new Date(deadline).getTime(), complaintId]);
 }
 
+function normalizePriority(priority) {
+  if (priority === 'high' || priority === 'critical' || priority === 'urgent') {
+    return 'high';
+  }
+
+  if (priority === 'low') {
+    return 'low';
+  }
+
+  return 'medium';
+}
+
+function computeDeadlineFromSlaMinutes(baseMinutes, priority) {
+  const normalizedMinutes = Math.max(1, Math.ceil(Number(baseMinutes || 1)));
+  const normalizedPriority = normalizePriority(priority);
+  const multiplier = normalizedPriority === 'low' ? 3 : normalizedPriority === 'medium' ? 2 : 1;
+  return new Date(Date.now() + normalizedMinutes * multiplier * 60 * 1000).toISOString();
+}
+
+function computeL3Deadline(priority) {
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+}
+
 async function createNotification(client, input) {
   await client.query(
     `
@@ -276,6 +296,7 @@ async function processComplaintEscalation(complaintId) {
           c.ward_id,
           c.department_id,
           c.category_id,
+          c.priority,
           c.assigned_officer_id,
           c.current_level,
           c.status
@@ -288,7 +309,7 @@ async function processComplaintEscalation(complaintId) {
 
     const complaint = complaintResult.rows[0];
 
-    if (!complaint || ['resolved', 'closed', 'rejected'].includes(complaint.status)) {
+    if (!complaint || ['resolved', 'closed', 'expired', 'rejected'].includes(complaint.status)) {
       await client.query('COMMIT');
       return { complaint_id: complaintId, action: 'cleared' };
     }
@@ -322,6 +343,8 @@ async function processComplaintEscalation(complaintId) {
     let nextLevel = null;
     let nextOfficerId = null;
     let nextSla = null;
+    let nextStatus = 'assigned';
+    let departmentMessage = null;
 
     if (complaint.current_level === 'L1') {
       nextLevel = 'L2';
@@ -331,6 +354,37 @@ async function processComplaintEscalation(complaintId) {
       nextLevel = 'L3';
       nextOfficerId = mapping.l3_officer_id;
       nextSla = Number(mapping.sla_l3);
+    } else if (complaint.current_level === 'L3') {
+      await client.query(
+        `
+          UPDATE complaints
+          SET
+            status = 'expired',
+            updated_at = NOW(),
+            department_message = 'L3 failed to resolve the complaint within 1 day. The complaint has expired and a new complaint must be created for further action.'
+          WHERE id = $1
+        `,
+        [complaint.id],
+      );
+
+      await client.query(
+        `
+          INSERT INTO complaint_updates (complaint_id, status, note)
+          VALUES ($1, 'expired', $2)
+        `,
+        [complaint.id, 'L3 failed to resolve the complaint within 1 day and the complaint has expired.'],
+      );
+
+      await createNotification(client, {
+        user_id: complaint.user_id,
+        complaint_id: complaint.id,
+        title: 'Complaint expired',
+        message: `${complaint.title} was not resolved within the 1-day L3 SLA and has expired. Please create a new complaint if the issue still exists.`,
+        href: `/citizen/tracker?id=${complaint.complaint_id}`,
+      });
+
+      await client.query('COMMIT');
+      return { complaint_id: complaint.id, action: 'expired' };
     }
 
     if (!nextLevel || !nextOfficerId || !nextSla || complaint.assigned_officer_id === nextOfficerId) {
@@ -338,7 +392,9 @@ async function processComplaintEscalation(complaintId) {
       return { complaint_id: complaintId, action: 'cleared' };
     }
 
-    const deadline = new Date(Date.now() + nextSla * 60 * 1000).toISOString();
+    const deadline = nextLevel === 'L3'
+      ? computeL3Deadline(complaint.priority)
+      : computeDeadlineFromSlaMinutes(nextSla, complaint.priority);
     const officerResult = await client.query(
       `
         SELECT id, user_id, name
@@ -357,10 +413,10 @@ async function processComplaintEscalation(complaintId) {
           assigned_officer_id = $2,
           current_level = $3,
           deadline = $4,
-          status = 'assigned',
+          status = $5,
           progress = 'pending',
           updated_at = NOW(),
-          department_message = $5
+          department_message = $6
         WHERE id = $1
       `,
       [
@@ -368,16 +424,23 @@ async function processComplaintEscalation(complaintId) {
         nextOfficerId,
         nextLevel,
         deadline,
-        `Complaint escalated to ${nextLevel} and reassigned to the mapped officer.`,
+        nextStatus,
+        departmentMessage || `Complaint escalated to ${nextLevel} and reassigned to the mapped officer.`,
       ],
     );
 
     await client.query(
       `
         INSERT INTO complaint_updates (complaint_id, status, note)
-        VALUES ($1, 'assigned', $2)
+        VALUES ($1, $2, $3)
       `,
-      [complaint.id, `Complaint escalated automatically to ${nextLevel}.`],
+      [
+        complaint.id,
+        nextStatus,
+        nextLevel === 'L2_ESCALATED'
+          ? 'L3 failed to resolve the complaint within SLA and it has been returned to Level 2.'
+          : `Complaint escalated automatically to ${nextLevel}.`,
+      ],
     );
 
     await client.query(
@@ -392,9 +455,11 @@ async function processComplaintEscalation(complaintId) {
       await createNotification(client, {
         user_id: officer.user_id,
         complaint_id: complaint.id,
-        title: 'Complaint escalated to you',
-        message: `${complaint.title} has been escalated to your queue at ${nextLevel}.`,
-        href: '/officer/complaints',
+        title: nextLevel === 'L2_ESCALATED' ? 'L3 failed to resolve complaint within SLA' : 'Complaint escalated to you',
+        message: nextLevel === 'L2_ESCALATED'
+          ? 'L3 failed to resolve complaint within SLA'
+          : `${complaint.title} has been escalated to your queue at ${nextLevel}.`,
+        href: nextLevel === 'L3' ? '/l3' : '/l2',
       });
     }
 
@@ -402,12 +467,16 @@ async function processComplaintEscalation(complaintId) {
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint escalated',
-      message: `${complaint.title} has been escalated to ${nextLevel} for further action.`,
+      message: nextLevel === 'L2_ESCALATED'
+        ? `${complaint.title} was not resolved by L3 within SLA and has been sent back to Level 2.`
+        : `${complaint.title} has been escalated to ${nextLevel} for further action.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
     await client.query('COMMIT');
-    await scheduleComplaint(complaint.id, deadline);
+    if (nextLevel === 'L2' || nextLevel === 'L3') {
+      await scheduleComplaint(complaint.id, deadline);
+    }
 
     return { complaint_id: complaint.id, action: 'escalated', next_deadline: deadline };
   } catch (error) {

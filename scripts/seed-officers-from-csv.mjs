@@ -33,6 +33,16 @@ function normalizeLookupKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeMappingSlaMinutes(value) {
+  const numeric = Math.max(1, Number(value) || 1);
+
+  if (numeric < 60) {
+    return numeric * 24 * 60;
+  }
+
+  return Math.ceil(numeric);
+}
+
 function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
   const derivedKey = scryptSync(password, salt, 64);
@@ -644,9 +654,9 @@ async function main() {
         l1_email: officerSeeds[0].email,
         l2_email: officerSeeds[1].email,
         l3_email: officerSeeds[2].email,
-        sla_l1: Math.max(1, Number(pick(row, ['sla_l1']) || 1) || 1),
-        sla_l2: Math.max(1, Number(pick(row, ['sla_l2']) || 1) || 1),
-        sla_l3: Math.max(1, Number(pick(row, ['sla_l3']) || 1) || 1),
+        sla_l1: normalizeMappingSlaMinutes(pick(row, ['sla_l1']) || 1),
+        sla_l2: normalizeMappingSlaMinutes(pick(row, ['sla_l2']) || 1),
+        sla_l3: normalizeMappingSlaMinutes(pick(row, ['sla_l3']) || 1),
       });
     }
 

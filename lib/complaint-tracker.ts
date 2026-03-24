@@ -1,4 +1,9 @@
-import type { Complaint, ComplaintUpdate } from '@/lib/types';
+import type {
+  Complaint,
+  ComplaintHistoryCard,
+  ComplaintHistoryCardActionLogEntry,
+  ComplaintUpdate,
+} from '@/lib/types';
 
 export type TrackerStepState = 'completed' | 'current' | 'upcoming';
 
@@ -47,6 +52,31 @@ export type ComplaintTrackerSnapshot = {
   isRejected: boolean;
 };
 
+function formatStatusTitle(status: ComplaintUpdate['status']) {
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatHistoryActionTitle(action: string, level: string) {
+  const normalizedLevel = level === 'L2_ESCALATED' ? 'L2 Escalated' : level;
+
+  if (action === 'assigned') {
+    return `Assigned at ${normalizedLevel}`;
+  }
+
+  if (action === 'escalated') {
+    return `Moved to ${normalizedLevel}`;
+  }
+
+  if (action === 'resolved') {
+    return `Resolved at ${normalizedLevel}`;
+  }
+
+  return `Recorded at ${normalizedLevel}`;
+}
+
 function sortUpdatesAsc(updates?: Complaint['updates']) {
   return [...(updates || [])].sort(
     (left, right) => new Date(left.updated_at).getTime() - new Date(right.updated_at).getTime(),
@@ -78,6 +108,14 @@ function formatDepartmentLabel(department: string) {
 
 function formatPriorityLabel(priority: string) {
   return priority.charAt(0).toUpperCase() + priority.slice(1).replace('_', ' ');
+}
+
+function isPendingAtL2(complaint: Complaint) {
+  return complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
+}
+
+function getWorkStatus(complaint: Complaint) {
+  return complaint.work_status || null;
 }
 
 export function formatTrackerDateTime(value?: string | null, emptyLabel = 'Not yet updated') {
@@ -143,8 +181,16 @@ function resolveCurrentStepKey(input: {
 }) {
   const { complaint, proofSubmitted, waitingForL2Review, reopenedForRework } = input;
 
-  if (complaint.status === 'closed') {
+  if (complaint.status === 'closed' || complaint.status === 'expired') {
     return 'closed' as const;
+  }
+
+  if (complaint.status === 'l1_deadline_missed') {
+    return 'l1_assigned' as const;
+  }
+
+  if (complaint.status === 'l2_deadline_missed') {
+    return 'l2_review' as const;
   }
 
   if (reopenedForRework) {
@@ -159,6 +205,17 @@ function resolveCurrentStepKey(input: {
     return 'feedback' as const;
   }
 
+  if (complaint.current_level === 'L1' && complaint.work_status === 'Proof Uploaded') {
+    return 'proof_uploaded' as const;
+  }
+
+  if (
+    complaint.current_level === 'L1' &&
+    (complaint.work_status === 'On Site' || complaint.work_status === 'Work Started')
+  ) {
+    return 'reached' as const;
+  }
+
   if (proofSubmitted && complaint.current_level === 'L3' && complaint.status === 'in_progress') {
     return 'proof_uploaded' as const;
   }
@@ -171,7 +228,7 @@ function resolveCurrentStepKey(input: {
     return 'l3_assigned' as const;
   }
 
-  if (complaint.current_level === 'L2') {
+  if (isPendingAtL2(complaint)) {
     return 'l2_assigned' as const;
   }
 
@@ -222,19 +279,21 @@ function buildAssignmentSummary(input: {
     };
   }
 
-  if (complaint.current_level === 'L2') {
+  if (isPendingAtL2(complaint)) {
     return {
       assignmentLabel: 'Level 2 Supervisor',
-      assignmentDescription: 'The complaint is currently assigned at Level 2 for escalation handling.',
-      assignmentStatusLabel: 'Pending at Level 2',
+      assignmentDescription: complaint.current_level === 'L2_ESCALATED'
+        ? 'The complaint has returned to Level 2 because L3 missed the SLA deadline.'
+        : 'The complaint is currently assigned at Level 2 for escalation handling.',
+      assignmentStatusLabel: complaint.current_level === 'L2_ESCALATED' ? 'Returned from L3 SLA failure' : 'Pending at Level 2',
     };
   }
 
   if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
     return {
-      assignmentLabel: 'Level 1 Supervisor',
-      assignmentDescription: 'The complaint was immediately assigned to the mapped Level 1 supervisor after submission.',
-      assignmentStatusLabel: 'Pending at Level 1',
+      assignmentLabel: 'Level 1 Field Execution',
+      assignmentDescription: 'The complaint is currently with the mapped Level 1 officer for field execution, proof upload, and citizen-facing updates.',
+      assignmentStatusLabel: getWorkStatus(complaint) || 'Pending',
     };
   }
 
@@ -297,10 +356,15 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       complaint.resolved_at,
   );
   const waitingForFeedback = complaint.status === 'resolved' && !feedbackRecorded;
-  const waitingForL2Review = complaint.current_level === 'L2' && complaint.status === 'resolved';
-  const reopenedForRework = Boolean(reopenedUpdate && complaint.current_level === 'L3' && complaint.status === 'assigned');
+  const waitingForL2Review = isPendingAtL2(complaint) && (complaint.status === 'resolved' || complaint.status === 'l2_deadline_missed');
+  const reopenedForRework = Boolean(
+    reopenedUpdate &&
+    (complaint.current_level === 'L3' || complaint.current_level === 'L1') &&
+    (complaint.status === 'assigned' || complaint.status === 'reopened'),
+  );
   const feedbackSubmitted = feedbackRecorded;
   const isClosed = complaint.status === 'closed';
+  const isExpired = complaint.status === 'expired';
   const isRejected = complaint.status === 'rejected';
 
   const currentStepKey = resolveCurrentStepKey({
@@ -322,35 +386,37 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     {
       key: 'l1_assigned',
       emoji: '\u{1F4CB}',
-      title: 'Assigned to L1 Supervisor',
+      title: 'Assigned to L1 Officer',
       description:
         complaint.current_level === 'L1'
-          ? 'The complaint has already been mapped and assigned to the Level 1 supervisor for first action.'
-          : 'The complaint was auto-assigned to the mapped Level 1 supervisor immediately after submission.',
+          ? 'The complaint has already been mapped and assigned to the Level 1 officer for field execution.'
+          : 'The complaint was auto-assigned to the mapped Level 1 officer immediately after submission.',
       timestamp: l1AssignedUpdate?.updated_at || complaint.created_at,
       enabled: Boolean(complaint.current_level || complaint.assigned_officer_id || complaint.assigned_to || l1AssignedUpdate),
     },
     {
       key: 'l2_assigned',
       emoji: '\u{1F4E4}',
-      title: 'Forwarded to L2 Supervisor',
+      title: 'Forwarded to L2',
       description:
-        complaint.current_level === 'L2' && !waitingForL2Review
-          ? 'The complaint is now pending with the Level 2 supervisor for further escalation handling.'
+        isPendingAtL2(complaint) && !waitingForL2Review
+          ? complaint.current_level === 'L2_ESCALATED'
+            ? 'The complaint returned to Level 2 because L3 failed to resolve it within SLA.'
+            : 'The complaint is now pending with the Level 2 supervisor for further escalation handling.'
           : 'If Level 1 cannot complete the issue, the complaint moves to the Level 2 supervisor.',
-      timestamp: l2AssignedUpdate?.updated_at || (complaint.current_level === 'L2' && !waitingForL2Review ? complaint.updated_at : null),
-      enabled: Boolean(l2AssignedUpdate || complaint.current_level === 'L2' || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed'),
+      timestamp: l2AssignedUpdate?.updated_at || (isPendingAtL2(complaint) && !waitingForL2Review ? complaint.updated_at : null),
+      enabled: Boolean(l2AssignedUpdate || isPendingAtL2(complaint) || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed' || complaint.status === 'expired'),
     },
     {
       key: 'l3_assigned',
       emoji: '\u{1F6E0}',
-      title: 'Forwarded to L3 Supervisor',
+      title: 'Forwarded to L3',
       description:
         complaint.current_level === 'L3' && !reopenedForRework
           ? 'The complaint is now pending with the Level 3 supervisor for ground execution and final action.'
           : 'If further escalation is needed, the complaint moves to the Level 3 supervisor for field execution.',
       timestamp: l3AssignedUpdate?.updated_at || (complaint.current_level === 'L3' && !reopenedForRework ? complaint.updated_at : null),
-      enabled: Boolean(l3AssignedUpdate || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed'),
+      enabled: Boolean(l3AssignedUpdate || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed' || complaint.status === 'expired'),
     },
     {
       key: 'reached',
@@ -358,9 +424,11 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       title: 'Ground Action Started',
       description: reopenedForRework
         ? 'Fresh ground action will restart from this stage after the reopen order.'
-        : 'The Level 3 supervisor has started on-ground work for this complaint.',
-      timestamp: reachedUpdate?.updated_at || (complaint.status === 'in_progress' ? complaint.updated_at : null),
-      enabled: Boolean(reachedUpdate || complaint.status === 'in_progress' || complaint.status === 'resolved' || complaint.status === 'closed'),
+        : complaint.current_level === 'L1'
+          ? 'The assigned Level 1 officer has started on-ground work for this complaint.'
+          : 'The Level 3 supervisor has started on-ground work for this complaint.',
+      timestamp: reachedUpdate?.updated_at || ((complaint.status === 'in_progress' || complaint.work_status === 'On Site' || complaint.work_status === 'Work Started') ? complaint.updated_at : null),
+      enabled: Boolean(reachedUpdate || complaint.status === 'in_progress' || complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired'),
     },
     {
       key: 'proof_uploaded',
@@ -369,8 +437,8 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       description: proofSubmitted
         ? 'Resolution proof has been uploaded into the complaint record for verification.'
         : 'Proof images and notes will appear here once field work reaches completion.',
-      timestamp: proofUploadedUpdate?.updated_at || complaint.resolved_at || (proofSubmitted ? complaint.updated_at : null),
-      enabled: proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed',
+      timestamp: proofUploadedUpdate?.updated_at || complaint.completed_at || complaint.resolved_at || (proofSubmitted ? complaint.updated_at : null),
+      enabled: proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired',
     },
     {
       key: 'feedback',
@@ -380,7 +448,7 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
         ? 'Citizen feedback has been recorded and attached to the official complaint file.'
         : 'After proof review, citizen feedback is required before final closure review can finish.',
       timestamp: feedbackUpdate?.updated_at || complaint.resolved_at || resolvedUpdate?.updated_at || null,
-      enabled: Boolean(complaint.status === 'resolved' || complaint.status === 'closed' || feedbackRecorded || waitingForL2Review || reopenedForRework),
+      enabled: Boolean(complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired' || feedbackRecorded || waitingForL2Review || reopenedForRework),
     },
     {
       key: 'l2_review',
@@ -388,11 +456,11 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       title: 'Final Review at L2',
       description: waitingForL2Review
         ? 'Citizen feedback has routed the complaint back to Level 2 for a close or reopen decision.'
-        : isClosed
+        : isClosed || isExpired
           ? 'Level 2 completed the final review of citizen feedback before closure.'
           : 'After citizen feedback, Level 2 performs the final close or reopen review.',
       timestamp: l2ReviewUpdate?.updated_at || (waitingForL2Review ? complaint.updated_at : null),
-      enabled: Boolean(waitingForL2Review || l2ReviewUpdate || isClosed || reopenedForRework),
+      enabled: Boolean(waitingForL2Review || l2ReviewUpdate || isClosed || isExpired || reopenedForRework),
     },
   ];
 
@@ -412,10 +480,12 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
   timelineBlueprint.push({
     key: 'closed',
     emoji: '\u2705',
-    title: 'Complaint Closed',
-    description: 'The complaint has completed final review and has been formally closed in the official record.',
-    timestamp: closedUpdate?.updated_at || (isClosed ? complaint.updated_at : null),
-    enabled: isClosed,
+    title: isExpired ? 'Complaint Expired' : 'Complaint Closed',
+    description: isExpired
+      ? 'The complaint was not resolved within the Level 3 SLA window and has expired. A fresh complaint must be filed for new action.'
+      : 'The complaint has completed final review and has been formally closed in the official record.',
+    timestamp: closedUpdate?.updated_at || ((isClosed || isExpired) ? complaint.updated_at : null),
+    enabled: isClosed || isExpired,
   });
 
   const currentIndex = Math.max(0, timelineBlueprint.findIndex((step) => step.key === currentStepKey));
@@ -432,11 +502,11 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       state = 'upcoming';
     }
 
-    if (step.key === 'feedback' && (waitingForL2Review || reopenedForRework || isClosed)) {
+    if (step.key === 'feedback' && (waitingForL2Review || reopenedForRework || isClosed || isExpired)) {
       state = 'completed';
     }
 
-    if (step.key === 'l2_review' && isClosed) {
+    if (step.key === 'l2_review' && (isClosed || isExpired)) {
       state = 'completed';
     }
 
@@ -472,26 +542,63 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     headline = 'This complaint needs manual attention before it can move ahead.';
     supportLine = 'Please review the latest official note for the reason this workflow paused.';
     liveMessage = complaint.department_message || 'The complaint could not continue in the normal workflow.';
+  } else if (complaint.status === 'l1_deadline_missed') {
+    humanStatus = 'L1 Deadline Missed';
+    headline = 'The complaint was not completed within the Level 1 SLA window.';
+    supportLine = 'The complaint remains assigned to L1, while L2 can now monitor progress and send reminders.';
+    liveMessage = complaint.department_message || 'The complaint crossed the L1 deadline and is now under L2 monitoring.';
+  } else if (complaint.status === 'l2_deadline_missed') {
+    humanStatus = 'L2 Deadline Missed';
+    headline = 'The complaint was not reviewed within the Level 2 SLA window.';
+    supportLine = 'The complaint remains assigned to L2, while L3 now monitors the final review and sends strict reminders.';
+    liveMessage = complaint.department_message || 'The complaint crossed the L2 deadline and is now under L3 monitoring.';
+  } else if (isExpired) {
+    humanStatus = 'Complaint Expired';
+    headline = 'This complaint expired after missing the 1-day Level 3 SLA.';
+    supportLine = 'This complaint cannot continue further. Please create a new complaint if the issue still exists.';
+    liveMessage = complaint.department_message || 'The complaint expired at Level 3 and now requires a fresh complaint for any further action.';
   } else if (isClosed) {
     humanStatus = 'Complaint Closed';
     headline = 'This complaint has been closed after Level 2 review.';
     supportLine = 'The full supervisor chain remains visible below for audit and future reference.';
     liveMessage = complaint.department_message || 'Citizen feedback was reviewed and the complaint has been formally closed.';
   } else if (reopenedForRework) {
-    humanStatus = 'Reopened for L3 Rework';
-    headline = 'This complaint has been reopened for fresh Level 3 work.';
+    humanStatus = complaint.current_level === 'L1' ? 'Reopened for L1 Rework' : 'Reopened for L3 Rework';
+    headline = complaint.current_level === 'L1'
+      ? 'This complaint has been reopened for fresh Level 1 work.'
+      : 'This complaint has been reopened for fresh Level 3 work.';
     supportLine = 'New field work and fresh proof submission are required before the complaint can move again.';
-    liveMessage = complaint.department_message || 'Level 2 reopened the complaint after feedback and sent it back to Level 3.';
+    liveMessage = complaint.department_message || `Level 2 reopened the complaint after feedback and sent it back to ${complaint.current_level}.`;
   } else if (waitingForL2Review) {
     humanStatus = 'Pending L2 Final Review';
     headline = 'Citizen feedback is now under Level 2 review.';
-    supportLine = 'Level 2 can either close the complaint or reopen it for fresh Level 3 work.';
+    supportLine = 'Level 2 can either close the complaint or reopen it for fresh rework.';
     liveMessage = complaint.department_message || 'Citizen feedback has been received and the complaint is pending a final review decision.';
   } else if (complaint.status === 'resolved' && !feedbackRecorded) {
-    humanStatus = 'Waiting for Citizen Feedback';
+    humanStatus = complaint.work_status || 'Waiting for Citizen Feedback';
     headline = 'Proof has been uploaded and citizen verification is pending.';
     supportLine = 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
-    liveMessage = complaint.department_message || 'The complaint has been marked resolved and is waiting for citizen feedback.';
+    liveMessage = complaint.department_message || 'The complaint has been marked completed and is waiting for citizen feedback.';
+  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Proof Uploaded') {
+    humanStatus = 'Proof Uploaded';
+    headline = 'Proof has been uploaded by the assigned L1 officer.';
+    supportLine = 'The complaint is now in the final completion stage before citizen feedback.';
+    liveMessage = complaint.department_message || 'L1 has uploaded proof for the completed field work.';
+  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Work Started') {
+    humanStatus = 'Work Started';
+    headline = 'Field work has started at Level 1.';
+    supportLine = 'Live updates will continue as the assigned L1 officer progresses through the complaint.';
+    liveMessage = complaint.department_message || 'The assigned L1 officer has started work on the complaint.';
+  } else if (complaint.current_level === 'L1' && complaint.work_status === 'On Site') {
+    humanStatus = 'On Site';
+    headline = 'The assigned L1 officer has reached the complaint location.';
+    supportLine = 'Field work will continue from this point and proof will be uploaded after execution.';
+    liveMessage = complaint.department_message || 'The assigned L1 officer is now on site.';
+  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Viewed by L1') {
+    humanStatus = 'Viewed by L1';
+    headline = 'The assigned L1 officer has viewed the complaint.';
+    supportLine = 'The complaint is being prepared for on-ground execution.';
+    liveMessage = complaint.department_message || 'The assigned L1 officer has reviewed the complaint details.';
   } else if (proofSubmitted && complaint.current_level === 'L3' && complaint.status === 'in_progress') {
     humanStatus = 'Proof Uploaded';
     headline = 'Proof has been uploaded by Level 3.';
@@ -507,16 +614,20 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     headline = 'The complaint is now with the Level 3 supervisor.';
     supportLine = 'Field execution and proof submission will happen from this stage.';
     liveMessage = complaint.department_message || 'The complaint has reached the final supervisor level for action.';
-  } else if (complaint.current_level === 'L2') {
-    humanStatus = 'Pending at L2';
-    headline = 'The complaint is now with the Level 2 supervisor.';
-    supportLine = 'This level handles escalated review before any Level 3 field action.';
+  } else if (isPendingAtL2(complaint)) {
+    humanStatus = complaint.current_level === 'L2_ESCALATED' ? 'L3 Failed - Back to L2' : 'Pending at L2';
+    headline = complaint.current_level === 'L2_ESCALATED'
+      ? 'The complaint has returned to Level 2 because L3 missed the SLA deadline.'
+      : 'The complaint is now with the Level 2 supervisor.';
+    supportLine = complaint.current_level === 'L2_ESCALATED'
+      ? 'Level 2 now needs to review the failed L3 handling and decide the next action.'
+      : 'This level handles escalated review before any Level 3 field action.';
     liveMessage = complaint.department_message || 'The complaint is pending review in the Level 2 queue.';
   } else if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
-    humanStatus = 'Pending at L1';
+    humanStatus = complaint.work_status || 'Pending';
     headline = 'The complaint has been assigned to the Level 1 supervisor.';
     supportLine = 'This assignment happened immediately after complaint submission using the mapped routing record.';
-    liveMessage = complaint.department_message || 'The complaint is pending first-level action in the Level 1 queue.';
+    liveMessage = complaint.department_message || 'The complaint is pending field action in the Level 1 queue.';
   }
 
   return {
@@ -542,5 +653,52 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     feedbackSubmitted,
     isClosed,
     isRejected,
+  };
+}
+
+export function buildComplaintHistoryCard(complaint: Complaint): ComplaintHistoryCard {
+  const tracker = buildComplaintTrackerSnapshot(complaint);
+  const locked = complaint.status === 'closed' || complaint.status === 'expired';
+
+  const actionLog: ComplaintHistoryCardActionLogEntry[] = [
+    ...(complaint.updates || []).map((update) => ({
+      id: `update:${update.id}`,
+      kind: 'update' as const,
+      title: formatStatusTitle(update.status),
+      detail: update.note || null,
+      timestamp: update.updated_at,
+      status: update.status,
+    })),
+    ...(complaint.history || []).map((entry) => ({
+      id: `history:${entry.id}`,
+      kind: 'routing' as const,
+      title: formatHistoryActionTitle(entry.action, entry.level),
+      detail: null,
+      timestamp: entry.timestamp,
+      action: entry.action,
+      level: entry.level,
+    })),
+  ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
+
+  return {
+    locked,
+    closed_at: locked ? complaint.updated_at : null,
+    timeline: tracker.timeline.map((step) => ({
+      key: step.key,
+      title: step.title,
+      description: step.description,
+      timestamp: step.timestamp,
+      timestampLabel: step.timestampLabel,
+      state: step.state,
+    })),
+    proof: {
+      submitted: tracker.proofSubmitted,
+      proof_text: complaint.proof_text || null,
+      completed_at: complaint.completed_at || null,
+      resolved_at: complaint.resolved_at || null,
+      resolution_notes: complaint.resolution_notes || null,
+      images: complaint.proofs || [],
+    },
+    actions_log: actionLog,
   };
 }

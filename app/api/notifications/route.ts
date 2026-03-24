@@ -7,6 +7,8 @@ import {
   markSelectedNotificationsReadForUser,
 } from '@/lib/server/notifications';
 
+export const runtime = 'nodejs';
+
 export async function GET() {
   try {
     const user = await requireApiUser();

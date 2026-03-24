@@ -10,6 +10,7 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       processed: results.length,
+      locked: results.filter((item) => item.action === 'locked').length,
       escalated: results.filter((item) => item.action === 'escalated').length,
       results,
     });

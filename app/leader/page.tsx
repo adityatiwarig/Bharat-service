@@ -27,7 +27,7 @@ import {
 } from '@/lib/client/complaints'
 import type { Complaint, ComplaintDepartment, ComplaintPriority, ComplaintStatus, Ward } from '@/lib/types'
 
-const statuses: Array<ComplaintStatus | 'all'> = ['all', 'submitted', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected']
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'submitted', 'assigned', 'in_progress', 'resolved', 'closed', 'expired', 'rejected']
 const priorityFilters = ['all', 'high', 'medium', 'low'] as const
 const SEEN_COMPLAINTS_STORAGE_KEY = 'leader-dashboard-seen-complaints'
 
@@ -92,7 +92,12 @@ function ComplaintStatusPill({ status }: { status: ComplaintStatus }) {
     submitted: 'border-slate-200 bg-slate-100 text-slate-700',
     received: 'border-slate-200 bg-slate-100 text-slate-700',
     assigned: 'border-sky-200 bg-sky-100 text-sky-700',
+    reopened: 'border-indigo-200 bg-indigo-100 text-indigo-700',
     in_progress: 'border-amber-200 bg-amber-100 text-amber-700',
+    l1_deadline_missed: 'border-rose-200 bg-rose-100 text-rose-700',
+    l2_deadline_missed: 'border-rose-200 bg-rose-100 text-rose-700',
+    l3_failed_back_to_l2: 'border-rose-200 bg-rose-100 text-rose-700',
+    expired: 'border-slate-300 bg-slate-200 text-slate-700',
     resolved: 'border-emerald-200 bg-emerald-100 text-emerald-700',
     closed: 'border-teal-200 bg-teal-100 text-teal-700',
     rejected: 'border-rose-200 bg-rose-100 text-rose-700',
@@ -156,9 +161,14 @@ export default function LeaderDashboardPage() {
     : activeComplaint?.proof_image
       ? [activeComplaint.proof_image]
       : []
-  const canAssignWorker = Boolean(activeComplaint?.dept_head_viewed && selectedWorkerId && activeComplaint?.status !== 'closed')
+  const canAssignWorker = Boolean(
+    activeComplaint?.dept_head_viewed &&
+    selectedWorkerId &&
+    activeComplaint?.status !== 'closed' &&
+    activeComplaint?.status !== 'expired',
+  )
   const canCloseComplaint = activeComplaint?.status === 'resolved' && Boolean(activeComplaint?.rating)
-  const canReopenComplaint = activeComplaint?.status === 'resolved' || activeComplaint?.status === 'closed'
+  const canReopenComplaint = activeComplaint?.status === 'resolved'
 
   function mergeComplaintState(nextComplaint: Complaint) {
     setComplaints((current) => current.map((item) => item.id === nextComplaint.id ? { ...item, ...nextComplaint } : item))

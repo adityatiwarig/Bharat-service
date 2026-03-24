@@ -428,6 +428,14 @@ export async function requireApiForwardingOfficer(request?: Request) {
   return requireApiOfficerUser(['L1', 'L2'], request);
 }
 
+export async function requireApiL1Officer(request?: Request) {
+  return requireApiOfficerUser(['L1'], request);
+}
+
+export async function requireApiExecutionOfficer(request?: Request) {
+  return requireApiOfficerUser(['L1', 'L3'], request);
+}
+
 export async function requireApiL3Officer(request?: Request) {
   return requireApiOfficerUser(['L3'], request);
 }

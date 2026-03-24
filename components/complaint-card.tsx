@@ -46,10 +46,10 @@ export function ComplaintCard({
   const createdDate = new Date(complaint.created_at)
   const now = new Date()
   const daysAgo = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
-  const hasWorkProof = Boolean(complaint.proof_image || complaint.proof_text)
+  const hasWorkProof = Boolean(complaint.proof_image || complaint.proof_image_url || complaint.proof_text)
   const isOverdue = Boolean(
     complaint.deadline &&
-      !['resolved', 'closed', 'rejected'].includes(complaint.status) &&
+      !['resolved', 'closed', 'rejected', 'expired'].includes(complaint.status) &&
       new Date(complaint.deadline).getTime() < now.getTime(),
   )
   const dueLabel = complaint.deadline

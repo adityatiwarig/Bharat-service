@@ -6,6 +6,7 @@ import type {
   ComplaintListFilters,
   ComplaintProofData,
   ComplaintPriority,
+  ComplaintSatisfaction,
   ComplaintStatus,
   OfficerDashboardSummary,
   ComplaintTimelineData,
@@ -147,7 +148,7 @@ export async function submitComplaintResolutionProof(
   return data.complaint;
 }
 
-export async function rateComplaint(id: string, input: { rating: number; feedback?: string }) {
+export async function rateComplaint(id: string, input: { rating?: number; satisfaction?: ComplaintSatisfaction; feedback?: string }) {
   const data = await fetchJson<{ rating: Rating }>(`/api/complaints/${id}/rating`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -283,6 +284,77 @@ export async function forwardComplaintToNextLevel(complaintId: string) {
   return data.escalation;
 }
 
+export async function markComplaintViewedByL1(complaintId: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      work_status: 'Viewed by L1';
+    };
+  }>(`/api/complaints/${complaintId}/l1`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'viewed' }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function markComplaintOnSiteByL1(complaintId: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'in_progress';
+      work_status: 'On Site';
+    };
+  }>(`/api/complaints/${complaintId}/l1`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'on_site' }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function markComplaintWorkStartedByL1(complaintId: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'in_progress';
+      work_status: 'Work Started';
+    };
+  }>(`/api/complaints/${complaintId}/l1`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'work_started' }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function completeComplaintByL1(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      status: 'resolved';
+      work_status: 'Awaiting Citizen Feedback';
+    };
+  }>(`/api/complaints/${complaintId}/l1`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'completed', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
 export async function markComplaintReachedByL3(complaintId: string) {
   const data = await fetchJson<{
     success: boolean;
@@ -329,6 +401,13 @@ export async function uploadComplaintProofByL3(
   return data.proof;
 }
 
+export async function uploadComplaintProofByExecutionOfficer(
+  complaintId: string,
+  input: { image: File; description?: string },
+) {
+  return uploadComplaintProofByL3(complaintId, input);
+}
+
 export async function markComplaintResolvedByL3(complaintId: string, note?: string) {
   const data = await fetchJson<{
     success: boolean;
@@ -368,13 +447,47 @@ export async function reopenComplaintByL2Review(complaintId: string, note?: stri
     success: boolean;
     result: {
       complaint_id: string;
-      status: 'assigned';
-      current_level: 'L3';
+      status: 'reopened';
+      current_level: 'L1' | 'L3';
     };
   }>(`/api/complaints/${complaintId}/review`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'reopen', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function sendReminderToL1FromL2(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      reminded_officer_name?: string | null;
+    };
+  }>(`/api/complaints/${complaintId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'remind_l1', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function sendReminderToL2FromL3(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      reminded_officer_name?: string | null;
+    };
+  }>(`/api/complaints/${complaintId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'remind_l2', note }),
   });
 
   invalidateComplaintCache(complaintId);

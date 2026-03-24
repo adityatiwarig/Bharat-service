@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { fetchComplaints } from '@/lib/client/complaints';
 import type { Complaint, ComplaintPriority, ComplaintStatus } from '@/lib/types';
 
-const statuses: Array<ComplaintStatus | 'all'> = ['all', 'assigned', 'in_progress', 'resolved', 'closed'];
+const statuses: Array<ComplaintStatus | 'all'> = ['all', 'assigned', 'in_progress', 'resolved', 'closed', 'expired'];
 const priorities: Array<ComplaintPriority | 'all'> = ['all', 'critical', 'high', 'medium', 'low'];
 
 export default function WorkerAssignedPage() {
