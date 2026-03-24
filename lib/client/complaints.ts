@@ -428,14 +428,14 @@ export async function uploadComplaintProofByL1Field(
 
 export async function uploadComplaintProofByL1Execution(
   complaintId: string,
-  input: { image: File; description?: string },
+  input: { image: File; description?: string; geo_evidence?: GeoEvidenceDraft },
 ) {
   return uploadComplaintProofByL1Field(complaintId, input);
 }
 
 export async function uploadComplaintProofByExecutionOfficer(
   complaintId: string,
-  input: { image: File; description?: string },
+  input: { image: File; description?: string; geo_evidence?: GeoEvidenceDraft },
 ) {
   return uploadComplaintProofByL1Execution(complaintId, input);
 }

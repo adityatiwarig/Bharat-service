@@ -532,7 +532,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         WHERE (
              $2 = 'L1'
              AND om.l1_officer_id = $1
-             AND c.status NOT IN ('closed', 'rejected', 'expired')
+             AND c.status NOT IN ('rejected', 'expired')
            )
            OR (
              $2 = 'L2'
@@ -640,6 +640,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
             WHEN c.deadline IS NOT NULL
               AND c.deadline < NOW()
               AND c.status NOT IN ('closed', 'rejected', 'expired') THEN 0
+            WHEN c.status = 'closed' THEN 2
             ELSE 1
           END,
           CASE c.priority

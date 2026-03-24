@@ -1793,7 +1793,20 @@ export async function addComplaintRatingForUser(
     throw new AuthError('This complaint has expired. Please create a new complaint if the issue still exists.', 400);
   }
 
-  if (currentStatus !== 'resolved') {
+  const awaitingCitizenFeedback = String(complaint.work_status || '').trim().toLowerCase() === 'awaiting citizen feedback';
+  const hasCompletionEvidence = Boolean(
+    complaint.proof_image ||
+    complaint.proof_images?.length ||
+    complaint.proof_text?.trim() ||
+    complaint.completed_at ||
+    complaint.resolved_at,
+  );
+  const canAcceptCitizenFeedback =
+    currentStatus === 'resolved' ||
+    (currentStatus !== 'closed' && currentStatus !== 'expired' && awaitingCitizenFeedback) ||
+    (currentStatus !== 'closed' && currentStatus !== 'expired' && hasCompletionEvidence);
+
+  if (!canAcceptCitizenFeedback) {
     throw new AuthError('Ratings can only be submitted after resolution.', 400);
   }
 

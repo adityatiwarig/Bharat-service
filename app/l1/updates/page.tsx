@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, ClipboardCheck, FileImage, LoaderCircle, MapPinned, Send, Upload, Wrench } from 'lucide-react';
+import { Camera, CheckCircle2, ClipboardCheck, FileImage, LoaderCircle, MapPinned, Send, Upload, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
@@ -11,6 +11,7 @@ import { OfficerSupervisoryAlerts } from '@/components/officer-supervisory-alert
 import { PriorityBadge, StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
   closeComplaintByReviewDesk,
@@ -22,6 +23,7 @@ import {
   reopenComplaintByReviewDesk,
   uploadComplaintProofByExecutionOfficer,
 } from '@/lib/client/complaints';
+import { createGeoEvidenceDraft, type GeoEvidenceDraft } from '@/lib/client/geo-evidence';
 import type { Complaint, ComplaintAttachment, ComplaintLevel, OfficerDashboardSummary } from '@/lib/types';
 
 function normalizeDashboardLevel(level?: ComplaintLevel | null) {
@@ -33,6 +35,14 @@ function normalizeDashboardLevel(level?: ComplaintLevel | null) {
 }
 
 function getWorkStatus(complaint: Complaint) {
+  if (complaint.status === 'closed') {
+    return 'Completed';
+  }
+
+  if (complaint.status === 'resolved') {
+    return complaint.rating ? 'Citizen Review Received' : 'Awaiting Citizen Feedback';
+  }
+
   return complaint.work_status || 'Pending';
 }
 
@@ -54,6 +64,18 @@ function hasCitizenFeedback(complaint: Complaint) {
       typeof complaint.rating.rating === 'number'
     ),
   );
+}
+
+function hasSatisfiedCitizenFeedback(complaint: Complaint) {
+  if (!complaint.rating) {
+    return false;
+  }
+
+  if (complaint.rating.satisfaction) {
+    return complaint.rating.satisfaction === 'satisfied';
+  }
+
+  return typeof complaint.rating.rating === 'number' && complaint.rating.rating >= 4;
 }
 
 function isDeadlineExpired(complaint: Complaint) {
@@ -116,6 +138,9 @@ export default function L1UpdatesPage() {
   const searchParams = useSearchParams();
   const preferredComplaintCode = searchParams.get('id')?.trim() || '';
   const [isPending, startTransition] = useTransition();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<OfficerDashboardSummary | null>(null);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string>('');
@@ -124,6 +149,14 @@ export default function L1UpdatesPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [proofDescription, setProofDescription] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofGeoEvidence, setProofGeoEvidence] = useState<GeoEvidenceDraft | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState('');
+  const [expandedProofPreview, setExpandedProofPreview] = useState(false);
+  const [processingProofEvidence, setProcessingProofEvidence] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
 
   async function loadDesk(preferredCode?: string, preferredId?: string) {
     setLoading(true);
@@ -198,10 +231,167 @@ export default function L1UpdatesPage() {
 
   useEffect(() => {
     setProofFile(null);
+    setProofGeoEvidence(null);
+    setProofPreviewUrl('');
+    setExpandedProofPreview(false);
     setProofDescription('');
     setCompletionNote('');
     setReviewNote('');
   }, [selectedComplaintId]);
+
+  useEffect(() => {
+    return () => {
+      const stream = streamRef.current;
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!proofGeoEvidence) {
+      setProofPreviewUrl('');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(proofGeoEvidence.taggedFile);
+    setProofPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [proofGeoEvidence]);
+
+  function stopCameraStream() {
+    const stream = streamRef.current;
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOpen(false);
+    setCameraLoading(false);
+    setCameraReady(false);
+    setCameraError('');
+  }
+
+  async function prepareProofFile(file: File, source: 'camera' | 'upload') {
+    if (!selectedComplaint) {
+      return;
+    }
+
+    setProcessingProofEvidence(true);
+
+    try {
+      const draft = await createGeoEvidenceDraft(file, {
+        source,
+        complaintLocation: {
+          latitude: selectedComplaint.latitude,
+          longitude: selectedComplaint.longitude,
+        },
+      });
+
+      setProofFile(draft.taggedFile);
+      setProofGeoEvidence(draft);
+
+      if (!draft.metadata.location_available) {
+        toast.warning('Location could not be captured. The proof image will show Not Verified.');
+      } else {
+        toast.success('Geo-tagged proof image prepared successfully.');
+      }
+    } catch (error) {
+      console.error('Unable to prepare proof evidence', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to prepare proof image.');
+      setProofFile(null);
+      setProofGeoEvidence(null);
+    } finally {
+      setProcessingProofEvidence(false);
+    }
+  }
+
+  async function openCameraModal() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraOpen(true);
+      setCameraError('Camera access is not available in this browser.');
+      return;
+    }
+
+    stopCameraStream();
+    setCameraOpen(true);
+    setCameraLoading(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.error('Unable to open proof camera', error);
+      setCameraError('Camera permission was denied or camera is unavailable.');
+      setCameraLoading(false);
+      setCameraReady(false);
+    }
+  }
+
+  function handleProofUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+
+    if (!file) {
+      setProofFile(null);
+      setProofGeoEvidence(null);
+      return;
+    }
+
+    void prepareProofFile(file, 'upload');
+    event.target.value = '';
+  }
+
+  function handleCaptureProofPhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || !cameraReady) {
+      return;
+    }
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      toast.error('Unable to capture proof photo.');
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        toast.error('Unable to capture proof photo.');
+        return;
+      }
+
+      const file = new File([blob], `work-proof-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      stopCameraStream();
+      void prepareProofFile(file, 'camera');
+    }, 'image/jpeg', 0.92);
+  }
 
   async function refreshSelected(preferredId?: string) {
     await loadDesk(selectedComplaint?.complaint_id || preferredComplaintCode || undefined, preferredId || selectedComplaintId || undefined);
@@ -213,6 +403,8 @@ export default function L1UpdatesPage() {
     try {
       await action();
       await refreshSelected(complaint.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to process this action right now.');
     } finally {
       setActionId(null);
     }
@@ -230,6 +422,7 @@ export default function L1UpdatesPage() {
 
   const operationalLevel = complaint ? normalizeDashboardLevel(complaint.current_level) : null;
   const feedbackRecorded = complaint ? hasCitizenFeedback(complaint) : false;
+  const feedbackSatisfied = complaint ? hasSatisfiedCitizenFeedback(complaint) : false;
   const workStatus = complaint ? getWorkStatus(complaint) : 'Pending';
   const hasProof = complaint ? hasResolutionProof(complaint) : false;
   const l1DeadlineMissed = complaint ? isL1DeadlineMissed(complaint) : false;
@@ -239,7 +432,7 @@ export default function L1UpdatesPage() {
     complaint &&
     operationalLevel === 'L1' &&
     complaint.status === 'resolved' &&
-    feedbackRecorded &&
+    feedbackSatisfied &&
     !l1DeadlineMissed
   );
   const waitingForCitizenAtDesk = Boolean(
@@ -447,6 +640,16 @@ export default function L1UpdatesPage() {
                     <section className="rounded-[1.35rem] border border-amber-200 bg-amber-50/80 p-5 text-sm leading-6 text-amber-900">
                       Citizen feedback is still pending. The final `Mark Work Completed` button will only become available after feedback is submitted.
                     </section>
+                  ) : (
+                    complaint &&
+                    operationalLevel === 'L1' &&
+                    complaint.status === 'resolved' &&
+                    feedbackRecorded &&
+                    !feedbackSatisfied
+                  ) ? (
+                    <section className="rounded-[1.35rem] border border-rose-200 bg-rose-50/80 p-5 text-sm leading-6 text-rose-900">
+                      Citizen feedback has been received, but the complaint cannot be closed because the citizen did not mark the work as satisfied. Review the note and use `Reopen Complaint` if fresh work is needed.
+                    </section>
                   ) : waitingForCitizenAtHigherDesk ? (
                     <section className="rounded-[1.35rem] border border-amber-200 bg-amber-50/80 p-5 text-sm leading-6 text-amber-900">
                       Work completion has already been submitted. Because this complaint is now under {operationalLevel} supervision, citizen feedback will route to the {operationalLevel} review desk instead of L1.
@@ -514,19 +717,57 @@ export default function L1UpdatesPage() {
                         </div>
 
                         <div className="mt-4 space-y-3">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="block w-full rounded-xl border border-[#d7e2eb] bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-                            disabled={!canUploadProof || isBusy || isPending}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0] || null;
-                              setProofFile(file);
-                            }}
-                          />
-                          <div className="text-xs text-[#60758a]">
-                            {proofFile ? `Selected file: ${proofFile.name}` : 'No file selected'}
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <label className="flex-1 cursor-pointer rounded-xl border border-[#d7e2eb] bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                                disabled={!canUploadProof || isBusy || isPending || processingProofEvidence}
+                                onChange={handleProofUploadChange}
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="rounded-full"
+                              disabled={!canUploadProof || isBusy || isPending || processingProofEvidence}
+                              onClick={() => {
+                                void openCameraModal();
+                              }}
+                            >
+                              <Camera className="h-4 w-4" />
+                              Capture Photo
+                            </Button>
                           </div>
+                          <div className="text-xs text-[#60758a]">
+                            {processingProofEvidence
+                              ? 'Preparing geo-tagged proof image...'
+                              : proofGeoEvidence
+                                ? `Selected geo-tagged proof: ${proofGeoEvidence.taggedFile.name}`
+                                : proofFile
+                                  ? `Selected file: ${proofFile.name}`
+                                  : 'No file selected'}
+                          </div>
+
+                          {proofGeoEvidence ? (
+                            <div className="overflow-hidden rounded-[1rem] border border-[#d7e2eb] bg-white">
+                              <button
+                                type="button"
+                                className="block w-full bg-[#f8fbff]"
+                                onClick={() => setExpandedProofPreview(true)}
+                              >
+                                <img
+                                  src={proofPreviewUrl}
+                                  alt="Geo-tagged proof preview"
+                                  className="max-h-[28rem] w-full object-contain"
+                                />
+                              </button>
+                              <div className="border-t border-[#d7e2eb] px-4 py-3 text-xs text-[#60758a]">
+                                Geo-tagged proof preview is ready. Tap the preview to open it in a larger view and verify the full stamped location block.
+                              </div>
+                            </div>
+                          ) : null}
 
                           <Textarea
                             value={proofDescription}
@@ -550,8 +791,10 @@ export default function L1UpdatesPage() {
                                 await uploadComplaintProofByExecutionOfficer(complaint.id, {
                                   image: proofFile,
                                   description: proofDescription.trim() || undefined,
+                                  geo_evidence: proofGeoEvidence || undefined,
                                 });
                                 setProofFile(null);
+                                setProofGeoEvidence(null);
                                 toast.success('Proof submitted successfully.');
                               });
                             }}
@@ -627,6 +870,81 @@ export default function L1UpdatesPage() {
           </Card>
         </div>
       </div>
+      <Dialog open={cameraOpen} onOpenChange={(open) => {
+        if (!open) {
+          stopCameraStream();
+        }
+      }}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Capture Work Proof</DialogTitle>
+            <DialogDescription>
+              Capture the proof photograph here. Geo-location will be added automatically, and the camera will switch off right after capture.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#d7e2eb] bg-slate-950">
+              {cameraError ? (
+                <div className="flex min-h-[18rem] items-center justify-center px-6 text-center text-sm text-white/80">
+                  {cameraError}
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  className="h-[18rem] w-full object-cover sm:h-[24rem]"
+                  autoPlay
+                  playsInline
+                  muted
+                  onCanPlay={() => {
+                    setCameraLoading(false);
+                    setCameraReady(true);
+                  }}
+                />
+              )}
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-[#60758a]">
+                {cameraLoading ? 'Starting camera preview...' : cameraReady ? 'Camera is ready for proof capture.' : 'Waiting for camera access.'}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" className="rounded-full" onClick={stopCameraStream}>
+                  <X className="h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-full"
+                  disabled={!cameraReady || Boolean(cameraError)}
+                  onClick={handleCaptureProofPhoto}
+                >
+                  <Camera className="h-4 w-4" />
+                  Capture
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={expandedProofPreview} onOpenChange={setExpandedProofPreview}>
+        <DialogContent className="sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Geo-tagged Proof Preview</DialogTitle>
+            <DialogDescription>
+              Review the full stamped proof image before submitting it.
+            </DialogDescription>
+          </DialogHeader>
+          {proofPreviewUrl ? (
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#d7e2eb] bg-[#f8fbff] p-3">
+              <img
+                src={proofPreviewUrl}
+                alt="Expanded geo-tagged proof preview"
+                className="max-h-[75vh] w-full object-contain"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
