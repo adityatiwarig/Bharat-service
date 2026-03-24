@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { NextResponse } from 'next/server';
 
-import { getUploadPath } from '@/lib/server/uploads';
+import { query } from '@/lib/server/db';
 
 function guessMimeType(fileName: string) {
   const extension = path.extname(fileName).toLowerCase();
@@ -21,21 +21,50 @@ export async function GET(
 ) {
   const { storage, id } = await context.params;
 
-  if (storage !== 'local') {
-    return NextResponse.json({ error: 'Unsupported storage provider.' }, { status: 404 });
-  }
+  if (storage === 'db') {
+    const result = await query<{
+      original_name: string;
+      content_type: string;
+      file_data: Buffer;
+    }>(
+      `
+        SELECT original_name, content_type, file_data
+        FROM file_uploads
+        WHERE id = $1
+      `,
+      [id],
+    );
 
-  try {
-    const safeFileName = path.basename(id);
-    const fileBuffer = await readFile(getUploadPath(safeFileName));
+    const upload = result.rows[0];
 
-    return new NextResponse(fileBuffer, {
+    if (!upload) {
+      return NextResponse.json({ error: 'File not found.' }, { status: 404 });
+    }
+
+    return new NextResponse(upload.file_data, {
       headers: {
-        'Content-Type': guessMimeType(safeFileName),
+        'Content-Type': upload.content_type || guessMimeType(upload.original_name),
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
-  } catch {
-    return NextResponse.json({ error: 'File not found.' }, { status: 404 });
   }
+
+  if (storage === 'local') {
+    try {
+      const safeFileName = path.basename(id);
+      const legacyPath = path.join(process.cwd(), 'data', 'uploads', safeFileName);
+      const fileBuffer = await readFile(legacyPath);
+
+      return new NextResponse(fileBuffer, {
+        headers: {
+          'Content-Type': guessMimeType(safeFileName),
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      });
+    } catch {
+      return NextResponse.json({ error: 'File not found.' }, { status: 404 });
+    }
+  }
+
+  return NextResponse.json({ error: 'Unsupported storage provider.' }, { status: 404 });
 }

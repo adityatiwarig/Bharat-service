@@ -29,7 +29,14 @@ import {
   queueComplaintForReviewAfterCitizenFeedback,
 } from '@/lib/server/officer-routing';
 import { computeL1ComplaintDeadline } from '@/lib/server/complaint-sla';
-import { saveAttachments, saveProofImage, saveProofImages } from '@/lib/server/uploads';
+import {
+  saveAttachments,
+  saveGeoEvidenceAttachments,
+  saveGeoEvidenceProofImage,
+  saveGeoEvidenceProofImages,
+  saveProofImage,
+  saveProofImages,
+} from '@/lib/server/uploads';
 import type {
   Complaint,
   ComplaintAttachment,
@@ -42,6 +49,7 @@ import type {
   ComplaintSatisfaction,
   ComplaintStatus,
   ComplaintTimelineData,
+  GeoEvidenceMetadata,
   PaginatedResult,
   PublicComplaintLookupResult,
   PublicComplaintSummary,
@@ -183,19 +191,19 @@ const COMPLAINT_SUMMARY_SELECT_COLUMNS = `
   NULL::text AS applicant_address,
   NULL::text AS applicant_gender,
   NULL::text AS previous_complaint_id,
-  NULL::int AS zone_id,
-  NULL::text AS zone_name,
+  c.zone_id,
+  (SELECT name FROM zones WHERE id = c.zone_id) AS zone_name,
   c.ward_id,
-  NULL::int AS department_id,
-  NULL::text AS department_name,
+  c.department_id,
+  (SELECT name FROM departments WHERE id = c.department_id) AS department_name,
   c.department,
   c.assigned_officer_id,
   (SELECT name FROM officers WHERE id = c.assigned_officer_id) AS assigned_officer_name,
   c.assigned_worker_id,
   c.title,
   c.text,
-  NULL::int AS category_id,
-  NULL::text AS category_name,
+  c.category_id,
+  (SELECT name FROM categories WHERE id = c.category_id) AS category_name,
   c.category,
   c.status,
   c.progress,
@@ -241,19 +249,19 @@ const COMPLAINT_DETAIL_SELECT_COLUMNS = `
   NULL::text AS applicant_address,
   NULL::text AS applicant_gender,
   NULL::text AS previous_complaint_id,
-  NULL::int AS zone_id,
-  NULL::text AS zone_name,
+  c.zone_id,
+  (SELECT name FROM zones WHERE id = c.zone_id) AS zone_name,
   c.ward_id,
-  NULL::int AS department_id,
-  NULL::text AS department_name,
+  c.department_id,
+  (SELECT name FROM departments WHERE id = c.department_id) AS department_name,
   c.department,
   c.assigned_officer_id,
   (SELECT name FROM officers WHERE id = c.assigned_officer_id) AS assigned_officer_name,
   c.assigned_worker_id,
   c.title,
   c.text,
-  NULL::int AS category_id,
-  NULL::text AS category_name,
+  c.category_id,
+  (SELECT name FROM categories WHERE id = c.category_id) AS category_name,
   c.category,
   c.status,
   c.progress,
@@ -1047,7 +1055,11 @@ export async function getComplaintSummaryForUser(
   const complaint = await getComplaintCoreByIdForUser(user, identifier, { view: 'summary' });
 
   if (complaint) {
-    await cacheComplaintSummary(complaint, [identifier]);
+    try {
+      await cacheComplaintSummary(complaint, [identifier]);
+    } catch (error) {
+      console.warn('Failed to cache complaint summary', { complaintId: complaint.complaint_id, identifier, error });
+    }
   }
 
   return complaint;
@@ -1254,12 +1266,27 @@ export async function getComplaintByIdForUser(
     return null;
   }
 
-  await cacheComplaintSummary(complaint, [identifier, cachedComplaintId || '']);
+  try {
+    await cacheComplaintSummary(complaint, [identifier, cachedComplaintId || '']);
+  } catch (error) {
+    console.warn('Failed to cache full complaint summary', { complaintId: complaint.complaint_id, identifier, error });
+  }
 
-  const [timeline, proof] = await Promise.all([
+  const [timelineResult, proofResult] = await Promise.allSettled([
     getComplaintTimelineByComplaint(complaint),
     getComplaintProofByComplaint(complaint),
   ]);
+
+  if (timelineResult.status === 'rejected') {
+    console.warn('Failed to load complaint timeline', { complaintId: complaint.complaint_id, error: timelineResult.reason });
+  }
+
+  if (proofResult.status === 'rejected') {
+    console.warn('Failed to load complaint proof', { complaintId: complaint.complaint_id, error: proofResult.reason });
+  }
+
+  const timeline = timelineResult.status === 'fulfilled' ? timelineResult.value : null;
+  const proof = proofResult.status === 'fulfilled' ? proofResult.value : null;
 
   complaint.updates = timeline?.updates || [];
   complaint.history = timeline?.history || [];
@@ -1304,10 +1331,17 @@ export async function createComplaintForUser(
     deadline?: string;
   },
   files: File[],
+  geoEvidence?: Array<{
+    file: File;
+    originalFile?: File | null;
+    metadata?: GeoEvidenceMetadata | null;
+  }>,
 ) {
   const complaintId = randomUUID();
   const complaintReference = createTrackingCode();
-  const attachments = await saveAttachments(files, complaintId);
+  const attachments = geoEvidence?.length
+    ? await saveGeoEvidenceAttachments(geoEvidence, complaintId)
+    : await saveAttachments(files, complaintId);
   const hasApplicantColumns = await complaintsTableHasApplicantColumns();
   const hasStructuredMappingColumns = await complaintsTableHasStructuredMappingColumns();
   const resolvedDepartment = resolveComplaintDepartment({
@@ -1574,6 +1608,11 @@ export async function updateComplaintStatusForUser(
     proof_text?: string;
     proof_image?: File;
     proof_images?: File[];
+    proof_geo_evidence?: Array<{
+      file: File;
+      originalFile?: File | null;
+      metadata?: GeoEvidenceMetadata | null;
+    }>;
   },
 ) {
   const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
@@ -1621,11 +1660,20 @@ export async function updateComplaintStatusForUser(
   }
 
   const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
+  const proofGeoEvidence = input.proof_geo_evidence?.filter((entry) => entry.file.size > 0) || [];
   const proofImages = nextStatus === 'resolved' && proofFiles.length
     ? (
-      hasProofImagesColumn
-        ? await saveProofImages(proofFiles, complaint.id)
-        : [await saveProofImage(proofFiles[0], complaint.id)]
+      proofGeoEvidence.length
+        ? (
+          hasProofImagesColumn
+            ? await saveGeoEvidenceProofImages(proofGeoEvidence, complaint.id)
+            : [await saveGeoEvidenceProofImage(proofGeoEvidence[0].file, complaint.id, proofGeoEvidence[0].originalFile, proofGeoEvidence[0].metadata)]
+        )
+        : (
+          hasProofImagesColumn
+            ? await saveProofImages(proofFiles, complaint.id)
+            : [await saveProofImage(proofFiles[0], complaint.id)]
+        )
     )
     : null;
   const proofImage = proofImages?.[0] || null;

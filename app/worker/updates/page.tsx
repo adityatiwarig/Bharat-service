@@ -9,12 +9,14 @@ import { LoadingSummary, StatListSkeleton } from '@/components/loading-skeletons
 import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { fetchComplaints, submitComplaintResolutionProof, updateComplaintStatus } from '@/lib/client/complaints';
-import type { Complaint, ComplaintAttachment } from '@/lib/types';
+import { buildMapPreviewDataUrl, createGeoEvidenceDraft, type GeoEvidenceDraft } from '@/lib/client/geo-evidence';
+import type { Complaint, ComplaintAttachment, GeoVerificationStatus } from '@/lib/types';
 
 type CameraFacingMode = 'environment' | 'user';
 
@@ -37,14 +39,14 @@ function ProofThumbnail({
   active,
   onSelect,
 }: {
-  file: File;
+  file: GeoEvidenceDraft;
   active: boolean;
   onSelect: () => void;
 }) {
   const [url, setUrl] = useState('');
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file.taggedFile);
     setUrl(objectUrl);
 
     return () => {
@@ -58,12 +60,19 @@ function ProofThumbnail({
       onClick={onSelect}
       className={`overflow-hidden rounded-[1rem] border text-left ${active ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white'}`}
     >
-      {url ? <img src={url} alt={file.name} className="h-32 w-full object-cover" /> : null}
+      {url ? <img src={url} alt={file.taggedFile.name} className="h-32 w-full object-cover" /> : null}
       <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-slate-600">
-        <span className="truncate">{file.name}</span>
+        <span className="truncate">{file.taggedFile.name}</span>
       </div>
     </button>
   );
+}
+
+function getGeoBadgeClassName(status?: GeoVerificationStatus) {
+  if (status === 'geo_verified') return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+  if (status === 'location_mismatch') return 'bg-amber-50 text-amber-800 border border-amber-200';
+  if (status === 'not_verified') return 'bg-slate-100 text-slate-600 border border-slate-200';
+  return 'bg-blue-50 text-sky-800 border border-sky-200';
 }
 
 export default function WorkerUpdatesPage() {
@@ -73,15 +82,17 @@ export default function WorkerUpdatesPage() {
   const [startNote, setStartNote] = useState('');
   const [proofText, setProofText] = useState('');
   const [completionNote, setCompletionNote] = useState('');
-  const [proofImages, setProofImages] = useState<File[]>([]);
+  const [proofImages, setProofImages] = useState<GeoEvidenceDraft[]>([]);
   const [activeProofIndex, setActiveProofIndex] = useState(0);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [expandedImageUrl, setExpandedImageUrl] = useState('');
   const [submittingStart, setSubmittingStart] = useState(false);
   const [submittingComplete, setSubmittingComplete] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('environment');
+  const [processingProofs, setProcessingProofs] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -158,7 +169,7 @@ export default function WorkerUpdatesPage() {
       return;
     }
 
-    const objectUrl = URL.createObjectURL(activeProofImage);
+    const objectUrl = URL.createObjectURL(activeProofImage.taggedFile);
     setPreviewUrl(objectUrl);
 
     return () => {
@@ -230,30 +241,48 @@ export default function WorkerUpdatesPage() {
     }
   }
 
-  function appendProofFiles(files: File[]) {
+  async function appendProofFiles(files: File[], source: 'camera' | 'upload') {
     if (!files.length) {
       return;
     }
 
-    setProofImages((current) => {
-      const deduped = files.filter((file) => !current.some(
-        (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
-      ));
-      const next = [...current, ...deduped].slice(0, MAX_PROOF_IMAGES);
+    setProcessingProofs(true);
 
-      if (next.length === current.length) {
-        toast.error(`A maximum of ${MAX_PROOF_IMAGES} photographs may be attached.`);
-        return current;
+    try {
+      const accepted = files.slice(0, Math.max(0, MAX_PROOF_IMAGES - proofImages.length));
+      const drafts = await Promise.all(
+        accepted.map((file) =>
+          createGeoEvidenceDraft(file, {
+            source,
+            complaintLocation: {
+              latitude: selectedComplaint?.latitude,
+              longitude: selectedComplaint?.longitude,
+            },
+          }),
+        ),
+      );
+
+      setProofImages((current) => {
+        const next = [...current, ...drafts].slice(0, MAX_PROOF_IMAGES);
+        setActiveProofIndex(Math.max(0, next.length - 1));
+        return next;
+      });
+
+      if (drafts.some((draft) => !draft.metadata.location_available)) {
+        toast.warning('Location not available. Proof will be marked as Not Verified.');
+      } else {
+        toast.success('Geo-tagged proof prepared successfully.');
       }
-
-      setActiveProofIndex(next.length - 1);
-      toast.success('The selected photograph has been attached.');
-      return next;
-    });
+    } catch (error) {
+      console.error('Unable to prepare worker geo evidence', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to prepare geo-tagged proof.');
+    } finally {
+      setProcessingProofs(false);
+    }
   }
 
   function handleProofInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    appendProofFiles(Array.from(event.target.files || []));
+    void appendProofFiles(Array.from(event.target.files || []), 'upload');
     event.target.value = '';
   }
 
@@ -295,7 +324,7 @@ export default function WorkerUpdatesPage() {
         lastModified: Date.now(),
       });
 
-      appendProofFiles([file]);
+      void appendProofFiles([file], 'camera');
     }, 'image/jpeg', 0.92);
   }
 
@@ -332,7 +361,8 @@ export default function WorkerUpdatesPage() {
       await submitComplaintResolutionProof(selectedComplaint.id, {
         proof_text: proofText.trim(),
         note: completionNote.trim() || undefined,
-        proof_images: proofImages,
+        proof_images: proofImages.map((item) => item.taggedFile),
+        proof_geo_evidence: proofImages,
       });
       toast.success('The completion record has been submitted successfully.');
       setProofText('');
@@ -482,23 +512,23 @@ export default function WorkerUpdatesPage() {
                         <FieldLabel>Completion Photographs</FieldLabel>
                         <div className="space-y-4">
                           <div className="flex flex-wrap gap-3">
-                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => void openLiveCamera('environment')}>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork || processingProofs} onClick={() => void openLiveCamera('environment')}>
                               <Camera className="h-4 w-4" />
                               Open Rear Camera
                             </Button>
-                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => void openLiveCamera('user')}>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork || processingProofs} onClick={() => void openLiveCamera('user')}>
                               <Camera className="h-4 w-4" />
                               Open Front Camera
                             </Button>
-                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => rearCaptureInputRef.current?.click()}>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork || processingProofs} onClick={() => rearCaptureInputRef.current?.click()}>
                               <Upload className="h-4 w-4" />
                               Use Mobile Rear Camera
                             </Button>
-                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => frontCaptureInputRef.current?.click()}>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork || processingProofs} onClick={() => frontCaptureInputRef.current?.click()}>
                               <Upload className="h-4 w-4" />
                               Use Mobile Front Camera
                             </Button>
-                            <Button type="button" variant="outline" disabled={!canCompleteWork} onClick={() => galleryInputRef.current?.click()}>
+                            <Button type="button" variant="outline" disabled={!canCompleteWork || processingProofs} onClick={() => galleryInputRef.current?.click()}>
                               <Upload className="h-4 w-4" />
                               Upload Photographs
                             </Button>
@@ -511,6 +541,12 @@ export default function WorkerUpdatesPage() {
                           <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
                             On mobile devices, the photograph is attached automatically after it is confirmed in the device camera screen. Use Remove if the selected photograph is not correct.
                           </div>
+
+                          {processingProofs ? (
+                            <div className="rounded-[1rem] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                              Preparing geo-tagged proof...
+                            </div>
+                          ) : null}
 
                           {cameraOpen ? (
                             <div className="space-y-4 rounded-[1.35rem] border border-sky-200 bg-sky-50/70 p-4">
@@ -571,7 +607,7 @@ export default function WorkerUpdatesPage() {
                             <div className="grid gap-3 sm:grid-cols-2">
                               {proofImages.map((file, index) => (
                                 <ProofThumbnail
-                                  key={`${file.name}-${file.lastModified}-${index}`}
+                                  key={`${file.taggedFile.name}-${file.taggedFile.lastModified}-${index}`}
                                   file={file}
                                   active={index === activeProofIndex}
                                   onSelect={() => setActiveProofIndex(index)}
@@ -592,7 +628,25 @@ export default function WorkerUpdatesPage() {
                             Remove
                           </Button>
                         </div>
-                        <img src={previewUrl} alt="Selected completion proof" className="max-h-80 rounded-2xl object-cover" />
+                        <button type="button" onClick={() => setExpandedImageUrl(previewUrl)} className="relative block w-full text-left">
+                          <img src={previewUrl} alt="Selected completion proof" className="max-h-80 rounded-2xl object-cover" />
+                          {activeProofImage ? (
+                            <>
+                              <img src={buildMapPreviewDataUrl(activeProofImage.metadata)} alt="Map preview" className="absolute bottom-3 left-3 h-16 w-24 rounded-lg border border-white/30 object-cover shadow" />
+                              <div className={`absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-semibold ${getGeoBadgeClassName(activeProofImage.metadata.verification_status)}`}>
+                                {activeProofImage.metadata.verification_label || 'Location Captured'}
+                              </div>
+                            </>
+                          ) : null}
+                        </button>
+                        {activeProofImage ? (
+                          <div className="mt-3 text-sm leading-6 text-slate-600">
+                            {[activeProofImage.metadata.city, activeProofImage.metadata.area].filter(Boolean).join(', ') || 'Location not available'}
+                            {activeProofImage.metadata.distance_from_complaint_meters !== null && activeProofImage.metadata.distance_from_complaint_meters !== undefined
+                              ? ` • ${activeProofImage.metadata.distance_from_complaint_meters}m from complaint location`
+                              : ''}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -606,15 +660,20 @@ export default function WorkerUpdatesPage() {
                         {savedProofImages.length ? (
                           <div className="mt-3 grid gap-3 sm:grid-cols-2">
                             {savedProofImages.map((image) => (
-                              <a
+                              <button
                                 key={image.id}
-                                href={image.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="overflow-hidden rounded-[1rem] border border-emerald-200 bg-white"
+                                type="button"
+                                onClick={() => setExpandedImageUrl(image.geo_tagged_url || image.url)}
+                                className="relative overflow-hidden rounded-[1rem] border border-emerald-200 bg-white text-left"
                               >
                                 <img src={image.url} alt={image.name || 'Saved completion proof'} className="h-40 w-full object-cover" />
-                              </a>
+                                {image.geo?.latitude && image.geo?.longitude ? (
+                                  <img src={buildMapPreviewDataUrl(image.geo)} alt="Map preview" className="absolute bottom-3 left-3 h-12 w-20 rounded-lg border border-white/30 object-cover shadow" />
+                                ) : null}
+                                <div className={`absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-semibold ${getGeoBadgeClassName(image.geo?.verification_status)}`}>
+                                  {image.geo?.verification_label || 'Location Captured'}
+                                </div>
+                              </button>
                             ))}
                           </div>
                         ) : null}
@@ -623,7 +682,7 @@ export default function WorkerUpdatesPage() {
 
                     <Button
                       type="submit"
-                      disabled={!canCompleteWork || !proofImages.length || !proofText.trim() || submittingComplete}
+                      disabled={!canCompleteWork || !proofImages.length || !proofText.trim() || submittingComplete || processingProofs}
                       className="rounded-full"
                     >
                       {submittingComplete ? <Spinner label="Submitting..." /> : <><CheckCircle2 className="h-4 w-4" /> Submit Completion Record</>}
@@ -641,6 +700,11 @@ export default function WorkerUpdatesPage() {
           </Card>
         </div>
       </div>
+      <Dialog open={Boolean(expandedImageUrl)} onOpenChange={(open) => { if (!open) setExpandedImageUrl(''); }}>
+        <DialogContent className="max-w-5xl">
+          {expandedImageUrl ? <img src={expandedImageUrl} alt="Expanded geo proof" className="max-h-[80vh] w-full rounded-2xl object-contain" /> : null}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

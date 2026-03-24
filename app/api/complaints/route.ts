@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { buildComplaintSiteAddress, resolveGrievanceSelection } from '@/lib/grievance-mapping';
 import { AuthError, requireApiUser } from '@/lib/server/auth';
 import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/complaints';
+import type { GeoEvidenceMetadata } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +34,20 @@ function normalizeCitizenPhone(phone: string) {
   }
 
   return `+91${normalized}`;
+}
+
+function parseGeoMetadataEntries(entries: FormDataEntryValue[]): Array<GeoEvidenceMetadata | null> {
+  return entries.map((entry) => {
+    if (typeof entry !== 'string' || !entry.trim()) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(entry) as GeoEvidenceMetadata;
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function GET(request: Request) {
@@ -89,6 +104,10 @@ export async function POST(request: Request) {
     const attachments = formData
       .getAll('attachments')
       .filter((value): value is File => value instanceof File && value.size > 0);
+    const attachmentOriginals = formData
+      .getAll('attachment_originals')
+      .map((value) => (value instanceof File && value.size > 0 ? value : null));
+    const attachmentMetadata = parseGeoMetadataEntries(formData.getAll('attachment_metadata'));
 
     if (!attachments.length) {
       return NextResponse.json(
@@ -186,6 +205,11 @@ export async function POST(request: Request) {
         longitude,
       },
       attachments,
+      attachments.map((file, index) => ({
+        file,
+        originalFile: attachmentOriginals[index] || undefined,
+        metadata: attachmentMetadata[index] || undefined,
+      })),
     );
 
     return NextResponse.json({ complaint }, { status: 201 });

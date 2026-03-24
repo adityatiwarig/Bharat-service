@@ -1,4 +1,5 @@
 import { fetchJson } from '@/lib/client/api';
+import type { GeoEvidenceDraft } from '@/lib/client/geo-evidence';
 import type {
   Complaint,
   ComplaintCategory,
@@ -124,18 +125,27 @@ export async function updateComplaintStatus(id: string, input: { status: Complai
 
 export async function submitComplaintResolutionProof(
   id: string,
-  input: { proof_text: string; note?: string; proof_images: File[] },
+  input: { proof_text: string; note?: string; proof_images: File[]; proof_geo_evidence?: GeoEvidenceDraft[] },
 ) {
   const body = new FormData();
   body.set('status', 'resolved');
   body.set('proof_text', input.proof_text);
-  input.proof_images.forEach((file) => {
+  const proofFiles = input.proof_geo_evidence?.length
+    ? input.proof_geo_evidence.map((entry) => entry.taggedFile)
+    : input.proof_images;
+
+  proofFiles.forEach((file) => {
     body.append('proof_images', file);
   });
 
-  if (input.proof_images[0]) {
-    body.set('proof_image', input.proof_images[0]);
+  if (proofFiles[0]) {
+    body.set('proof_image', proofFiles[0]);
   }
+
+  input.proof_geo_evidence?.forEach((entry) => {
+    body.append('proof_image_originals', entry.originalFile);
+    body.append('proof_image_metadata', JSON.stringify(entry.metadata));
+  });
 
   if (input.note?.trim()) {
     body.set('note', input.note.trim());
@@ -384,13 +394,18 @@ export async function markComplaintReachedByL3(complaintId: string) {
 
 export async function uploadComplaintProofByL1Field(
   complaintId: string,
-  input: { image: File; description?: string },
+  input: { image: File; description?: string; geo_evidence?: GeoEvidenceDraft },
 ) {
   const body = new FormData();
-  body.set('image', input.image);
+  body.set('image', input.geo_evidence?.taggedFile || input.image);
 
   if (input.description?.trim()) {
     body.set('description', input.description.trim());
+  }
+
+  if (input.geo_evidence) {
+    body.set('image_original', input.geo_evidence.originalFile);
+    body.set('image_metadata', JSON.stringify(input.geo_evidence.metadata));
   }
 
   const data = await fetchJson<{
