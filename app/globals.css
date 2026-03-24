@@ -159,8 +159,204 @@
     }
   }
 
+  @keyframes gov-banner-copy {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes gov-portal-light {
+    0% {
+      transform: translate3d(-12%, -8%, 0) scale(1);
+    }
+
+    50% {
+      transform: translate3d(88%, 18%, 0) scale(1.08);
+    }
+
+    100% {
+      transform: translate3d(-12%, -8%, 0) scale(1);
+    }
+  }
+
   .gov-shell {
     background: linear-gradient(180deg, #f5f7fa 0%, #edf2f7 42%, #f8fafc 100%);
+  }
+
+  .gov-portal-dots {
+    background-image: radial-gradient(rgba(11, 60, 93, 0.08) 1px, transparent 1px);
+    background-size: 4px 4px;
+  }
+
+  .gov-portal-spotlight {
+    background: radial-gradient(circle, rgba(255, 87, 34, 0.18) 0%, rgba(255, 87, 34, 0.08) 34%, rgba(255, 87, 34, 0) 72%);
+    filter: blur(12px);
+    animation: gov-portal-light 9s linear infinite;
+    pointer-events: none;
+  }
+
+  .gov-portal-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 20px 44px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(12px);
+  }
+
+  .gov-portal-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.12) 100%);
+    pointer-events: none;
+  }
+
+  .gov-process-dots {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 4px 4px;
+  }
+
+  .gov-process-glow {
+    background: radial-gradient(circle, rgba(255, 87, 34, 0.16) 0%, rgba(255, 87, 34, 0.06) 36%, rgba(255, 87, 34, 0) 72%);
+    filter: blur(14px);
+    pointer-events: none;
+  }
+
+  .gov-process-stat {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 16px 36px rgba(2, 8, 23, 0.18);
+    backdrop-filter: blur(12px);
+  }
+
+  .gov-process-card {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 18px 42px rgba(2, 8, 23, 0.22);
+    backdrop-filter: blur(12px);
+  }
+
+  .gov-process-card-active {
+    border-color: rgba(255, 87, 34, 0.72);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 0 1px rgba(255, 87, 34, 0.12),
+      0 18px 42px rgba(2, 8, 23, 0.26),
+      0 0 30px rgba(255, 87, 34, 0.16);
+  }
+
+  .gov-carousel-stage {
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background-color: transparent;
+    background-image: url('/images/bg-line.webp');
+    background-size: cover;
+    background-position: center bottom;
+    background-repeat: no-repeat;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      0 18px 44px rgba(15, 23, 42, 0.07);
+  }
+
+  .gov-carousel-stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    background: rgba(255, 255, 255, 0.92);
+    pointer-events: none;
+  }
+
+  .gov-carousel-stage > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  .gov-carousel-shell {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 2;
+    backdrop-filter: blur(6px);
+    box-shadow:
+      0 28px 58px rgba(15, 23, 42, 0.13),
+      0 1px 0 rgba(255, 255, 255, 0.72) inset;
+  }
+
+  .gov-carousel-shell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.08));
+    pointer-events: none;
+  }
+
+  .gov-carousel-copy-panel {
+    position: relative;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(6px);
+  }
+
+  .gov-carousel-copy-panel > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  .gov-directory-section {
+    position: relative;
+    overflow: hidden;
+    background: #f8fafc;
+  }
+
+  .gov-directory-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+      linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.94),
+        rgba(248, 250, 252, 0.98)
+      ),
+      url('/images/bg-line.webp');
+    background-position: center bottom;
+    background-repeat: no-repeat;
+    background-size: cover, contain;
+    opacity: 0.07;
+    filter: grayscale(1);
+    pointer-events: none;
+  }
+
+  .gov-directory-card {
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+
+  .gov-directory-card:hover {
+    transform: translateY(-4px);
   }
 
   .gov-surface {
@@ -216,6 +412,10 @@
 
   .gov-fade-in {
     animation: gov-fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .gov-banner-copy {
+    animation: gov-banner-copy 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .gov-section-card {
