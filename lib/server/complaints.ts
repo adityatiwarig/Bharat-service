@@ -576,8 +576,16 @@ function buildWhereClause(user: User, filters: ComplaintListFilters) {
     }
   }
 
+  if (filters.zone_id) {
+    clauses.push(`c.zone_id = $${params.push(filters.zone_id)}`);
+  }
+
   if (filters.ward_id) {
     clauses.push(`c.ward_id = $${params.push(filters.ward_id)}`);
+  }
+
+  if (filters.department_id) {
+    clauses.push(`c.department_id = $${params.push(filters.department_id)}`);
   }
 
   if (user.role === 'leader') {
@@ -847,8 +855,14 @@ export async function listComplaintsForUser(
           c.complaint_id,
           c.tracking_code,
           c.user_id,
+          c.zone_id,
+          z.name AS zone_name,
           c.ward_id,
+          c.department_id,
+          d.name AS department_name,
           c.department,
+          c.category_id,
+          cat.name AS category_name,
           c.assigned_officer_id,
           c.assigned_worker_id,
           c.title,
@@ -868,6 +882,8 @@ export async function listComplaintsForUser(
           c.spam_reasons,
           c.attachments,
           c.proof_image,
+          c.proof_image_url,
+          c.work_status,
           c.proof_text,
           c.department_message,
           c.location_address,
@@ -875,6 +891,7 @@ export async function listComplaintsForUser(
           c.longitude,
           c.current_level,
           c.deadline,
+          c.completed_at,
           c.resolved_at,
           c.resolution_notes,
           c.created_at,
@@ -885,6 +902,9 @@ export async function listComplaintsForUser(
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        LEFT JOIN zones z ON z.id = c.zone_id
+        LEFT JOIN departments d ON d.id = c.department_id
+        LEFT JOIN categories cat ON cat.id = c.category_id
         ${whereClause}
         ORDER BY
           CASE c.priority

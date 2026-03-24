@@ -105,7 +105,9 @@ export interface UserSession {
   officer_department_id?: number | null;
   officer_department_name?: string | null;
   officer_zone_id?: number | null;
+  officer_zone_name?: string | null;
   officer_ward_id?: number | null;
+  officer_ward_name?: string | null;
   redirect_to?: string;
 }
 
@@ -368,7 +370,9 @@ export interface ComplaintListFilters {
   q?: string;
   status?: ComplaintStatus | 'all';
   priority?: ComplaintPriority | 'all';
+  zone_id?: number;
   ward_id?: number;
+  department_id?: number;
   category?: ComplaintCategory | 'all';
   department?: ComplaintDepartment | 'all';
   my_assigned?: boolean;
@@ -377,9 +381,15 @@ export interface ComplaintListFilters {
 
 export interface ComplaintAnalyticsSummary {
   total_complaints: number;
+  open_count: number;
   high_priority_count: number;
+  overdue_count: number;
+  awaiting_feedback_count: number;
   resolution_rate: number;
   category_breakdown: Array<{ category: ComplaintCategory; count: number }>;
+  level_breakdown: Array<{ level: ComplaintLevel | 'unassigned'; count: number }>;
+  zone_breakdown: Array<{ zone_id: number | null; zone_name: string; count: number; open_count: number }>;
+  department_breakdown: Array<{ department_id: number | null; department_name: string; count: number; open_count: number }>;
   top_urgent_issues: Complaint[];
   most_affected_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
   hotspot_wards: Array<{ ward_id: number; ward_name: string; count: number }>;

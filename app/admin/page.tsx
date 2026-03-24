@@ -9,30 +9,40 @@ import { DashboardLayout } from '@/components/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { fetchAdminDashboard } from '@/lib/client/complaints';
-import { COMPLAINT_DEPARTMENTS } from '@/lib/constants';
-import type { Complaint, ComplaintDepartment } from '@/lib/types';
+import { fetchAdminDashboard, fetchWards } from '@/lib/client/complaints';
+import { subscribeComplaintFeedChanged } from '@/lib/client/live-updates';
+import type { Complaint, Ward } from '@/lib/types';
 
 type AdminSummary = {
   total_complaints: number;
+  open_count: number;
   high_priority_count: number;
+  overdue_count: number;
+  awaiting_feedback_count: number;
   resolution_rate: number;
+  level_breakdown: Array<{ level: 'L1' | 'L2' | 'L3' | 'L2_ESCALATED' | 'unassigned'; count: number }>;
+  zone_breakdown: Array<{ zone_id: number | null; zone_name: string; count: number; open_count: number }>;
+  department_breakdown: Array<{ department_id: number | null; department_name: string; count: number; open_count: number }>;
   top_urgent_issues: Complaint[];
   most_affected_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
   hotspot_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
-  category_breakdown: Array<{ category: string; count: number }>;
 };
 
 type BadgeTone = 'urgent' | 'pending' | 'resolved' | 'neutral';
 
 const INITIAL_SUMMARY: AdminSummary = {
   total_complaints: 0,
+  open_count: 0,
   high_priority_count: 0,
+  overdue_count: 0,
+  awaiting_feedback_count: 0,
   resolution_rate: 0,
+  level_breakdown: [],
+  zone_breakdown: [],
+  department_breakdown: [],
   top_urgent_issues: [],
   most_affected_wards: [],
   hotspot_wards: [],
-  category_breakdown: [],
 };
 
 const PAGE_SHELL =
@@ -57,12 +67,12 @@ const TABLE_HEAD_CLASS =
   'h-9 bg-[#f8fafc] px-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[#5d7388]';
 const TABLE_CELL_CLASS =
   'px-2.5 py-2.5 text-[13px] align-middle text-[#12385b]';
-const STATUS_ORDER: Record<BadgeTone, number> = {
-  urgent: 0,
-  pending: 1,
-  resolved: 2,
-  neutral: 3,
-};
+const ADMIN_REFRESH_INTERVAL_MS = 15000;
+const ZONE_OPTIONS = [
+  { value: 'all', label: 'All zones' },
+  { value: '1', label: 'Rohini' },
+  { value: '2', label: 'Karol Bagh' },
+] as const;
 
 function formatLabel(value: string) {
   return value
@@ -87,10 +97,6 @@ function formatHeaderTimestamp(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function formatPercent(value: number) {
-  return `${Number.isInteger(value) ? value : value.toFixed(2)}%`;
 }
 
 function getRelativeTime(value: string) {
@@ -165,18 +171,39 @@ function getStatusIndicator(status: Complaint['status']) {
   };
 }
 
-function getLatestDashboardTimestamp(summary: AdminSummary) {
-  const latestComplaintUpdate = summary.top_urgent_issues.reduce<number | null>((latest, complaint) => {
-    const timestamp = new Date(complaint.updated_at).getTime();
+function formatLevelLabel(level?: Complaint['current_level'] | 'unassigned' | null) {
+  if (!level || level === 'unassigned') {
+    return 'Unassigned';
+  }
 
-    if (!Number.isFinite(timestamp)) {
-      return latest;
-    }
+  return level === 'L2_ESCALATED' ? 'L2 Escalated' : level;
+}
 
-    return latest === null ? timestamp : Math.max(latest, timestamp);
-  }, null);
+function getDeadlineLabel(deadline?: string | null, status?: Complaint['status']) {
+  if (!deadline) {
+    return 'No deadline';
+  }
 
-  return new Date(latestComplaintUpdate ?? Date.now()).toISOString();
+  if (status && ['resolved', 'closed', 'rejected', 'expired'].includes(status)) {
+    return 'Finalized';
+  }
+
+  const diffMs = new Date(deadline).getTime() - Date.now();
+
+  if (diffMs <= 0) {
+    return 'Overdue';
+  }
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h left`;
+  }
+
+  return `${hours}h ${minutes}m left`;
 }
 
 function SectionHeader({
@@ -243,96 +270,92 @@ export default function AdminDashboardPage() {
   const { activateFocusMode, isMobile, isSidebarExpanded } = useAdminWorkspace();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AdminSummary>(INITIAL_SUMMARY);
-  const [departmentFilter, setDepartmentFilter] = useState<'all' | ComplaintDepartment>('all');
+  const [wards, setWards] = useState<Ward[]>([]);
+  const [zoneFilter, setZoneFilter] = useState<'all' | '1' | '2'>('all');
   const [lastUpdatedAt, setLastUpdatedAt] = useState(() => new Date().toISOString());
 
   useEffect(() => {
-    fetchAdminDashboard()
-      .then(({ summary }) => {
-        setSummary(summary);
-        setLastUpdatedAt(getLatestDashboardTimestamp(summary));
-      })
-      .finally(() => setLoading(false));
+    fetchWards().then(setWards);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboard = async (showLoading = false) => {
+      if (showLoading) {
+        setLoading(true);
+      }
+
+      try {
+        const { summary } = await fetchAdminDashboard({
+          zoneId: zoneFilter === 'all' ? undefined : Number(zoneFilter),
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setSummary(summary);
+        setLastUpdatedAt(new Date().toISOString());
+      } finally {
+        if (active && showLoading) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadDashboard(true);
+
+    const interval = window.setInterval(() => {
+      void loadDashboard(false);
+    }, ADMIN_REFRESH_INTERVAL_MS);
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void loadDashboard(false);
+      }
+    };
+
+    const handleFocusRefresh = () => {
+      void loadDashboard(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+    window.addEventListener('focus', handleFocusRefresh);
+    const unsubscribeLiveUpdates = subscribeComplaintFeedChanged(() => {
+      void loadDashboard(false);
+    });
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      unsubscribeLiveUpdates();
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+      window.removeEventListener('focus', handleFocusRefresh);
+    };
+  }, [zoneFilter]);
 
   function handleContentEngagement() {
     if (!isMobile && isSidebarExpanded) {
       activateFocusMode();
     }
   }
-
-  const departmentOptions = useMemo(
-    () => COMPLAINT_DEPARTMENTS.map((department) => department.value),
-    [],
-  );
-
-  const filteredUrgentIssues =
-    departmentFilter === 'all'
-      ? summary.top_urgent_issues
-      : summary.top_urgent_issues.filter((complaint) => complaint.department === departmentFilter);
-
-  const filteredDepartmentLoad = Object.values(
-    filteredUrgentIssues.reduce<Record<string, { key: string; label: string; count: number }>>((acc, complaint) => {
-      const key = complaint.department || 'general';
-      if (!acc[key]) {
-        acc[key] = { key, label: formatLabel(key), count: 0 };
-      }
-      acc[key].count += 1;
-      return acc;
-    }, {}),
-  ).sort((a, b) => b.count - a.count);
-
-  const filteredStatusMix = Object.values(
-    filteredUrgentIssues.reduce<Record<string, { key: string; label: string; count: number; tone: BadgeTone }>>((acc, complaint) => {
-      const status = getStatusIndicator(complaint.status);
-      const key = status.tone;
-
-      if (!acc[key]) {
-        acc[key] = { key, label: status.label, count: 0, tone: status.tone };
-      }
-
-      acc[key].count += 1;
-      return acc;
-    }, {}),
-  ).sort((a, b) => STATUS_ORDER[a.tone] - STATUS_ORDER[b.tone] || b.count - a.count);
-
-  const leadWard = summary.hotspot_wards[0] ?? summary.most_affected_wards[0];
-  const leadDepartment = filteredDepartmentLoad[0];
-  const isDepartmentScoped = departmentFilter !== 'all';
-  const currentFilterLabel = departmentFilter === 'all' ? 'All departments' : formatLabel(departmentFilter);
+  const liveIssues = summary.top_urgent_issues;
+  const currentZoneLabel = ZONE_OPTIONS.find((zone) => zone.value === zoneFilter)?.label || 'All zones';
+  const selectedZoneWardIds = zoneFilter === 'all'
+    ? null
+    : new Set(wards.filter((ward) => String(ward.zone_id) === zoneFilter).map((ward) => ward.id));
+  const wardWatchlist = summary.most_affected_wards
+    .filter((ward) => (selectedZoneWardIds ? selectedZoneWardIds.has(ward.ward_id) : true))
+    .slice(0, 5);
+  const hotspotWardIds = new Set(summary.hotspot_wards.map((ward) => ward.ward_id));
+  const leadWard = wardWatchlist[0] ?? summary.hotspot_wards[0] ?? summary.most_affected_wards[0];
   const isCompactDesktop = !isMobile && isSidebarExpanded;
   const pageShellClass = `${PAGE_SHELL} ${isCompactDesktop ? 'lg:p-3' : 'lg:p-4'}`;
   const kpiGridClass = 'grid gap-2 md:grid-cols-2 xl:grid-cols-4';
   const splitViewClass = isCompactDesktop ? 'grid gap-3 2xl:grid-cols-[1.9fr_0.75fr]' : 'grid gap-3 xl:grid-cols-[1.9fr_0.75fr]';
   const analyticsGridClass = isCompactDesktop ? 'grid gap-2 md:grid-cols-2 2xl:grid-cols-[0.92fr_1.08fr_1fr]' : 'grid gap-2 xl:grid-cols-[0.92fr_1.08fr_1fr]';
-  const scopedHighPriorityCount = isDepartmentScoped
-    ? filteredUrgentIssues.filter((complaint) => ['high', 'critical', 'urgent'].includes(complaint.priority)).length
-    : summary.high_priority_count;
-  const scopedResolvedCount = isDepartmentScoped
-    ? filteredUrgentIssues.filter((complaint) => complaint.status === 'resolved' || complaint.status === 'closed').length
-    : 0;
-  const scopedResolutionRate = isDepartmentScoped
-    ? filteredUrgentIssues.length
-      ? Number(((scopedResolvedCount / filteredUrgentIssues.length) * 100).toFixed(2))
-      : 0
-    : summary.resolution_rate;
-  const scopedHotspotWards = isDepartmentScoped
-    ? new Set(
-        filteredUrgentIssues
-          .filter(
-            (complaint) =>
-              complaint.is_hotspot || summary.hotspot_wards.some((ward) => ward.ward_id === complaint.ward_id),
-          )
-          .map((complaint) => complaint.ward_id),
-      ).size
-    : summary.hotspot_wards.length;
-  const resolvedTrendLabel = scopedResolvedCount ? `+${scopedResolvedCount} closed` : 'Steady';
-  const queueTrendLabel = isDepartmentScoped
-    ? `${filteredUrgentIssues.length} scoped`
-    : `+${filteredUrgentIssues.length} active`;
-  const hotspotTrendLabel = scopedHotspotWards ? `+${scopedHotspotWards} tracked` : 'No hotspot';
-  const queueRows = filteredUrgentIssues.slice(0, 10);
-  const queueSummary = `Lead ${leadDepartment ? leadDepartment.label : 'None'} | Ward ${leadWard ? leadWard.ward_name : 'Stable'} | Queue ${filteredUrgentIssues.length}`;
+  const queueRows = liveIssues.slice(0, 10);
   const queueStatusSummary = queueRows.reduce(
     (acc, complaint) => {
       const tone = getStatusIndicator(complaint.status).tone;
@@ -341,51 +364,85 @@ export default function AdminDashboardPage() {
     },
     { urgent: 0, pending: 0, resolved: 0, neutral: 0 } satisfies Record<BadgeTone, number>,
   );
+  const levelCounts = summary.level_breakdown.reduce<Record<string, number>>((acc, item) => {
+    acc[item.level] = item.count;
+    return acc;
+  }, {});
+  const orderedLevelData = useMemo(() => {
+    const orderedLevels = [
+      { key: 'unassigned', label: 'Unassigned' },
+      { key: 'L1', label: 'L1' },
+      { key: 'L2', label: 'L2' },
+      { key: 'L2_ESCALATED', label: 'L2 Escalated' },
+      { key: 'L3', label: 'L3' },
+    ] as const;
+    const total = summary.level_breakdown.reduce((sum, item) => sum + item.count, 0);
+
+    return orderedLevels
+      .map((level) => ({
+        ...level,
+        count: levelCounts[level.key] || 0,
+        share: total ? Math.round(((levelCounts[level.key] || 0) / total) * 100) : 0,
+      }))
+      .filter((level) => level.count > 0 || level.key !== 'L2_ESCALATED');
+  }, [levelCounts, summary.level_breakdown]);
+  const zoneOpenCounts = summary.zone_breakdown.reduce<Record<string, number>>((acc, zone) => {
+    if (zone.zone_id != null) {
+      acc[String(zone.zone_id)] = zone.open_count;
+    }
+    return acc;
+  }, {});
+  const rohiniOpenCount = zoneOpenCounts['1'] || 0;
+  const karolBaghOpenCount = zoneOpenCounts['2'] || 0;
+  const l1QueueCount = (levelCounts.unassigned || 0) + (levelCounts.L1 || 0);
+  const l2QueueCount = (levelCounts.L2 || 0) + (levelCounts.L2_ESCALATED || 0);
+  const l3QueueCount = levelCounts.L3 || 0;
+  const queueSummary = `${currentZoneLabel} | Lead ward ${leadWard ? leadWard.ward_name : 'Stable'} | Open ${summary.open_count}`;
 
   const statCards = [
     {
-      title: 'Total Complaints',
-      value: isDepartmentScoped ? filteredUrgentIssues.length : summary.total_complaints,
-      signal: isDepartmentScoped ? currentFilterLabel : `${filteredUrgentIssues.length} active`,
-      trend: queueTrendLabel,
+      title: 'Open Complaints',
+      value: summary.open_count,
+      signal: `${summary.total_complaints} total records`,
+      trend: `${summary.total_complaints - summary.open_count} archived`,
       featured: true,
       tone: 'neutral' as const,
       accent: 'bg-[#0B3D91]',
     },
     {
-      title: 'High Priority',
-      value: scopedHighPriorityCount,
-      signal: scopedHighPriorityCount > 0 ? 'Urgent' : 'Clear',
-      trend: scopedHighPriorityCount ? `+${scopedHighPriorityCount} flagged` : 'Queue stable',
+      title: 'L1 Queue',
+      value: l1QueueCount,
+      signal: 'Execution intake',
+      trend: `${levelCounts.unassigned || 0} unassigned`,
       featured: false,
-      tone: scopedHighPriorityCount > 0 ? ('urgent' as const) : ('resolved' as const),
-      accent: scopedHighPriorityCount > 0 ? 'bg-[#C62828]' : 'bg-[#138808]',
+      tone: l1QueueCount > 0 ? ('pending' as const) : ('resolved' as const),
+      accent: l1QueueCount > 0 ? 'bg-[#FF9933]' : 'bg-[#138808]',
     },
     {
-      title: 'Resolution Rate',
-      value: formatPercent(scopedResolutionRate),
-      signal: scopedResolutionRate >= 70 ? 'On target' : 'Watch',
-      trend: resolvedTrendLabel,
+      title: 'L2 Review',
+      value: l2QueueCount,
+      signal: 'Review and escalation',
+      trend: `${levelCounts.L2_ESCALATED || 0} escalated`,
       featured: false,
-      tone: scopedResolutionRate >= 70 ? ('resolved' as const) : ('pending' as const),
-      accent: scopedResolutionRate >= 70 ? 'bg-[#138808]' : 'bg-[#FF9933]',
+      tone: l2QueueCount > 0 ? ('neutral' as const) : ('resolved' as const),
+      accent: 'bg-[#0B3D91]',
     },
     {
-      title: 'Hotspot Wards',
-      value: scopedHotspotWards,
-      signal: scopedHotspotWards > 0 ? `${scopedHotspotWards} watch` : 'Stable',
-      trend: hotspotTrendLabel,
+      title: 'L3 Escalations',
+      value: l3QueueCount,
+      signal: summary.overdue_count > 0 ? `${summary.overdue_count} overdue cases` : 'Escalation stable',
+      trend: summary.awaiting_feedback_count > 0 ? `${summary.awaiting_feedback_count} awaiting feedback` : 'Citizen loop clear',
       featured: false,
-      tone: scopedHotspotWards > 0 ? ('pending' as const) : ('neutral' as const),
-      accent: scopedHotspotWards > 0 ? 'bg-[#FF9933]' : 'bg-[#0B3D91]',
+      tone: l3QueueCount > 0 || summary.overdue_count > 0 ? ('urgent' as const) : ('resolved' as const),
+      accent: l3QueueCount > 0 || summary.overdue_count > 0 ? 'bg-[#C62828]' : 'bg-[#138808]',
     },
   ];
 
   const activityFeed = [
-    ...filteredUrgentIssues.slice(0, 5).map((complaint) => ({
+    ...liveIssues.slice(0, 5).map((complaint) => ({
       id: complaint.id,
       title: complaint.title,
-      meta: `${complaint.ward_name ?? `Ward ${complaint.ward_id}`} | ${formatLabel(complaint.department)}`,
+      meta: `${complaint.ward_name ?? `Ward ${complaint.ward_id}`} | ${complaint.department_name || formatLabel(complaint.department)} | ${formatLevelLabel(complaint.current_level)}`,
       time: getRelativeTime(complaint.updated_at),
       stamp: formatTimestamp(complaint.updated_at),
       tone: getStatusIndicator(complaint.status),
@@ -449,19 +506,18 @@ export default function AdminDashboardPage() {
                     <div className="h-px w-20 bg-[#d7e0eb] sm:w-32" />
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <div className={SECONDARY_TEXT}>Operational scope: {currentFilterLabel.toLowerCase()}.</div>
+                    <div className={SECONDARY_TEXT}>Operational scope: {currentZoneLabel.toLowerCase()} with live officer workflow tracking.</div>
                     <Select
-                      value={departmentFilter}
-                      onValueChange={(value) => setDepartmentFilter(value as 'all' | ComplaintDepartment)}
+                      value={zoneFilter}
+                      onValueChange={(value) => setZoneFilter(value as 'all' | '1' | '2')}
                     >
-                      <SelectTrigger className="h-8 w-full border-[#d2dde9] bg-[#fbfcfe] px-2.5 text-[12px] text-[#0B3D91] sm:w-[190px]">
-                        <SelectValue placeholder="All departments" />
+                      <SelectTrigger className="h-8 w-full border-[#d2dde9] bg-[#fbfcfe] px-2.5 text-[12px] text-[#0B3D91] sm:w-[170px]">
+                        <SelectValue placeholder="All zones" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All departments</SelectItem>
-                        {departmentOptions.map((department) => (
-                          <SelectItem key={department} value={department}>
-                            {formatLabel(department)}
+                        {ZONE_OPTIONS.map((zone) => (
+                          <SelectItem key={zone.value} value={zone.value}>
+                            {zone.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -505,6 +561,18 @@ export default function AdminDashboardPage() {
                     );
                   })}
                 </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <article className="border border-[#d7e0eb] bg-white px-3 py-2.5">
+                    <div className={SECTION_LABEL}>Rohini Open</div>
+                    <div className="mt-3 text-[1.95rem] font-bold tracking-[-0.04em] text-[#0B3D91]">{zoneFilter === '2' ? 0 : rohiniOpenCount}</div>
+                    <div className="mt-1.5 text-[11px] font-medium text-[#4d657d]">Live open complaints in Rohini wards</div>
+                  </article>
+                  <article className="border border-[#d7e0eb] bg-white px-3 py-2.5">
+                    <div className={SECTION_LABEL}>Karol Bagh Open</div>
+                    <div className="mt-3 text-[1.95rem] font-bold tracking-[-0.04em] text-[#0B3D91]">{zoneFilter === '1' ? 0 : karolBaghOpenCount}</div>
+                    <div className="mt-1.5 text-[11px] font-medium text-[#4d657d]">Live open complaints in Karol Bagh wards</div>
+                  </article>
+                </div>
               </section>
 
               <section className={splitViewClass}>
@@ -526,9 +594,10 @@ export default function AdminDashboardPage() {
                             <TableRow className="border-b border-[#dfe7f0] hover:bg-[#f8fafc]">
                               <TableHead className={TABLE_HEAD_CLASS}>Complaint ID</TableHead>
                               <TableHead className={TABLE_HEAD_CLASS}>Title</TableHead>
+                              <TableHead className={TABLE_HEAD_CLASS}>Level</TableHead>
                               <TableHead className={TABLE_HEAD_CLASS}>Department</TableHead>
                               <TableHead className={TABLE_HEAD_CLASS}>Status</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Time</TableHead>
+                              <TableHead className={TABLE_HEAD_CLASS}>Live State</TableHead>
                               <TableHead className={`${TABLE_HEAD_CLASS} text-right`}>Actions</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -545,18 +614,23 @@ export default function AdminDashboardPage() {
                                 <TableCell className={`${TABLE_CELL_CLASS} max-w-[280px]`}>
                                   <div className="truncate font-semibold text-[#0B3D91]">{complaint.title}</div>
                                   <div className={`${SECONDARY_TEXT} truncate`}>
-                                    {complaint.ward_name ?? `Ward ${complaint.ward_id}`} | Risk {Math.round(complaint.risk_score)}
+                                    {complaint.ward_name ?? `Ward ${complaint.ward_id}`} | {complaint.assigned_officer_name || 'Officer pending'}
                                   </div>
                                 </TableCell>
                                 <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-medium text-[#12385b]">{formatLabel(complaint.department)}</div>
+                                  <div className="font-medium text-[#12385b]">{formatLevelLabel(complaint.current_level)}</div>
+                                  <div className={SECONDARY_TEXT}>L1 {levelCounts.L1 || 0} | L2 {(levelCounts.L2 || 0) + (levelCounts.L2_ESCALATED || 0)} | L3 {levelCounts.L3 || 0}</div>
+                                </TableCell>
+                                <TableCell className={TABLE_CELL_CLASS}>
+                                  <div className="font-medium text-[#12385b]">{complaint.department_name || formatLabel(complaint.department)}</div>
+                                  <div className={SECONDARY_TEXT}>{complaint.category_name || formatLabel(complaint.category)}</div>
                                 </TableCell>
                                 <TableCell className={TABLE_CELL_CLASS}>
                                   <StatusBadge tone={tone.tone} label={tone.label} />
                                 </TableCell>
                                 <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-medium text-[#12385b]">{getRelativeTime(complaint.updated_at)}</div>
-                                  <div className={SECONDARY_TEXT}>{formatTimestamp(complaint.updated_at)}</div>
+                                  <div className="font-medium text-[#12385b]">{complaint.work_status || 'Pending'}</div>
+                                  <div className={SECONDARY_TEXT}>{getDeadlineLabel(complaint.deadline, complaint.status)} | {getRelativeTime(complaint.updated_at)}</div>
                                 </TableCell>
                                 <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
                                   <div className="flex items-center justify-end gap-1.5">
@@ -575,7 +649,9 @@ export default function AdminDashboardPage() {
                                       size="sm"
                                       className="h-7 rounded-md bg-[#0B3D91] px-2.5 text-[11px] font-bold text-white shadow-none hover:translate-y-0 hover:bg-[#103c85]"
                                       onClick={() => {
-                                        setDepartmentFilter(complaint.department);
+                                        if (complaint.zone_id === 1 || complaint.zone_id === 2) {
+                                          setZoneFilter(String(complaint.zone_id) as '1' | '2');
+                                        }
                                         activateFocusMode();
                                       }}
                                     >
@@ -650,46 +726,22 @@ export default function AdminDashboardPage() {
 
                 <div className={`mt-3 ${analyticsGridClass}`}>
                   <div className={`${SUB_CARD} p-3`}>
-                    <div className={SECTION_LABEL}>Status Mix</div>
-                    <div className="mt-3 space-y-3">
-                      {filteredStatusMix.length ? (
-                        filteredStatusMix.map((item) => {
-                          const width = Math.max(18, Math.round((item.count / filteredStatusMix[0].count) * 100));
-
-                          return (
-                            <div key={item.key} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
-                              <div className="flex items-center justify-between gap-3 text-[12px]">
-                                <span className="font-semibold text-[#0B3D91]">{item.label}</span>
-                                <span className={SECONDARY_TEXT}>{item.count}</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-[#e8eef5]">
-                                <div className={`h-full rounded-full ${getBadgeClasses(item.tone).bar}`} style={{ width: `${width}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-sm text-[#60758a]">No queue data.</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className={`${SUB_CARD} p-3`}>
                     <div className={SECTION_LABEL}>Department Load</div>
                     <div className="mt-3 space-y-3">
-                      {filteredDepartmentLoad.length ? (
-                        filteredDepartmentLoad.map((department) => {
-                          const width = Math.max(18, Math.round((department.count / filteredDepartmentLoad[0].count) * 100));
+                      {summary.department_breakdown.length ? (
+                        summary.department_breakdown.slice(0, 6).map((item) => {
+                          const width = Math.max(18, Math.round((item.count / summary.department_breakdown[0].count) * 100));
 
                           return (
-                            <div key={department.key} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
+                            <div key={`${item.department_id ?? 'unassigned'}-${item.department_name}`} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
                               <div className="flex items-center justify-between gap-3 text-[12px]">
-                                <span className="font-semibold text-[#0B3D91]">{department.label}</span>
-                                <span className={SECONDARY_TEXT}>{department.count}</span>
+                                <span className="font-semibold text-[#0B3D91]">{item.department_name}</span>
+                                <span className={SECONDARY_TEXT}>{item.open_count} open</span>
                               </div>
                               <div className="h-1.5 rounded-full bg-[#e8eef5]">
-                                <div className="h-full rounded-full bg-[#0B3D91]" style={{ width: `${width}%` }} />
+                                <div className="h-full rounded-full bg-[#FF9933]" style={{ width: `${width}%` }} />
                               </div>
+                              <div className={SECONDARY_TEXT}>{item.count} total complaints mapped to this department</div>
                             </div>
                           );
                         })
@@ -700,17 +752,44 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div className={`${SUB_CARD} p-3`}>
-                    <div className={SECTION_LABEL}>Ward Watchlist</div>
+                    <div className={SECTION_LABEL}>Officer Load</div>
+                    <div className="mt-3 space-y-3">
+                      {orderedLevelData.length ? (
+                        orderedLevelData.map((level) => {
+                          const width = Math.max(18, Math.round((level.count / orderedLevelData[0].count) * 100));
+
+                          return (
+                            <div key={level.key} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
+                              <div className="flex items-center justify-between gap-3 text-[12px]">
+                                <span className="font-semibold text-[#0B3D91]">{level.label}</span>
+                                <span className={SECONDARY_TEXT}>{level.count}</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-[#e8eef5]">
+                                <div className="h-full rounded-full bg-[#0B3D91]" style={{ width: `${width}%` }} />
+                              </div>
+                              <div className={SECONDARY_TEXT}>{level.share}% of visible officer workflow load</div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-sm text-[#60758a]">No officer load.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={`${SUB_CARD} p-3`}>
+                    <div className={SECTION_LABEL}>Zone and Ward Watch</div>
                     <div className="mt-3 space-y-2">
-                      {summary.most_affected_wards.length ? (
-                        summary.most_affected_wards.slice(0, 5).map((ward) => {
-                          const hotspot = summary.hotspot_wards.some((item) => item.ward_id === ward.ward_id);
+                      {wardWatchlist.length ? (
+                        wardWatchlist.map((ward) => {
+                          const hotspot = hotspotWardIds.has(ward.ward_id);
+                          const wardMeta = wards.find((item) => item.id === ward.ward_id);
 
                           return (
                             <div key={ward.ward_id} className="flex items-center justify-between gap-3 border border-[#e8eef5] bg-white px-2.5 py-2">
                               <div className="min-w-0">
                                 <div className="truncate text-[12px] font-semibold text-[#0B3D91]">{ward.ward_name}</div>
-                                <div className={`mt-0.5 ${SECONDARY_TEXT}`}>{ward.count} complaints</div>
+                                <div className={`mt-0.5 ${SECONDARY_TEXT}`}>{wardMeta?.zone_name || 'Unassigned zone'} | {ward.count} complaints</div>
                               </div>
                               <StatusBadge tone={hotspot ? 'pending' : 'neutral'} label={hotspot ? 'Hotspot' : 'Monitor'} />
                             </div>
@@ -719,6 +798,17 @@ export default function AdminDashboardPage() {
                       ) : (
                         <div className="text-sm text-[#60758a]">No ward watchlist.</div>
                       )}
+                      <div className="grid gap-2 pt-2">
+                        {summary.zone_breakdown.map((zone) => (
+                          <div key={`${zone.zone_id ?? 'unassigned'}-${zone.zone_name}`} className="flex items-center justify-between border border-[#e8eef5] bg-white px-2.5 py-2">
+                            <div>
+                              <div className="text-[12px] font-semibold text-[#0B3D91]">{zone.zone_name}</div>
+                              <div className={SECONDARY_TEXT}>{zone.open_count} open of {zone.count} total</div>
+                            </div>
+                            <StatusBadge tone={zone.open_count > 0 ? 'pending' : 'resolved'} label={zone.open_count > 0 ? 'Active' : 'Clear'} />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

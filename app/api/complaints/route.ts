@@ -43,6 +43,8 @@ export async function GET(request: Request) {
       q: searchParams.get('complaintId') || searchParams.get('q') || undefined,
       status: (searchParams.get('status') as never) || undefined,
       priority: (searchParams.get('priority') as never) || undefined,
+      zone_id: searchParams.get('zoneId') ? Number(searchParams.get('zoneId')) : undefined,
+      department_id: searchParams.get('departmentId') ? Number(searchParams.get('departmentId')) : undefined,
       category: (searchParams.get('category') as never) || undefined,
       department: (searchParams.get('department') as never) || undefined,
       ward_id: searchParams.get('wardId') ? Number(searchParams.get('wardId')) : undefined,

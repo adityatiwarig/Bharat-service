@@ -24,9 +24,15 @@ import type { Complaint, ComplaintAnalyticsSummary } from '@/lib/types';
 
 const INITIAL_SUMMARY: ComplaintAnalyticsSummary = {
   total_complaints: 0,
+  open_count: 0,
   high_priority_count: 0,
+  overdue_count: 0,
+  awaiting_feedback_count: 0,
   resolution_rate: 0,
   category_breakdown: [],
+  level_breakdown: [],
+  zone_breakdown: [],
+  department_breakdown: [],
   top_urgent_issues: [],
   most_affected_wards: [],
   hotspot_wards: [],

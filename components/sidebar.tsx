@@ -73,7 +73,7 @@ export function Sidebar({
       label: 'OPERATIONS',
       items: [
         {
-          label: 'Field Workers',
+          label: 'Officer Roster',
           href: '/admin/users',
           icon: Users2,
           active: pathname.startsWith('/admin/users'),

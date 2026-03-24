@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { fetchGrievanceMapping } from '@/lib/client/complaints';
+import { emitComplaintFeedChanged } from '@/lib/client/live-updates';
 import type { GrievanceMappingResponse } from '@/lib/types';
 
 const GENDER_OPTIONS = [
@@ -200,6 +201,7 @@ export default function SubmitComplaintPage() {
       }
 
       setSubmitted(true);
+      emitComplaintFeedChanged();
       toast.success('Complaint submitted successfully.');
       setTimeout(() => {
         router.push(`/citizen/tracker?id=${data.complaint?.complaint_id || data.complaint?.id}`);

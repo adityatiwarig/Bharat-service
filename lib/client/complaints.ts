@@ -51,6 +51,8 @@ export async function fetchComplaints(options: ComplaintListFilters = {}) {
     q: options.q,
     status: options.status,
     priority: options.priority,
+    zoneId: options.zone_id,
+    departmentId: options.department_id,
     category: options.category,
     department: options.department,
     wardId: options.ward_id,
@@ -193,18 +195,26 @@ export async function fetchGrievanceMapping(options: { zoneId?: number; departme
   }));
 }
 
-export async function fetchAdminDashboard() {
+export async function fetchAdminDashboard(options: { zoneId?: number } = {}) {
   return fetchJson<{
     summary: {
       total_complaints: number;
+      open_count: number;
       high_priority_count: number;
+      overdue_count: number;
+      awaiting_feedback_count: number;
       resolution_rate: number;
       category_breakdown: Array<{ category: ComplaintCategory; count: number }>;
+      level_breakdown: Array<{ level: 'L1' | 'L2' | 'L3' | 'L2_ESCALATED' | 'unassigned'; count: number }>;
+      zone_breakdown: Array<{ zone_id: number | null; zone_name: string; count: number; open_count: number }>;
+      department_breakdown: Array<{ department_id: number | null; department_name: string; count: number; open_count: number }>;
       top_urgent_issues: Complaint[];
       most_affected_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
       hotspot_wards: Array<{ ward_id: number; ward_name: string; count: number }>;
     };
-  }>('/api/dashboard/admin');
+  }>(withSearchParams('/api/dashboard/admin', {
+    zoneId: options.zoneId,
+  }));
 }
 
 export async function fetchWorkerDashboard() {
@@ -233,7 +243,7 @@ export async function fetchLeaderWardComparisonSummary() {
 }
 
 export async function fetchUsers() {
-  const data = await fetchJson<{ users: Array<{ id: string; name: string; email: string; role: string; ward_id?: number | null; ward_name?: string | null; department?: ComplaintDepartment | null; created_at: string }> }>('/api/users');
+  const data = await fetchJson<{ users: Array<{ id: string; name: string; email: string; role: string; officer_id?: string | null; officer_role?: 'L1' | 'L2' | 'L3' | 'ADMIN' | null; officer_department_name?: string | null; officer_department_names?: string[]; source_row_count?: number; officer_zone_id?: number | null; officer_zone_name?: string | null; officer_ward_id?: number | null; officer_ward_name?: string | null; officer_ward_names?: string[]; ward_id?: number | null; ward_name?: string | null; department?: ComplaintDepartment | null; created_at: string }> }>('/api/users');
   return data.users;
 }
 

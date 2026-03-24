@@ -11,12 +11,12 @@ import type {
   WorkerDashboardSummary,
 } from '@/lib/types';
 
-function getDepartmentScope(user?: User) {
+function getDepartmentScope(user?: User, options?: { zoneId?: number }) {
   if (user?.role !== 'leader') {
     return {
-      whereClause: '',
-      complaintAliasWhereClause: '',
-      params: [],
+      whereClause: options?.zoneId ? 'WHERE zone_id = $1' : '',
+      complaintAliasWhereClause: options?.zoneId ? 'WHERE c.zone_id = $1' : '',
+      params: options?.zoneId ? [options.zoneId] : [],
     };
   }
 
@@ -28,6 +28,14 @@ function getDepartmentScope(user?: User) {
     };
   }
 
+  if (options?.zoneId) {
+    return {
+      whereClause: 'WHERE department = $1 AND zone_id = $2',
+      complaintAliasWhereClause: 'WHERE c.department = $1 AND c.zone_id = $2',
+      params: [user.department, options.zoneId],
+    };
+  }
+
   return {
     whereClause: 'WHERE department = $1',
     complaintAliasWhereClause: 'WHERE c.department = $1',
@@ -35,17 +43,28 @@ function getDepartmentScope(user?: User) {
   };
 }
 
-export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAnalyticsSummary> {
+export async function getAdminDashboardSummary(user?: User, options?: { zoneId?: number }): Promise<ComplaintAnalyticsSummary> {
   await maybeProcessDueComplaintEscalations();
 
-  const { whereClause, complaintAliasWhereClause, params } = getDepartmentScope(user);
+  const { whereClause, complaintAliasWhereClause, params } = getDepartmentScope(user, options);
 
-  const [totals, categories, urgentIssues, wards, hotspots] = await Promise.all([
-    query<{ total_complaints: string; high_priority_count: string; resolution_rate: string }>(
+  const [totals, categories, levels, zones, departments, urgentIssues, wards, hotspots] = await Promise.all([
+    query<{ total_complaints: string; open_count: string; high_priority_count: string; overdue_count: string; awaiting_feedback_count: string; resolution_rate: string }>(
       `
         SELECT
           COUNT(*)::text AS total_complaints,
+          COUNT(*) FILTER (
+            WHERE status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          )::text AS open_count,
           COUNT(*) FILTER (WHERE priority IN ('high', 'critical'))::text AS high_priority_count,
+          COUNT(*) FILTER (
+            WHERE deadline IS NOT NULL
+              AND deadline < NOW()
+              AND status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          )::text AS overdue_count,
+          COUNT(*) FILTER (
+            WHERE status = 'resolved'
+          )::text AS awaiting_feedback_count,
           COALESCE(
             ROUND((COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::numeric / NULLIF(COUNT(*), 0)) * 100, 2),
             0
@@ -65,6 +84,52 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
       `,
       params,
     ),
+    query<{ level: ComplaintAnalyticsSummary['level_breakdown'][number]['level']; count: string }>(
+      `
+        SELECT
+          COALESCE(current_level::text, 'unassigned') AS level,
+          COUNT(*)::text AS count
+        FROM complaints
+        ${whereClause}
+        GROUP BY COALESCE(current_level::text, 'unassigned')
+        ORDER BY COUNT(*) DESC
+      `,
+      params,
+    ),
+    query<{ zone_id: number | null; zone_name: string; count: string; open_count: string }>(
+      `
+        SELECT
+          c.zone_id,
+          COALESCE(z.name, 'Unassigned') AS zone_name,
+          COUNT(*)::text AS count,
+          COUNT(*) FILTER (
+            WHERE c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          )::text AS open_count
+        FROM complaints c
+        LEFT JOIN zones z ON z.id = c.zone_id
+        ${complaintAliasWhereClause}
+        GROUP BY c.zone_id, z.name
+        ORDER BY COUNT(*) DESC, COALESCE(z.name, 'Unassigned') ASC
+      `,
+      params,
+    ),
+    query<{ department_id: number | null; department_name: string; count: string; open_count: string }>(
+      `
+        SELECT
+          c.department_id,
+          COALESCE(d.name, c.department::text, 'Unassigned') AS department_name,
+          COUNT(*)::text AS count,
+          COUNT(*) FILTER (
+            WHERE c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          )::text AS open_count
+        FROM complaints c
+        LEFT JOIN departments d ON d.id = c.department_id
+        ${complaintAliasWhereClause}
+        GROUP BY c.department_id, d.name, c.department
+        ORDER BY COUNT(*) DESC, COALESCE(d.name, c.department::text, 'Unassigned') ASC
+      `,
+      params,
+    ),
     query<ComplaintRow>(
       `
         SELECT
@@ -72,11 +137,19 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
           c.complaint_id,
           c.tracking_code,
           c.user_id,
+          c.zone_id,
+          z.name AS zone_name,
           c.ward_id,
+          c.department_id,
+          d.name AS department_name,
           c.department,
+          c.assigned_officer_id,
+          o.name AS assigned_officer_name,
           c.assigned_worker_id,
           c.title,
           c.text,
+          c.category_id,
+          cat.name AS category_name,
           c.category,
           c.status,
           c.progress,
@@ -99,6 +172,8 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
           c.location_address,
           c.latitude,
           c.longitude,
+          c.current_level,
+          c.deadline,
           c.resolved_at,
           c.completed_at,
           c.resolution_notes,
@@ -109,6 +184,10 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        LEFT JOIN officers o ON o.id = c.assigned_officer_id
+        LEFT JOIN departments d ON d.id = c.department_id
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        LEFT JOIN zones z ON z.id = c.zone_id
         ${complaintAliasWhereClause}
         ORDER BY
           CASE c.priority
@@ -153,11 +232,30 @@ export async function getAdminDashboardSummary(user?: User): Promise<ComplaintAn
 
   return {
     total_complaints: Number(totals.rows[0]?.total_complaints || 0),
+    open_count: Number(totals.rows[0]?.open_count || 0),
     high_priority_count: Number(totals.rows[0]?.high_priority_count || 0),
+    overdue_count: Number(totals.rows[0]?.overdue_count || 0),
+    awaiting_feedback_count: Number(totals.rows[0]?.awaiting_feedback_count || 0),
     resolution_rate: Number(totals.rows[0]?.resolution_rate || 0),
     category_breakdown: categories.rows.map((row: { category: ComplaintAnalyticsSummary['category_breakdown'][number]['category']; count: string }) => ({
       category: row.category,
       count: Number(row.count),
+    })),
+    level_breakdown: levels.rows.map((row) => ({
+      level: row.level,
+      count: Number(row.count),
+    })),
+    zone_breakdown: zones.rows.map((row) => ({
+      zone_id: row.zone_id,
+      zone_name: row.zone_name,
+      count: Number(row.count),
+      open_count: Number(row.open_count),
+    })),
+    department_breakdown: departments.rows.map((row) => ({
+      department_id: row.department_id,
+      department_name: row.department_name,
+      count: Number(row.count),
+      open_count: Number(row.open_count),
     })),
     top_urgent_issues: urgentIssues.rows.map(mapComplaintRow),
     most_affected_wards: wards.rows.map((row: { ward_id: number; ward_name: string; count: string }) => ({

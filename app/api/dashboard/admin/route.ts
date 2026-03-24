@@ -3,10 +3,17 @@ import { NextResponse } from 'next/server';
 import { AuthError, requireApiUser } from '@/lib/server/auth';
 import { getAdminDashboardSummary } from '@/lib/server/dashboard';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export async function GET(request: Request) {
   try {
     const user = await requireApiUser(['admin', 'leader']);
-    const summary = await getAdminDashboardSummary(user);
+    const { searchParams } = new URL(request.url);
+    const zoneId = searchParams.get('zoneId');
+    const summary = await getAdminDashboardSummary(user, {
+      zoneId: zoneId ? Number(zoneId) : undefined,
+    });
     return NextResponse.json({ summary });
   } catch (error) {
     if (error instanceof AuthError) {
