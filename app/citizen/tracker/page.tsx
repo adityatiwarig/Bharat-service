@@ -747,11 +747,22 @@ function handleExportReport() {
     : complaint?.proof_image
       ? [complaint.proof_image]
       : [];
-  const canRateResolution = complaint?.status === 'resolved' || tracker?.waitingForFeedback;
+  const hasCompletionEvidence = Boolean(
+    proofImages.length ||
+    complaint?.proof_text?.trim() ||
+    complaint?.resolved_at ||
+    complaint?.completed_at ||
+    tracker?.timeline.find((step) => step.key === 'completion_verification')?.timestamp,
+  );
+  const canRateResolution = Boolean(
+    complaint?.status === 'resolved' ||
+    tracker?.waitingForFeedback ||
+    (hasCompletionEvidence && complaint?.status !== 'expired'),
+  );
   const isExpiredComplaint = complaint?.status === 'expired';
   const citizenRatingLabel = complaint?.rating
     ? `${complaint.rating.rating}/5${complaint.rating.rating >= 4 ? ' - Satisfied' : ' - Review Required'}`
-    : tracker?.waitingForFeedback
+    : canRateResolution
       ? 'Pending citizen confirmation'
       : 'Not yet submitted';
 
