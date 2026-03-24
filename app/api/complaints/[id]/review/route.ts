@@ -15,7 +15,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireApiOfficerUser(['L2', 'L3'], request);
+    const user = await requireApiOfficerUser(['L1', 'L2', 'L3'], request);
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
       action?: 'close' | 'reopen' | 'remind_l1' | 'remind_l2';

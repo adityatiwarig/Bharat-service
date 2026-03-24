@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
 import { AuthError, requireApiL3Officer } from '@/lib/server/auth';
-import { markComplaintResolvedByL3 } from '@/lib/server/officer-routing';
 
 export const runtime = 'nodejs';
 
@@ -10,12 +9,12 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireApiL3Officer(request);
-    const { id } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as { note?: string };
-
-    await markComplaintResolvedByL3(user, id, body.note);
-    return NextResponse.json({ success: true });
+    await requireApiL3Officer(request);
+    void context;
+    return NextResponse.json(
+      { error: 'This legacy L3 resolve action has been removed. L3 now handles monitoring and review decisions only.' },
+      { status: 410 },
+    );
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

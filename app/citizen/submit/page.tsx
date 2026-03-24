@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle2, Crosshair, Landmark, LocateFixed, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { CitizenComplaintPhotoPicker } from '@/components/citizen-complaint-photo-picker';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary } from '@/components/loading-skeletons';
 import { useSession } from '@/components/session-provider';
@@ -164,6 +165,12 @@ export default function SubmitComplaintPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!files.length) {
+      toast.error('Complaint photo is required before submission.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -538,20 +545,10 @@ export default function SubmitComplaintPage() {
                     <SectionTitle>4. Supporting Evidence</SectionTitle>
                     <FieldGroup>
                       <Field>
-                        <FieldLabel className="text-sm font-medium text-slate-700">File Upload</FieldLabel>
-                        <Input
-                          type="file"
-                          multiple
-                          className={controlClassName}
-                          onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 4))}
-                        />
+                        <FieldLabel className="text-sm font-medium text-slate-700">Complaint Photographs</FieldLabel>
+                        <CitizenComplaintPhotoPicker value={files} onChange={setFiles} disabled={submitting} />
                       </Field>
                     </FieldGroup>
-                    {files.length ? (
-                      <div className="mt-3 text-sm text-slate-600">
-                        {files.length} file{files.length > 1 ? 's' : ''} selected.
-                      </div>
-                    ) : null}
                   </div>
 
                   <div className="rounded-md border border-slate-200 bg-white p-4">

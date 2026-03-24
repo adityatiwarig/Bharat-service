@@ -4,6 +4,7 @@ import { revalidateTag } from 'next/cache';
 
 import {
   computeComplaintDeadline,
+  computeL2ComplaintDeadline,
   computeL3ComplaintDeadline,
   normalizeOfficerMappingSlaMinutes,
 } from '@/lib/server/complaint-sla';
@@ -86,8 +87,8 @@ function isLikelyImageUpload(file: File) {
   return /\.(png|jpe?g|webp|gif|bmp|svg|heic|heif)$/i.test(file.name || '');
 }
 
-function getExecutionActorLabel(level: OfficerLevel) {
-  return level === 'L1' ? 'Level 1 officer' : 'Level 3 officer';
+function getExecutionActorLabel() {
+  return 'Level 1 officer';
 }
 
 function getPendingWorkStatusForLevel(level: OfficerLevel) {
@@ -196,6 +197,81 @@ async function getOfficerName(client: DbTransactionClient, officerId: string) {
   );
 
   return result.rows[0]?.name || null;
+}
+
+async function getLatestReopenReviewLevel(client: DbTransactionClient, complaintId: string) {
+  const result = await client.query<{ note: string | null }>(
+    `
+      SELECT note
+      FROM complaint_updates
+      WHERE complaint_id = $1
+        AND status = 'reopened'
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [complaintId],
+  );
+
+  const note = result.rows[0]?.note?.toLowerCase() || '';
+
+  if (note.includes('level 3')) {
+    return 'L3' as const;
+  }
+
+  if (note.includes('level 2')) {
+    return 'L2' as const;
+  }
+
+  return null;
+}
+
+async function resolveFeedbackReviewLevel(
+  client: DbTransactionClient,
+  complaint: Pick<ComplaintRoutingRow, 'id' | 'current_level' | 'deadline'>,
+) {
+  const latestReopenReviewLevel = await getLatestReopenReviewLevel(client, complaint.id);
+
+  if (latestReopenReviewLevel) {
+    return latestReopenReviewLevel;
+  }
+
+  if (complaint.current_level === 'L3') {
+    return 'L3' as const;
+  }
+
+  if (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') {
+    return 'L3' as const;
+  }
+
+  if (complaint.deadline && new Date(complaint.deadline).getTime() <= Date.now()) {
+    return 'L2' as const;
+  }
+
+  return 'L1' as const;
+}
+
+function getReviewDecisionLabel(level: OfficerLevel) {
+  if (level === 'L1') {
+    return 'Level 1 review desk';
+  }
+
+  if (level === 'L2') {
+    return 'Level 2 review desk';
+  }
+
+  return 'Level 3 review desk';
+}
+
+function getReviewDecisionMessage(level: OfficerLevel) {
+  if (level === 'L1') {
+    return 'Citizen feedback received. Complaint is pending Level 1 close or reopen review.';
+  }
+
+  if (level === 'L2') {
+    return 'Citizen feedback received. Complaint has been routed to Level 2 review for close or reopen decision.';
+  }
+
+  return 'Citizen feedback received. Complaint has been routed to Level 3 review for close or reopen decision.';
 }
 
 async function getLatestResolvedOfficerLevel(client: DbTransactionClient, complaintId: string) {
@@ -333,10 +409,10 @@ function isComplaintPendingAtOfficerLevel(currentLevel: ComplaintLevel | null, o
 
 function getForwardedComplaintStatusNote(level: OfficerLevel, _priority: Complaint['priority']) {
   if (level !== 'L3') {
-    return `Complaint manually forwarded and is now ${getPendingLevelLabel(level)}.`;
+    return `Complaint is now ${getPendingLevelLabel(level)} for official review.`;
   }
 
-  return `Complaint manually forwarded and is now ${getPendingLevelLabel(level)} under the fixed 1-day L3 SLA window.`;
+  return `Complaint is now ${getPendingLevelLabel(level)} under the final 1-day review window.`;
 }
 
 export async function getOfficerProfileForUser(user: Pick<User, 'id'>) {
@@ -521,155 +597,12 @@ export async function listComplaintsForOfficer(user: User) {
 }
 
 export async function forwardComplaintToNextOfficer(user: User, complaintId: string) {
-  const officer = await requireOfficerProfile(user);
-
-  if (officer.role !== 'L1' && officer.role !== 'L2') {
-    throw new AuthError('Only L1 and L2 officers can forward complaints.', 403);
-  }
-
-  const officerLevel: OfficerLevel = officer.role;
-
-  type ForwardResult = {
-    complaint_id: string;
-    next_level: OfficerLevel;
-    assigned_officer_id: string;
-    deadline: string;
-  };
-
-  let result: ForwardResult | null = null;
-
-  await withTransaction(async (client) => {
-    const complaint = await getComplaintRoutingRow(client, complaintId);
-
-    if (!complaint) {
-      throw new AuthError('Complaint not found.', 404);
-    }
-
-    if (complaint.assigned_officer_id !== officer.id) {
-      throw new AuthError('This complaint is not assigned to the current officer.', 403);
-    }
-
-    if (!isComplaintPendingAtOfficerLevel(complaint.current_level, officerLevel)) {
-      throw new AuthError('This complaint has already moved beyond your level.', 400);
-    }
-
-    if (isTerminalComplaintStatus(complaint.status)) {
-      throw new AuthError('Closed complaints cannot be forwarded.', 400);
-    }
-
-    if (!complaint.zone_id || !complaint.department_id || !complaint.category_id) {
-      throw new AuthError('Complaint is missing routing metadata required for forwarding.', 400);
-    }
-
-    const mapping = await getOfficerMapping(client, {
-      zone_id: complaint.zone_id,
-      ward_id: complaint.ward_id,
-      department_id: complaint.department_id,
-      category_id: complaint.category_id,
-    });
-
-    if (!mapping) {
-      throw new AuthError('No officer mapping exists for this complaint.', 400);
-    }
-
-    const nextLevel = officerLevel === 'L1' ? 'L2' : 'L3';
-    const toOfficerId = officerLevel === 'L1' ? mapping.l2_officer_id : mapping.l3_officer_id;
-    if (!toOfficerId) {
-      throw new AuthError(`No ${nextLevel} officer is mapped for this complaint.`, 400);
-    }
-
-    if (complaint.assigned_officer_id === toOfficerId) {
-      throw new AuthError(`This complaint is already pending at ${nextLevel}.`, 400);
-    }
-
-    const deadline = nextLevel === 'L3'
-      ? computeL3ComplaintDeadline(complaint.priority)
-      : computeComplaintDeadline(normalizeOfficerMappingSlaMinutes(mapping.sla_l2), complaint.priority);
-    const toOfficerName = await getOfficerName(client, toOfficerId);
-
-    await client.query(
-      `
-        UPDATE complaints
-        SET
-          assigned_officer_id = $2,
-          current_level = $3,
-          deadline = $4,
-          status = 'assigned',
-          progress = 'pending',
-          work_status = $6,
-          updated_at = NOW(),
-          department_message = $5
-        WHERE id = $1
-      `,
-      [
-        complaint.id,
-        toOfficerId,
-        nextLevel,
-        deadline.toISOString(),
-        getForwardedComplaintStatusNote(nextLevel, complaint.priority),
-        getPendingWorkStatusForLevel(nextLevel) ?? null,
-      ],
-    );
-
-    await appendComplaintUpdate(client, {
-      complaint_id: complaint.id,
-      status: 'assigned',
-      note: `Complaint forwarded from ${officer.role} to ${nextLevel}${toOfficerName ? ` and assigned to ${toOfficerName}` : ''}.`,
-      updated_by_user_id: user.id,
-    });
-
-    await appendComplaintHistory(client, {
-      complaint_id: complaint.id,
-      action: 'escalated',
-      from_officer: officer.id,
-      to_officer: toOfficerId,
-      level: nextLevel,
-    });
-
-    const officerUserId = await getOfficerUserId(client, toOfficerId);
-
-    if (officerUserId) {
-      await createNotificationForUser(client, {
-        user_id: officerUserId,
-        complaint_id: complaint.id,
-        title: `Complaint forwarded to ${nextLevel}`,
-        message: `${complaint.title} has been forwarded to your queue and is ${getPendingLevelLabel(nextLevel).toLowerCase()}.`,
-        href: getOfficerHomePath(nextLevel),
-      });
-    }
-
-    await createNotificationForUser(client, {
-      user_id: complaint.user_id,
-      complaint_id: complaint.id,
-      title: 'Complaint moved to next level',
-      message: `${complaint.title} has been forwarded to ${nextLevel} for further action.`,
-      href: `/citizen/tracker?id=${complaint.complaint_id}`,
-    });
-
-    result = {
-      complaint_id: complaint.id,
-      next_level: nextLevel,
-      assigned_officer_id: toOfficerId,
-      deadline: deadline.toISOString(),
-    };
-  });
-
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
-
-  if (!result) {
-    throw new AuthError('Unable to forward complaint right now.', 500);
-  }
-
-  const finalizedResult = result as ForwardResult;
-
-  if (finalizedResult.deadline) {
-    await scheduleComplaintEscalation(finalizedResult.complaint_id, finalizedResult.deadline);
-  } else {
-    await removeComplaintEscalation(finalizedResult.complaint_id);
-  }
-
-  return finalizedResult;
+  await requireOfficerProfile(user);
+  void complaintId;
+  throw new AuthError(
+    'Manual forward workflow has been retired. Complaints now stay with L1 for field action while L2 and L3 only monitor, review, close, or reopen according to SLA.',
+    400,
+  );
 }
 
 async function requireComplaintAssignedToOfficerLevel(
@@ -697,7 +630,7 @@ async function requireComplaintAssignedToOfficerLevel(
   return complaint;
 }
 
-export async function queueComplaintForL2ReviewAfterCitizenFeedback(
+export async function queueComplaintForReviewAfterCitizenFeedback(
   client: DbTransactionClient,
   input: {
     complaint_id: string;
@@ -710,12 +643,14 @@ export async function queueComplaintForL2ReviewAfterCitizenFeedback(
     category_id: number | null;
     assigned_officer_id: string | null;
     current_level: ComplaintLevel | null;
+    deadline?: string | null;
     priority: Complaint['priority'];
     updated_by_user_id?: string | null;
   },
 ) {
   if (
-    (input.current_level !== 'L1' && input.current_level !== 'L3') ||
+    !input.current_level ||
+    !['L1', 'L2', 'L2_ESCALATED', 'L3'].includes(input.current_level) ||
     !input.assigned_officer_id ||
     !input.zone_id ||
     !input.department_id ||
@@ -731,50 +666,82 @@ export async function queueComplaintForL2ReviewAfterCitizenFeedback(
     category_id: input.category_id,
   });
 
-  if (!mapping?.l2_officer_id) {
+  if (!mapping) {
     return null;
   }
 
-  const deadline = computeComplaintDeadline(normalizeOfficerMappingSlaMinutes(mapping.sla_l2), input.priority);
-  const toOfficerName = await getOfficerName(client, mapping.l2_officer_id);
+  const reviewLevel = await resolveFeedbackReviewLevel(client, {
+    id: input.complaint_id,
+    current_level: input.current_level,
+    deadline: input.deadline || null,
+  });
+
+  const toOfficerId =
+    reviewLevel === 'L1'
+      ? input.assigned_officer_id || mapping.l1_officer_id
+      : reviewLevel === 'L2'
+        ? mapping.l2_officer_id
+        : mapping.l3_officer_id;
+
+  if (!toOfficerId) {
+    return null;
+  }
+
+  const deadline =
+    reviewLevel === 'L1'
+      ? input.deadline || null
+      : reviewLevel === 'L2'
+        ? computeL2ComplaintDeadline().toISOString()
+        : computeL3ComplaintDeadline(input.priority).toISOString();
+  const toOfficerName = await getOfficerName(client, toOfficerId);
 
   await client.query(
     `
       UPDATE complaints
       SET
         assigned_officer_id = $2,
-        current_level = 'L2',
-        deadline = $3,
+        current_level = $3,
+        deadline = $4,
         updated_at = NOW(),
-        department_message = 'Citizen feedback received. Complaint has been routed to Level 2 review for close or reopen decision.'
+        department_message = $5
       WHERE id = $1
     `,
-    [input.complaint_id, mapping.l2_officer_id, deadline.toISOString()],
+    [
+      input.complaint_id,
+      toOfficerId,
+      reviewLevel,
+      deadline,
+      getReviewDecisionMessage(reviewLevel),
+    ],
   );
 
   await appendComplaintUpdate(client, {
     complaint_id: input.complaint_id,
     status: 'resolved',
-    note: `Citizen feedback received and the complaint has been routed back to L2${toOfficerName ? ` (${toOfficerName})` : ''} for final review.`,
+    note:
+      reviewLevel === 'L1'
+        ? `Citizen feedback received and the complaint is pending Level 1 review${toOfficerName ? ` (${toOfficerName})` : ''} for close or reopen decision.`
+        : `Citizen feedback received and the complaint has been routed to ${reviewLevel}${toOfficerName ? ` (${toOfficerName})` : ''} for final review.`,
     updated_by_user_id: input.updated_by_user_id || null,
   });
 
-  const officerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
+  const officerUserId = await getOfficerUserId(client, toOfficerId);
 
   if (officerUserId) {
     await createNotificationForUser(client, {
       user_id: officerUserId,
       complaint_id: input.complaint_id,
       title: 'Citizen feedback ready for review',
-      message: `${input.title} received citizen feedback and is pending your L2 review.`,
-      href: '/l2',
+      message: `${input.title} received citizen feedback and is pending your ${getReviewDecisionLabel(reviewLevel).toLowerCase()}.`,
+      href: getOfficerHomePath(reviewLevel),
     });
   }
 
   return {
-    assigned_officer_id: mapping.l2_officer_id,
-    current_level: 'L2' as const,
-    deadline: deadline.toISOString(),
+    assigned_officer_id: toOfficerId,
+    current_level: reviewLevel,
+    deadline,
+    review_level: reviewLevel,
   };
 }
 
@@ -1107,75 +1074,12 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
 }
 
 export async function markComplaintReachedByL3(user: User, complaintId: string) {
-  const officer = await requireOfficerProfile(user);
-
-  if (officer.role !== 'L3') {
-    throw new AuthError('Only L3 officers can perform this action.', 403);
-  }
-
-  let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
-
-  await withTransaction(async (client) => {
-    const complaint = await requireComplaintAssignedToOfficerLevel(client, {
-      complaintId,
-      officerId: officer.id,
-      level: 'L3',
-    });
-
-    if (complaint.status === 'in_progress') {
-      throw new AuthError('This complaint has already been marked as reached.', 400);
-    }
-
-    if (isTerminalComplaintStatus(complaint.status)) {
-      throw new AuthError('Closed complaints cannot be marked as reached.', 400);
-    }
-
-    await client.query(
-      `
-        UPDATE complaints
-        SET
-          status = 'in_progress',
-          progress = 'in_progress',
-          work_status = $2,
-          updated_at = NOW(),
-          department_message = 'Level 3 officer has reached the complaint location and started final resolution work.'
-        WHERE id = $1
-      `,
-      [complaint.id, EXECUTION_WORK_STATUS.onSite],
-    );
-
-    await appendComplaintUpdate(client, {
-      complaint_id: complaint.id,
-      status: 'in_progress',
-      note: 'Level 3 officer marked the complaint as reached and started final resolution work.',
-      updated_by_user_id: user.id,
-    });
-
-    await createNotificationForUser(client, {
-      user_id: complaint.user_id,
-      complaint_id: complaint.id,
-      title: 'L3 officer reached the complaint',
-      message: `${complaint.title} is now being handled on site by the assigned Level 3 officer.`,
-      href: `/citizen/tracker?id=${complaint.complaint_id}`,
-    });
-
-    updatedComplaint = complaint;
-  });
-
-  if (!updatedComplaint) {
-    throw new AuthError('Unable to mark complaint as reached right now.', 500);
-  }
-
-  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
-
-  await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
-
-  return {
-    complaint_id: finalizedComplaint.id,
-    status: 'in_progress' as const,
-  };
+  await requireOfficerProfile(user);
+  void complaintId;
+  throw new AuthError(
+    'Level 3 field execution has been retired. L3 now monitors Level 2 review delays and handles only final review decisions.',
+    400,
+  );
 }
 
 export async function uploadComplaintProofByL3(
@@ -1185,11 +1089,9 @@ export async function uploadComplaintProofByL3(
 ) {
   const officer = await requireOfficerProfile(user);
 
-  if (officer.role !== 'L1' && officer.role !== 'L3') {
-    throw new AuthError('Only L1 or L3 officers can upload complaint proof.', 403);
+  if (officer.role !== 'L1') {
+    throw new AuthError('Only L1 officers can upload complaint proof.', 403);
   }
-
-  const executionLevel: OfficerLevel = officer.role === 'L1' ? 'L1' : 'L3';
 
   if (!input.image || input.image.size <= 0) {
     throw new AuthError('A proof image is required.', 400);
@@ -1220,35 +1122,8 @@ export async function uploadComplaintProofByL3(
       throw new AuthError('Closed complaints cannot accept new proof uploads.', 400);
     }
 
-    if (executionLevel === 'L1' && complaint.work_status !== EXECUTION_WORK_STATUS.workStarted) {
+    if (complaint.work_status !== EXECUTION_WORK_STATUS.workStarted) {
       throw new AuthError('Start work before uploading proof.', 400);
-    }
-
-    if (executionLevel === 'L3' && complaint.status !== 'in_progress' && complaint.status !== 'assigned') {
-      throw new AuthError('Mark the complaint as reached before uploading proof.', 400);
-    }
-
-    if (executionLevel === 'L3' && complaint.status === 'assigned') {
-      await client.query(
-        `
-          UPDATE complaints
-          SET
-            status = 'in_progress',
-            progress = 'in_progress',
-            work_status = $2,
-            updated_at = NOW(),
-            department_message = 'Level 3 officer has reached the complaint location and started final resolution work.'
-          WHERE id = $1
-        `,
-        [complaint.id, EXECUTION_WORK_STATUS.workStarted],
-      );
-
-      await appendComplaintUpdate(client, {
-        complaint_id: complaint.id,
-        status: 'in_progress',
-        note: 'Level 3 officer started work while uploading resolution proof.',
-        updated_by_user_id: user.id,
-      });
     }
 
     const proofImage = await saveProofImage(input.image, complaint.id);
@@ -1285,7 +1160,7 @@ export async function uploadComplaintProofByL3(
         proofImage.url,
         EXECUTION_WORK_STATUS.proofUploaded,
         description,
-        `Resolution proof uploaded by the ${getExecutionActorLabel(executionLevel).toLowerCase()}. Final completion is pending.`,
+        `Resolution proof uploaded by the ${getExecutionActorLabel().toLowerCase()}. Final completion is pending.`,
       ],
     );
 
@@ -1293,8 +1168,8 @@ export async function uploadComplaintProofByL3(
       complaint_id: complaint.id,
       status: 'in_progress',
       note: description
-        ? `${getExecutionActorLabel(executionLevel)} uploaded proof: ${description}`
-        : `${getExecutionActorLabel(executionLevel)} uploaded proof.`,
+        ? `${getExecutionActorLabel()} uploaded proof: ${description}`
+        : `${getExecutionActorLabel()} uploaded proof.`,
       updated_by_user_id: user.id,
     });
 
@@ -1302,7 +1177,7 @@ export async function uploadComplaintProofByL3(
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Proof uploaded',
-      message: `${complaint.title} now has a new proof image uploaded by the assigned ${executionLevel} officer.`,
+      message: `${complaint.title} now has a new proof image uploaded by the assigned L1 officer.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1322,113 +1197,13 @@ export async function uploadComplaintProofByL3(
 }
 
 export async function markComplaintResolvedByL3(user: User, complaintId: string, note?: string) {
-  const officer = await requireOfficerProfile(user);
-
-  if (officer.role !== 'L3') {
-    throw new AuthError('Only L3 officers can mark complaints as resolved.', 403);
-  }
-
-  const trimmedNote = note?.trim() || null;
-  const hasComplaintProofsTable = await complaintProofsTableExists();
-  let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
-
-  await withTransaction(async (client) => {
-    const complaint = await requireComplaintAssignedToOfficerLevel(client, {
-      complaintId,
-      officerId: officer.id,
-      level: 'L3',
-    });
-
-    if (complaint.status === 'resolved') {
-      throw new AuthError('This complaint has already been resolved.', 400);
-    }
-
-    if (complaint.status === 'closed' || complaint.status === 'rejected' || complaint.status === 'expired') {
-      throw new AuthError('Expired or closed complaints cannot be resolved again.', 400);
-    }
-
-    if (complaint.status !== 'in_progress') {
-      throw new AuthError('Mark the complaint as reached before resolving it.', 400);
-    }
-
-    if (!hasComplaintProofsTable) {
-      throw new AuthError('Complaint proof storage is not initialized. Run the latest database setup for complaint_proofs.', 500);
-    }
-
-    if ((await countComplaintProofRecords(client, complaint.id)) <= 0) {
-      throw new AuthError('Upload at least one proof image before resolving the complaint.', 400);
-    }
-
-    await client.query(
-      `
-        UPDATE complaints
-        SET
-          status = 'resolved',
-          progress = 'resolved',
-          work_status = $2,
-          completed_at = NOW(),
-          resolved_at = NOW(),
-          resolution_notes = COALESCE($3, proof_text, resolution_notes),
-          updated_at = NOW(),
-          department_message = 'Complaint resolved by the Level 3 officer and is awaiting citizen feedback.'
-        WHERE id = $1
-      `,
-      [complaint.id, EXECUTION_WORK_STATUS.awaitingFeedback, trimmedNote],
-    );
-
-    await appendComplaintUpdate(client, {
-      complaint_id: complaint.id,
-      status: 'resolved',
-      note: trimmedNote || 'Complaint resolved by the Level 3 officer after proof upload.',
-      updated_by_user_id: user.id,
-    });
-
-    await appendComplaintHistory(client, {
-      complaint_id: complaint.id,
-      action: 'resolved',
-      from_officer: officer.id,
-      to_officer: officer.id,
-      level: 'L3',
-    });
-
-    await createNotificationForUser(client, {
-      user_id: complaint.user_id,
-      complaint_id: complaint.id,
-      title: 'Complaint resolved',
-      message: `${complaint.title} has been marked resolved by the assigned Level 3 officer.`,
-      href: `/citizen/tracker?id=${complaint.complaint_id}`,
-    });
-
-    const adminIds = await listAdminUserIds(client);
-
-    for (const adminId of adminIds) {
-      await createNotificationForUser(client, {
-        user_id: adminId,
-        complaint_id: complaint.id,
-        title: 'Complaint resolved',
-        message: `${complaint.title} has been resolved at L3 with uploaded proof.`,
-        href: '/admin/complaints',
-      });
-    }
-
-    updatedComplaint = complaint;
-  });
-
-  if (!updatedComplaint) {
-    throw new AuthError('Unable to resolve complaint right now.', 500);
-  }
-
-  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
-
-  await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
-  await removeComplaintEscalation(finalizedComplaint.id);
-
-  return {
-    complaint_id: finalizedComplaint.id,
-    status: 'resolved' as const,
-  };
+  await requireOfficerProfile(user);
+  void complaintId;
+  void note;
+  throw new AuthError(
+    'Level 3 field execution has been retired. L3 now handles reminders and final review decisions only.',
+    400,
+  );
 }
 
 export async function remindL1OfficerFromL2(user: User, complaintId: string, note?: string) {
@@ -1611,8 +1386,8 @@ export async function remindL2OfficerFromL3(user: User, complaintId: string, not
 export async function closeComplaintByL2Review(user: User, complaintId: string, note?: string) {
   const officer = await requireOfficerProfile(user);
 
-  if (officer.role !== 'L2') {
-    throw new AuthError('Only L2 officers can close reviewed complaints.', 403);
+  if (officer.role !== 'L1' && officer.role !== 'L2' && officer.role !== 'L3') {
+    throw new AuthError('Only review officers can close reviewed complaints.', 403);
   }
 
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
@@ -1622,11 +1397,24 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     const complaint = await requireComplaintAssignedToOfficerLevel(client, {
       complaintId,
       officerId: officer.id,
-      level: 'L2',
+      level: officer.role,
     });
 
-    if (complaint.status !== 'resolved' && complaint.status !== 'l2_deadline_missed') {
-      throw new AuthError('Only complaints awaiting the final L2 review decision can be closed.', 400);
+    if (complaint.status !== 'resolved') {
+      throw new AuthError('Only complaints awaiting a final review decision can be closed.', 400);
+    }
+
+    if (
+      (officer.role === 'L1' || officer.role === 'L2') &&
+      complaint.deadline &&
+      new Date(complaint.deadline).getTime() <= Date.now()
+    ) {
+      throw new AuthError(
+        officer.role === 'L1'
+          ? 'The Level 1 review window has expired. Level 2 must now handle the closure decision.'
+          : 'The Level 2 review window has expired. Level 3 must now handle the closure decision.',
+        400,
+      );
     }
 
     const ratingResult = await client.query<{ count: string; rating: number | null }>(
@@ -1639,11 +1427,11 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     );
 
     if (Number(ratingResult.rows[0]?.count || 0) <= 0) {
-      throw new AuthError('Citizen feedback is required before L2 can close the complaint.', 400);
+      throw new AuthError('Citizen feedback is required before the complaint can be closed.', 400);
     }
 
     if (Number(ratingResult.rows[0]?.rating || 0) < 4) {
-      throw new AuthError('L2 can only close the complaint when the citizen marked it as satisfied.', 400);
+      throw new AuthError('The complaint can only be closed when the citizen marked it as satisfied.', 400);
     }
 
     await client.query(
@@ -1659,15 +1447,15 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       [
         complaint.id,
         trimmedNote
-          ? `Complaint closed by Level 2 after citizen feedback review. ${trimmedNote}`
-          : 'Complaint closed by Level 2 after citizen feedback review.',
+          ? `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review. ${trimmedNote}`
+          : `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`,
       ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'closed',
-      note: trimmedNote || 'Complaint closed by Level 2 after citizen feedback review.',
+      note: trimmedNote || `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`,
       updated_by_user_id: user.id,
     });
 
@@ -1675,7 +1463,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint closed',
-      message: `${complaint.title} has been closed after Level 2 review of your feedback.`,
+      message: `${complaint.title} has been closed after ${getReviewDecisionLabel(officer.role).toLowerCase()} of your feedback.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1702,13 +1490,12 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
 export async function reopenComplaintFromL2Review(user: User, complaintId: string, note?: string) {
   const officer = await requireOfficerProfile(user);
 
-  if (officer.role !== 'L2') {
-    throw new AuthError('Only L2 officers can reopen reviewed complaints.', 403);
+  if (officer.role !== 'L1' && officer.role !== 'L2' && officer.role !== 'L3') {
+    throw new AuthError('Only review officers can reopen reviewed complaints.', 403);
   }
 
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
   let reassignedDeadline: string | null = null;
-  let reopenedLevel: OfficerLevel | null = null;
   const trimmedNote = note?.trim() || null;
   const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
   const hasComplaintProofsTable = await complaintProofsTableExists();
@@ -1717,11 +1504,24 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     const complaint = await requireComplaintAssignedToOfficerLevel(client, {
       complaintId,
       officerId: officer.id,
-      level: 'L2',
+      level: officer.role,
     });
 
-    if (complaint.status !== 'resolved' && complaint.status !== 'l2_deadline_missed') {
+    if (complaint.status !== 'resolved') {
       throw new AuthError('Closed complaints are locked permanently and cannot be reopened.', 400);
+    }
+
+    if (
+      (officer.role === 'L1' || officer.role === 'L2') &&
+      complaint.deadline &&
+      new Date(complaint.deadline).getTime() <= Date.now()
+    ) {
+      throw new AuthError(
+        officer.role === 'L1'
+          ? 'The Level 1 review window has expired. Level 2 must now handle the reopen decision.'
+          : 'The Level 2 review window has expired. Level 3 must now handle the reopen decision.',
+        400,
+      );
     }
 
     const ratingResult = await client.query<{ count: string; rating: number | null }>(
@@ -1752,18 +1552,15 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
       category_id: complaint.category_id,
     });
 
-    const latestResolvedLevel = await getLatestResolvedOfficerLevel(client, complaint.id);
-    const reworkLevel: OfficerLevel = latestResolvedLevel === 'L1' ? 'L1' : 'L3';
-    reopenedLevel = reworkLevel;
-    const toOfficerId = reworkLevel === 'L1' ? mapping.l1_officer_id : mapping.l3_officer_id;
+    const toOfficerId = mapping.l1_officer_id;
 
     if (!toOfficerId) {
-      throw new AuthError(`No ${reworkLevel} officer is mapped for this complaint.`, 400);
+      throw new AuthError('No L1 officer is mapped for this complaint.', 400);
     }
 
-    const deadline = reworkLevel === 'L1'
-      ? computeComplaintDeadline(normalizeOfficerMappingSlaMinutes(mapping.sla_l1), complaint.priority)
-      : computeL3ComplaintDeadline(complaint.priority);
+    const deadline = officer.role === 'L1' && complaint.deadline
+      ? new Date(complaint.deadline)
+      : computeComplaintDeadline(normalizeOfficerMappingSlaMinutes(mapping.sla_l1), complaint.priority);
     reassignedDeadline = deadline.toISOString();
     const targetOfficerName = await getOfficerName(client, toOfficerId);
 
@@ -1809,18 +1606,18 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
       [
         complaint.id,
         toOfficerId,
-        reworkLevel,
+        'L1',
         reassignedDeadline,
         trimmedNote
-          ? `Complaint reopened by Level 2 after not-satisfied citizen feedback. Rework is required at ${reworkLevel}. ${trimmedNote}`
-          : `Complaint reopened by Level 2 after not-satisfied citizen feedback. Rework is required at ${reworkLevel}.`,
+          ? `Complaint reopened by ${getReviewDecisionLabel(officer.role)} after not-satisfied citizen feedback. Fresh L1 field action is required. ${trimmedNote}`
+          : `Complaint reopened by ${getReviewDecisionLabel(officer.role)} after not-satisfied citizen feedback. Fresh L1 field action is required.`,
       ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'reopened',
-      note: trimmedNote || `Complaint reopened by Level 2 and returned to ${reworkLevel} for rework.`,
+      note: trimmedNote || `Complaint reopened by ${getReviewDecisionLabel(officer.role)} and returned to Level 1 for rework.`,
       updated_by_user_id: user.id,
     });
 
@@ -1829,7 +1626,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
       action: 'escalated',
       from_officer: officer.id,
       to_officer: toOfficerId,
-      level: reworkLevel,
+      level: 'L1',
     });
 
     const targetOfficerUserId = await getOfficerUserId(client, toOfficerId);
@@ -1839,8 +1636,8 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
         user_id: targetOfficerUserId,
         complaint_id: complaint.id,
         title: 'Complaint reopened for rework',
-        message: `${complaint.title} has been reopened by L2 and returned to your ${reworkLevel} queue${targetOfficerName ? ` (${targetOfficerName})` : ''}.`,
-        href: reworkLevel === 'L1' ? '/l1' : '/l3',
+        message: `${complaint.title} has been reopened by ${officer.role} and returned to your L1 queue${targetOfficerName ? ` (${targetOfficerName})` : ''}.`,
+        href: '/l1',
       });
     }
 
@@ -1848,7 +1645,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint reopened',
-      message: `${complaint.title} has been reopened after your feedback and sent back to ${reworkLevel} for fresh action.`,
+      message: `${complaint.title} has been reopened after your feedback and sent back to Level 1 for fresh action.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1873,10 +1670,10 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
   return {
     complaint_id: finalizedComplaint.id,
     status: 'reopened' as const,
-    current_level: reopenedLevel || 'L1',
+    current_level: 'L1' as const,
   };
 }
 
 export async function resolveComplaintForOfficer(user: User, complaintId: string, note?: string) {
-  return markComplaintResolvedByL3(user, complaintId, note);
+  return completeComplaintByL1(user, complaintId, note);
 }

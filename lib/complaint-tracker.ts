@@ -10,15 +10,10 @@ export type TrackerStepState = 'completed' | 'current' | 'upcoming';
 export type ComplaintTrackerStep = {
   key:
     | 'received'
-    | 'l1_assigned'
-    | 'l2_assigned'
-    | 'l3_assigned'
-    | 'reached'
-    | 'proof_uploaded'
-    | 'feedback'
-    | 'l2_review'
-    | 'reopened'
-    | 'closed';
+    | 'review_assignment'
+    | 'field_action'
+    | 'completion_verification'
+    | 'closure';
   emoji: string;
   title: string;
   description: string;
@@ -40,14 +35,18 @@ export type ComplaintTrackerSnapshot = {
   latestEventAt: string | null;
   liveMessage: string;
   timeline: ComplaintTrackerStep[];
+  phaseHighlights: Record<ComplaintTrackerStep['key'], string[]>;
   assignmentLabel: string | null;
   assignmentDescription: string | null;
   assignmentStatusLabel: string;
+  feedbackDeskLabel: string | null;
+  feedbackDeskDescription: string | null;
   workerName: string | null;
   workerDescription: string | null;
   proofSubmitted: boolean;
   waitingForFeedback: boolean;
   feedbackSubmitted: boolean;
+  citizenJourneyCompleted: boolean;
   isClosed: boolean;
   isRejected: boolean;
 };
@@ -57,6 +56,67 @@ function formatStatusTitle(status: ComplaintUpdate['status']) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+export function normalizeCitizenFacingNote(note?: string | null) {
+  if (!note) {
+    return null;
+  }
+
+  const normalized = note.trim();
+  const lower = normalized.toLowerCase();
+
+  if (lower.includes('complaint assigned automatically to the mapped level 1 officer')) {
+    return 'Complaint received and assigned for initial field review.';
+  }
+
+  if (
+    lower.includes('complaint forwarded from l1 to l2') ||
+    lower.includes('auto-escalated into l2') ||
+    lower.includes('pending at l2 for official review')
+  ) {
+    return 'The first action timeline was crossed, and the complaint is now under Level 2 monitoring.';
+  }
+
+  if (
+    lower.includes('complaint forwarded from l2 to l3') ||
+    lower.includes('auto-escalated into l3') ||
+    lower.includes('pending at l3 under the final 1-day review window') ||
+    lower.includes('pending at l3 for official review')
+  ) {
+    return 'The supervisory review timeline was crossed, and the complaint is now under Level 3 monitoring.';
+  }
+
+  if (
+    lower.includes('level 3 officer marked the complaint as reached') ||
+    lower.includes('level 3 officer has reached the complaint location and started final resolution work')
+  ) {
+    return 'Field work has started on the complaint location.';
+  }
+
+  if (lower.includes('level 3 officer started work while uploading resolution proof')) {
+    return 'Field work started and evidence upload began for this complaint.';
+  }
+
+  if (
+    lower.includes('complaint resolved by the level 3 officer') ||
+    lower.includes('resolved at l3 with uploaded proof')
+  ) {
+    return 'Work completion has been recorded and citizen verification is pending.';
+  }
+
+  if (
+    lower.includes('proof image uploaded by the assigned l3 officer') ||
+    lower.includes('resolution proof uploaded by the assigned l3 officer')
+  ) {
+    return 'Work completion evidence has been uploaded to the complaint record.';
+  }
+
+  if (lower.includes('citizen feedback has been routed to l2') || lower.includes('citizen feedback has been routed to l3')) {
+    return 'Citizen feedback has been recorded and moved into official review.';
+  }
+
+  return normalized;
 }
 
 function formatHistoryActionTitle(action: string, level: string) {
@@ -110,12 +170,64 @@ function formatPriorityLabel(priority: string) {
   return priority.charAt(0).toUpperCase() + priority.slice(1).replace('_', ' ');
 }
 
-function isPendingAtL2(complaint: Complaint) {
-  return complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
-}
-
 function getWorkStatus(complaint: Complaint) {
   return complaint.work_status || null;
+}
+
+function normalizeComplaintSatisfaction(complaint: Complaint) {
+  if (complaint.rating?.satisfaction) {
+    return complaint.rating.satisfaction;
+  }
+
+  if (!complaint.rating) {
+    return null;
+  }
+
+  return complaint.rating.rating >= 4 ? 'satisfied' : 'not_satisfied';
+}
+
+function hasFieldActionStarted(complaint: Complaint) {
+  return (
+    complaint.status === 'in_progress' ||
+    complaint.work_status === 'On Site' ||
+    complaint.work_status === 'Work Started' ||
+    complaint.work_status === 'Proof Uploaded'
+  );
+}
+
+function hasAssignmentActivity(complaint: Complaint) {
+  return (
+    complaint.current_level === 'L1' ||
+    complaint.current_level === 'L2' ||
+    complaint.current_level === 'L2_ESCALATED' ||
+    complaint.current_level === 'L3' ||
+    Boolean(complaint.assigned_officer_id) ||
+    Boolean(complaint.assigned_worker_id) ||
+    Boolean(complaint.assigned_to) ||
+    complaint.work_status === 'Viewed by L1'
+  );
+}
+
+function isUnderSeniorMonitoring(complaint: Complaint) {
+  return complaint.status === 'l2_deadline_missed' || complaint.status === 'l3_failed_back_to_l2' || complaint.current_level === 'L3';
+}
+
+function isUnderSupervisoryMonitoring(complaint: Complaint) {
+  return complaint.status === 'l1_deadline_missed' || complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
+}
+
+function pushUniquePhaseHighlight(
+  phaseHighlights: Record<ComplaintTrackerStep['key'], string[]>,
+  phase: ComplaintTrackerStep['key'],
+  message: string | null,
+) {
+  if (!message) {
+    return;
+  }
+
+  if (!phaseHighlights[phase].includes(message)) {
+    phaseHighlights[phase].push(message);
+  }
 }
 
 export function formatTrackerDateTime(value?: string | null, emptyLabel = 'Not yet updated') {
@@ -173,67 +285,41 @@ export function formatRelativeTimeFromNow(value?: string | null, now = Date.now(
   });
 }
 
+function isClosedOrExpiredOrReopened(status: Complaint['status']) {
+  return status === 'closed' || status === 'expired' || status === 'reopened';
+}
+
 function resolveCurrentStepKey(input: {
   complaint: Complaint;
   proofSubmitted: boolean;
-  waitingForL2Review: boolean;
+  waitingForFeedback: boolean;
+  awaitingClosureReview: boolean;
   reopenedForRework: boolean;
 }) {
-  const { complaint, proofSubmitted, waitingForL2Review, reopenedForRework } = input;
+  const { complaint, proofSubmitted, waitingForFeedback, awaitingClosureReview, reopenedForRework } = input;
 
-  if (complaint.status === 'closed' || complaint.status === 'expired') {
-    return 'closed' as const;
-  }
-
-  if (complaint.status === 'l1_deadline_missed') {
-    return 'l1_assigned' as const;
-  }
-
-  if (complaint.status === 'l2_deadline_missed') {
-    return 'l2_review' as const;
+  if (complaint.status === 'closed' || complaint.status === 'expired' || complaint.status === 'rejected') {
+    return 'closure' as const;
   }
 
   if (reopenedForRework) {
-    return 'reopened' as const;
+    return hasFieldActionStarted(complaint) ? 'field_action' as const : 'review_assignment' as const;
   }
 
-  if (waitingForL2Review) {
-    return 'l2_review' as const;
+  if (awaitingClosureReview) {
+    return 'closure' as const;
   }
 
-  if (complaint.status === 'resolved') {
-    return 'feedback' as const;
+  if (waitingForFeedback || complaint.status === 'resolved' || proofSubmitted) {
+    return 'completion_verification' as const;
   }
 
-  if (complaint.current_level === 'L1' && complaint.work_status === 'Proof Uploaded') {
-    return 'proof_uploaded' as const;
+  if (hasFieldActionStarted(complaint)) {
+    return 'field_action' as const;
   }
 
-  if (
-    complaint.current_level === 'L1' &&
-    (complaint.work_status === 'On Site' || complaint.work_status === 'Work Started')
-  ) {
-    return 'reached' as const;
-  }
-
-  if (proofSubmitted && complaint.current_level === 'L3' && complaint.status === 'in_progress') {
-    return 'proof_uploaded' as const;
-  }
-
-  if (complaint.status === 'in_progress') {
-    return 'reached' as const;
-  }
-
-  if (complaint.current_level === 'L3') {
-    return 'l3_assigned' as const;
-  }
-
-  if (isPendingAtL2(complaint)) {
-    return 'l2_assigned' as const;
-  }
-
-  if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
-    return 'l1_assigned' as const;
+  if (hasAssignmentActivity(complaint)) {
+    return 'review_assignment' as const;
   }
 
   return 'received' as const;
@@ -241,92 +327,122 @@ function resolveCurrentStepKey(input: {
 
 function buildAssignmentSummary(input: {
   complaint: Complaint;
-  waitingForL2Review: boolean;
+  awaitingClosureReview: boolean;
+  waitingForFeedback: boolean;
   reopenedForRework: boolean;
   isClosed: boolean;
+  isExpired: boolean;
 }) {
-  const { complaint, waitingForL2Review, reopenedForRework, isClosed } = input;
+  const { complaint, awaitingClosureReview, waitingForFeedback, reopenedForRework, isClosed, isExpired } = input;
 
   if (isClosed) {
     return {
-      assignmentLabel: 'Level 2 Review Desk',
-      assignmentDescription: 'Final closure review has been completed at Level 2 after citizen feedback.',
+      assignmentLabel: 'Closure Review Desk',
+      assignmentDescription: 'Citizen verification and departmental review have been completed for this complaint.',
       assignmentStatusLabel: 'Closed',
     };
   }
 
-  if (waitingForL2Review) {
+  if (isExpired) {
     return {
-      assignmentLabel: 'Level 2 Supervisor',
-      assignmentDescription: 'Citizen feedback has moved the complaint back to Level 2 for a close or reopen decision.',
-      assignmentStatusLabel: 'Awaiting L2 final review',
+      assignmentLabel: 'Expired Record',
+      assignmentDescription: 'The complaint exceeded the final review window and remains available only for reference.',
+      assignmentStatusLabel: 'Expired',
+    };
+  }
+
+  if (awaitingClosureReview) {
+    return {
+      assignmentLabel: isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk',
+      assignmentDescription: isUnderSeniorMonitoring(complaint)
+        ? 'Citizen verification is complete, but the closure review crossed its timeline and is now under senior monitoring.'
+        : 'Citizen verification is complete and the complaint is awaiting formal closure review.',
+      assignmentStatusLabel: isUnderSeniorMonitoring(complaint) ? 'Senior closure monitoring' : 'Awaiting closure review',
     };
   }
 
   if (reopenedForRework) {
     return {
-      assignmentLabel: 'Level 3 Supervisor',
-      assignmentDescription: 'The complaint has been reopened and returned to Level 3 for fresh field work and new proof.',
+      assignmentLabel: 'Field Action Desk',
+      assignmentDescription: 'The complaint has been reopened for fresh field action after citizen review.',
       assignmentStatusLabel: 'Reopened for rework',
     };
   }
 
-  if (complaint.current_level === 'L3') {
+  if (isUnderSeniorMonitoring(complaint)) {
     return {
-      assignmentLabel: 'Level 3 Supervisor',
-      assignmentDescription: 'The complaint is currently assigned at Level 3 for field execution and final resolution.',
-      assignmentStatusLabel: complaint.status === 'in_progress' ? 'Ground action in progress' : 'Pending at Level 3',
+      assignmentLabel: 'Senior Monitoring Desk',
+      assignmentDescription: 'The complaint is under senior supervisory monitoring because the review timeline was crossed.',
+      assignmentStatusLabel: 'Senior monitoring active',
     };
   }
 
-  if (isPendingAtL2(complaint)) {
+  if (isUnderSupervisoryMonitoring(complaint)) {
     return {
-      assignmentLabel: 'Level 2 Supervisor',
-      assignmentDescription: complaint.current_level === 'L2_ESCALATED'
-        ? 'The complaint has returned to Level 2 because L3 missed the SLA deadline.'
-        : 'The complaint is currently assigned at Level 2 for escalation handling.',
-      assignmentStatusLabel: complaint.current_level === 'L2_ESCALATED' ? 'Returned from L3 SLA failure' : 'Pending at Level 2',
+      assignmentLabel: 'Supervisory Monitoring Desk',
+      assignmentDescription: 'Supervisory monitoring and reminders are active while field handling continues after a delay.',
+      assignmentStatusLabel: 'Supervisory monitoring active',
+    };
+  }
+
+  if (hasFieldActionStarted(complaint)) {
+    return {
+      assignmentLabel: 'Field Action Desk',
+      assignmentDescription: 'Ground work is active for this complaint and further progress will be updated here in real time.',
+      assignmentStatusLabel: getWorkStatus(complaint) || 'Field action in progress',
+    };
+  }
+
+  if (waitingForFeedback) {
+    return {
+      assignmentLabel: 'Citizen Verification Desk',
+      assignmentDescription: 'Work completion evidence is available and the complaint is waiting for citizen verification.',
+      assignmentStatusLabel: 'Waiting for citizen feedback',
     };
   }
 
   if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
     return {
-      assignmentLabel: 'Level 1 Field Execution',
-      assignmentDescription: 'The complaint is currently with the mapped Level 1 officer for field execution, proof upload, and citizen-facing updates.',
-      assignmentStatusLabel: getWorkStatus(complaint) || 'Pending',
+      assignmentLabel: 'Review And Assignment Desk',
+      assignmentDescription: 'The complaint has been assigned for initial review, site verification, and field preparation.',
+      assignmentStatusLabel: getWorkStatus(complaint) || 'Under review',
     };
   }
 
   return {
-    assignmentLabel: null,
-    assignmentDescription: null,
-    assignmentStatusLabel: 'Pending routing',
+    assignmentLabel: 'Intake Desk',
+    assignmentDescription: 'The complaint has been received and is awaiting assignment for review and action.',
+    assignmentStatusLabel: 'Pending assignment',
   };
 }
 
 export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTrackerSnapshot {
   const updates = sortUpdatesAsc(complaint.updates);
+  const departmentMessage = normalizeCitizenFacingNote(complaint.department_message) || null;
   const departmentLabel = formatDepartmentLabel(complaint.department);
   const priorityLabel = formatPriorityLabel(complaint.priority);
-  const hasFeedback = Boolean(complaint.rating);
+  const satisfaction = normalizeComplaintSatisfaction(complaint);
 
   const submittedUpdate = findFirstUpdateByStatus(updates, ['submitted', 'received']);
-  const l1AssignedUpdate =
+  const assignedUpdate =
     findFirstUpdateByNote(updates, (note) => note.includes('assigned automatically to the mapped level 1 officer')) ||
     findFirstUpdateByStatus(updates, ['assigned']);
-  const l2AssignedUpdate = findFirstUpdateByNote(updates, (note) => note.includes('forwarded from l1 to l2'));
-  const l3AssignedUpdate = findFirstUpdateByNote(updates, (note) => note.includes('forwarded from l2 to l3'));
+  const viewedUpdate = findFirstUpdateByNote(updates, (note) => note.includes('viewed by the assigned l1 officer'));
   const reachedUpdate =
     findFirstUpdateByNote(
       updates,
-      (note) => note.includes('marked the complaint as reached') || note.includes('started work while uploading resolution proof'),
+      (note) => note.includes('reached the complaint location') || note.includes('marked the complaint as reached'),
     ) || findFirstUpdateByStatus(updates, ['in_progress']);
-  const proofUploadedUpdate = findLatestUpdateByNote(updates, (note) => note.includes('uploaded resolution proof'));
+  const workStartedUpdate = findFirstUpdateByNote(
+    updates,
+    (note) => note.includes('started work on the complaint') || note.includes('started work while uploading resolution proof'),
+  );
+  const proofUploadedUpdate = findLatestUpdateByNote(updates, (note) => note.includes('uploaded proof'));
   const resolvedUpdate =
     findLatestUpdateByStatus(updates, ['resolved']) ||
     findLatestUpdateByNote(updates, (note) => note.includes('resolved by the level 3 officer'));
   const feedbackUpdate =
-    findLatestUpdateByNote(updates, (note) => note.includes('citizen feedback submitted')) ||
+    findLatestUpdateByNote(updates, (note) => note.includes('citizen feedback submitted') || note.includes('citizen submitted feedback')) ||
     (complaint.rating?.created_at
       ? {
           id: 'rating-feedback',
@@ -336,16 +452,22 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
           updated_at: complaint.rating.created_at,
         }
       : null);
-  const l2ReviewUpdate =
-    findLatestUpdateByNote(updates, (note) => note.includes('routed back to l2')) ||
-    findLatestUpdateByNote(
-      updates,
-      (note) => note.includes('closed by level 2 after citizen feedback review') || note.includes('reopened by level 2'),
-    );
-  const reopenedUpdate = findLatestUpdateByNote(updates, (note) => note.includes('reopened by level 2'));
+  const feedbackRoutedUpdate = findLatestUpdateByNote(
+    updates,
+    (note) => note.includes('routed back to l2') || note.includes('final review') || note.includes('pending level 1 review'),
+  );
+  const reopenedUpdate = findLatestUpdateByNote(updates, (note) => note.includes('reopened'));
+  const l1DelayUpdate = findLatestUpdateByStatus(updates, ['l1_deadline_missed']);
+  const l2DelayUpdate = findLatestUpdateByStatus(updates, ['l2_deadline_missed']);
+  const l2ReminderUpdate = findLatestUpdateByNote(updates, (note) => note.includes('l2 reminder sent to l1'));
+  const l3ReminderUpdate = findLatestUpdateByNote(updates, (note) => note.includes('l3 reminder sent to l2'));
+  const escalationUpdate = findLatestUpdateByNote(updates, (note) => note.includes('auto-escalated'));
   const closedUpdate =
     findLatestUpdateByStatus(updates, ['closed']) ||
-    findLatestUpdateByNote(updates, (note) => note.includes('closed by level 2 after citizen feedback review'));
+    findLatestUpdateByNote(
+      updates,
+      (note) => (note.includes('closed by level') && note.includes('after citizen feedback review')) || note.includes('closed by the department'),
+    );
 
   const feedbackRecorded = Boolean(feedbackUpdate);
   const proofSubmitted = Boolean(
@@ -355,159 +477,275 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
       proofUploadedUpdate ||
       complaint.resolved_at,
   );
-  const waitingForFeedback = complaint.status === 'resolved' && !feedbackRecorded;
-  const waitingForL2Review = isPendingAtL2(complaint) && (complaint.status === 'resolved' || complaint.status === 'l2_deadline_missed');
-  const reopenedForRework = Boolean(
+  const waitingForFeedback =
+    (complaint.status === 'resolved' || complaint.work_status === 'Awaiting Citizen Feedback') && !feedbackRecorded;
+  const reopenedForRework = complaint.status === 'reopened' || Boolean(
     reopenedUpdate &&
-    (complaint.current_level === 'L3' || complaint.current_level === 'L1') &&
-    (complaint.status === 'assigned' || complaint.status === 'reopened'),
+    (complaint.status === 'assigned' || complaint.status === 'reopened' || complaint.status === 'in_progress'),
   );
+  const awaitingClosureReview = feedbackRecorded && !isClosedOrExpiredOrReopened(complaint.status);
   const feedbackSubmitted = feedbackRecorded;
   const isClosed = complaint.status === 'closed';
   const isExpired = complaint.status === 'expired';
   const isRejected = complaint.status === 'rejected';
+  const citizenJourneyCompleted = isExpired || isClosed;
+
+  const assignmentPhaseDescription =
+    isUnderSeniorMonitoring(complaint)
+      ? 'The complaint is under senior monitoring because a supervisory review window was crossed.'
+      : isUnderSupervisoryMonitoring(complaint)
+        ? 'The complaint remains active while supervisory monitoring and reminders continue after a delay.'
+        : complaint.assigned_worker_id
+          ? 'The complaint has been reviewed and assigned to a field worker for site action.'
+          : complaint.work_status === 'Viewed by L1'
+            ? 'The complaint has been reviewed by the assigned field officer and prepared for further action.'
+            : 'The complaint has been reviewed and assigned for field handling.';
+
+  const fieldActionDescription =
+    reopenedForRework
+      ? 'Fresh field action is required because the complaint was reopened after citizen review.'
+      : proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed'
+        ? 'Field action was carried out and completion proof is now part of the official record.'
+        : complaint.work_status === 'On Site'
+          ? 'The officer has reached the location and site work is under way.'
+          : complaint.work_status === 'Work Started'
+            ? 'Repair or resolution work has started on the ground.'
+            : complaint.status === 'in_progress'
+              ? 'Ground action is currently in progress.'
+              : 'Once review and assignment are completed, field action begins at the complaint location.';
+
+  const verificationDescription =
+    feedbackRecorded && satisfaction === 'satisfied'
+      ? 'Citizen feedback confirms that the completed work is satisfactory.'
+      : feedbackRecorded && satisfaction === 'not_satisfied'
+        ? 'Citizen feedback indicates that additional work or review is required before the complaint can close.'
+        : waitingForFeedback
+          ? 'Work has been marked completed and evidence is available for citizen verification.'
+          : proofSubmitted
+            ? 'Completion photographs and notes are available for verification.'
+            : 'Completion proof, citizen rating, and remarks will appear here after work is finished.';
+
+  const closureDescription =
+    isClosed
+      ? 'The complaint has been formally closed in the official record.'
+      : isExpired
+        ? 'The complaint expired before closure and will require a fresh complaint for new action.'
+        : reopenedForRework
+          ? 'The complaint was sent back for fresh work, so formal closure is currently on hold.'
+          : awaitingClosureReview
+            ? 'Citizen verification is complete and the complaint is under final departmental closure review.'
+            : 'After completion is verified, the complaint is formally closed at this stage.';
+
+  const phaseHighlights: Record<ComplaintTrackerStep['key'], string[]> = {
+    received: [],
+    review_assignment: [],
+    field_action: [],
+    completion_verification: [],
+    closure: [],
+  };
+
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'received',
+    `Complaint registered in the ${departmentLabel} workflow with ${priorityLabel.toLowerCase()} priority.`,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    assignedUpdate || hasAssignmentActivity(complaint)
+      ? 'Initial review and assignment have been recorded for field handling.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    viewedUpdate || complaint.work_status === 'Viewed by L1'
+      ? 'The assigned field desk has reviewed the complaint details and prepared the next action.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    l1DelayUpdate || complaint.status === 'l1_deadline_missed'
+      ? 'The first action timeline was crossed, so supervisory monitoring is now active.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    l2ReminderUpdate
+      ? 'A supervisory reminder has been issued to the field team after the recorded delay.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    escalationUpdate || isUnderSeniorMonitoring(complaint)
+      ? 'Higher review monitoring has been activated because the complaint required escalation handling.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    l3ReminderUpdate
+      ? 'A senior reminder has been issued during escalated monitoring.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'field_action',
+    reachedUpdate || complaint.work_status === 'On Site'
+      ? 'The field team has reached the complaint location for on-ground action.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'field_action',
+    workStartedUpdate || complaint.work_status === 'Work Started'
+      ? 'Repair or service work has started on site.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'field_action',
+    proofUploadedUpdate || proofSubmitted
+      ? 'Completion photographs or proof files have been uploaded to the complaint record.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'field_action',
+    reopenedUpdate || complaint.status === 'reopened'
+      ? 'The complaint was reopened and sent back for fresh field action.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'completion_verification',
+    resolvedUpdate || waitingForFeedback
+      ? 'Work completion has been recorded and citizen verification is now part of the official process.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'completion_verification',
+    feedbackRecorded && satisfaction === 'satisfied'
+      ? 'Citizen feedback confirms that the work is satisfactory.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'completion_verification',
+    feedbackRecorded && satisfaction === 'not_satisfied'
+      ? 'Citizen feedback requested additional action before closure.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    feedbackRoutedUpdate || awaitingClosureReview
+      ? 'Citizen feedback has reached the active review desk for closure decision.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    l2DelayUpdate || complaint.status === 'l2_deadline_missed'
+      ? 'The closure review timeline was crossed and the complaint is under senior monitoring.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    complaint.status === 'l3_failed_back_to_l2'
+      ? 'The complaint was returned for further supervisory review after senior escalation handling.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    reopenedForRework
+      ? 'Formal closure is paused until fresh field action and new verification are completed.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    isClosed
+      ? 'The complaint has been formally closed in the official record.'
+      : null,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'closure',
+    isExpired
+      ? 'The complaint expired before closure and now requires a fresh complaint for further action.'
+      : null,
+  );
 
   const currentStepKey = resolveCurrentStepKey({
     complaint,
     proofSubmitted,
-    waitingForL2Review,
+    waitingForFeedback,
+    awaitingClosureReview,
     reopenedForRework,
   });
 
-  const timelineBlueprint: Array<Omit<ComplaintTrackerStep, 'state' | 'timestampLabel'> & { enabled: boolean }> = [
+  const timelineBlueprint: Array<Omit<ComplaintTrackerStep, 'state' | 'timestampLabel'>> = [
     {
       key: 'received',
       emoji: '\u{1F4E8}',
       title: 'Complaint Received',
       description: 'Your complaint has been registered successfully and entered into the official service workflow.',
       timestamp: submittedUpdate?.updated_at || complaint.created_at,
-      enabled: true,
     },
     {
-      key: 'l1_assigned',
+      key: 'review_assignment',
       emoji: '\u{1F4CB}',
-      title: 'Assigned to L1 Officer',
-      description:
-        complaint.current_level === 'L1'
-          ? 'The complaint has already been mapped and assigned to the Level 1 officer for field execution.'
-          : 'The complaint was auto-assigned to the mapped Level 1 officer immediately after submission.',
-      timestamp: l1AssignedUpdate?.updated_at || complaint.created_at,
-      enabled: Boolean(complaint.current_level || complaint.assigned_officer_id || complaint.assigned_to || l1AssignedUpdate),
+      title: 'Review And Assignment',
+      description: assignmentPhaseDescription,
+      timestamp: viewedUpdate?.updated_at || assignedUpdate?.updated_at || complaint.created_at,
     },
     {
-      key: 'l2_assigned',
-      emoji: '\u{1F4E4}',
-      title: 'Forwarded to L2',
-      description:
-        isPendingAtL2(complaint) && !waitingForL2Review
-          ? complaint.current_level === 'L2_ESCALATED'
-            ? 'The complaint returned to Level 2 because L3 failed to resolve it within SLA.'
-            : 'The complaint is now pending with the Level 2 supervisor for further escalation handling.'
-          : 'If Level 1 cannot complete the issue, the complaint moves to the Level 2 supervisor.',
-      timestamp: l2AssignedUpdate?.updated_at || (isPendingAtL2(complaint) && !waitingForL2Review ? complaint.updated_at : null),
-      enabled: Boolean(l2AssignedUpdate || isPendingAtL2(complaint) || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed' || complaint.status === 'expired'),
-    },
-    {
-      key: 'l3_assigned',
-      emoji: '\u{1F6E0}',
-      title: 'Forwarded to L3',
-      description:
-        complaint.current_level === 'L3' && !reopenedForRework
-          ? 'The complaint is now pending with the Level 3 supervisor for ground execution and final action.'
-          : 'If further escalation is needed, the complaint moves to the Level 3 supervisor for field execution.',
-      timestamp: l3AssignedUpdate?.updated_at || (complaint.current_level === 'L3' && !reopenedForRework ? complaint.updated_at : null),
-      enabled: Boolean(l3AssignedUpdate || complaint.current_level === 'L3' || proofSubmitted || complaint.status === 'closed' || complaint.status === 'expired'),
-    },
-    {
-      key: 'reached',
+      key: 'field_action',
       emoji: '\u{1F4CD}',
-      title: 'Ground Action Started',
-      description: reopenedForRework
-        ? 'Fresh ground action will restart from this stage after the reopen order.'
-        : complaint.current_level === 'L1'
-          ? 'The assigned Level 1 officer has started on-ground work for this complaint.'
-          : 'The Level 3 supervisor has started on-ground work for this complaint.',
-      timestamp: reachedUpdate?.updated_at || ((complaint.status === 'in_progress' || complaint.work_status === 'On Site' || complaint.work_status === 'Work Started') ? complaint.updated_at : null),
-      enabled: Boolean(reachedUpdate || complaint.status === 'in_progress' || complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired'),
+      title: 'Field Action',
+      description: fieldActionDescription,
+      timestamp:
+        proofUploadedUpdate?.updated_at ||
+        workStartedUpdate?.updated_at ||
+        reachedUpdate?.updated_at ||
+        (hasFieldActionStarted(complaint) ? complaint.updated_at : null),
     },
     {
-      key: 'proof_uploaded',
-      emoji: '\u{1F4F8}',
-      title: 'Proof Uploaded',
-      description: proofSubmitted
-        ? 'Resolution proof has been uploaded into the complaint record for verification.'
-        : 'Proof images and notes will appear here once field work reaches completion.',
-      timestamp: proofUploadedUpdate?.updated_at || complaint.completed_at || complaint.resolved_at || (proofSubmitted ? complaint.updated_at : null),
-      enabled: proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired',
-    },
-    {
-      key: 'feedback',
+      key: 'completion_verification',
       emoji: '\u2B50',
-      title: feedbackRecorded ? 'Citizen Feedback Submitted' : 'Waiting for Citizen Feedback',
-      description: feedbackRecorded
-        ? 'Citizen feedback has been recorded and attached to the official complaint file.'
-        : 'After proof review, citizen feedback is required before final closure review can finish.',
-      timestamp: feedbackUpdate?.updated_at || complaint.resolved_at || resolvedUpdate?.updated_at || null,
-      enabled: Boolean(complaint.status === 'resolved' || complaint.status === 'closed' || complaint.status === 'expired' || feedbackRecorded || waitingForL2Review || reopenedForRework),
+      title: 'Completion And Verification',
+      description: verificationDescription,
+      timestamp: feedbackUpdate?.updated_at || proofUploadedUpdate?.updated_at || complaint.completed_at || complaint.resolved_at || resolvedUpdate?.updated_at || null,
     },
     {
-      key: 'l2_review',
-      emoji: '\u{1F50E}',
-      title: 'Final Review at L2',
-      description: waitingForL2Review
-        ? 'Citizen feedback has routed the complaint back to Level 2 for a close or reopen decision.'
-        : isClosed || isExpired
-          ? 'Level 2 completed the final review of citizen feedback before closure.'
-          : 'After citizen feedback, Level 2 performs the final close or reopen review.',
-      timestamp: l2ReviewUpdate?.updated_at || (waitingForL2Review ? complaint.updated_at : null),
-      enabled: Boolean(waitingForL2Review || l2ReviewUpdate || isClosed || isExpired || reopenedForRework),
+      key: 'closure',
+      emoji: '\u2705',
+      title: 'Complaint Closure',
+      description: closureDescription,
+      timestamp:
+        closedUpdate?.updated_at ||
+        (awaitingClosureReview ? feedbackUpdate?.updated_at || complaint.updated_at : null) ||
+        ((isClosed || isExpired) ? complaint.updated_at : null),
     },
   ];
-
-  if (reopenedUpdate || reopenedForRework) {
-    timelineBlueprint.push({
-      key: 'reopened',
-      emoji: '\u{1F501}',
-      title: 'Reopened for L3 Rework',
-      description: reopenedForRework
-        ? 'Level 2 has reopened the complaint and sent it back to Level 3 for fresh field work.'
-        : 'The complaint was reopened after review and returned to Level 3 for rework.',
-      timestamp: reopenedUpdate?.updated_at || (reopenedForRework ? complaint.updated_at : null),
-      enabled: true,
-    });
-  }
-
-  timelineBlueprint.push({
-    key: 'closed',
-    emoji: '\u2705',
-    title: isExpired ? 'Complaint Expired' : 'Complaint Closed',
-    description: isExpired
-      ? 'The complaint was not resolved within the Level 3 SLA window and has expired. A fresh complaint must be filed for new action.'
-      : 'The complaint has completed final review and has been formally closed in the official record.',
-    timestamp: closedUpdate?.updated_at || ((isClosed || isExpired) ? complaint.updated_at : null),
-    enabled: isClosed || isExpired,
-  });
 
   const currentIndex = Math.max(0, timelineBlueprint.findIndex((step) => step.key === currentStepKey));
   const timeline = timelineBlueprint.map((step, index) => {
     let state: TrackerStepState = 'upcoming';
 
-    if (index < currentIndex && step.enabled) {
+    if (citizenJourneyCompleted && index <= currentIndex) {
+      state = 'completed';
+    } else if (index < currentIndex) {
       state = 'completed';
     } else if (index === currentIndex) {
       state = 'current';
-    }
-
-    if (!step.enabled && state === 'completed') {
-      state = 'upcoming';
-    }
-
-    if (step.key === 'feedback' && (waitingForL2Review || reopenedForRework || isClosed || isExpired)) {
-      state = 'completed';
-    }
-
-    if (step.key === 'l2_review' && (isClosed || isExpired)) {
-      state = 'completed';
     }
 
     return {
@@ -527,112 +765,134 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
 
   const assignment = buildAssignmentSummary({
     complaint,
-    waitingForL2Review,
+    awaitingClosureReview,
+    waitingForFeedback,
     reopenedForRework,
     isClosed,
+    isExpired,
   });
 
+  let feedbackDeskLabel: string | null = null;
+  let feedbackDeskDescription: string | null = null;
+
+  if (isClosed) {
+    feedbackDeskLabel = 'Closed In Official Record';
+    feedbackDeskDescription = 'Citizen verification and official closure review have both been completed.';
+  } else if (isExpired) {
+    feedbackDeskLabel = 'Expired Record';
+    feedbackDeskDescription = 'This complaint exceeded the final service window and now requires a fresh complaint for any new action.';
+  } else if (reopenedForRework) {
+    feedbackDeskLabel = 'Returned For Rework';
+    feedbackDeskDescription = 'Citizen feedback resulted in fresh field action, so the complaint is back in the execution cycle.';
+  } else if (awaitingClosureReview) {
+    feedbackDeskLabel = isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk';
+    feedbackDeskDescription = isUnderSeniorMonitoring(complaint)
+      ? 'Citizen feedback is recorded and the complaint is under senior monitoring before the final closure decision.'
+      : 'Citizen feedback is recorded and the complaint is waiting for the final close or reopen decision.';
+  } else if (waitingForFeedback) {
+    feedbackDeskLabel = 'Citizen Verification Pending';
+    feedbackDeskDescription = 'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.';
+  }
+
   let humanStatus = 'Complaint Received';
-  let headline = 'Your complaint is moving through the municipal supervisor workflow.';
-  let supportLine = 'The full Level 1, Level 2, and Level 3 progression appears below as the complaint advances.';
-  let liveMessage = complaint.department_message || 'The complaint is progressing through the official review chain.';
+  let headline = 'Your complaint is moving through the official service workflow.';
+  let supportLine = 'The tracker below shows the live progress of review, field action, verification, and closure.';
+  let liveMessage = departmentMessage || 'The complaint is progressing through the official workflow.';
 
   if (isRejected) {
     humanStatus = 'Review Halted';
     headline = 'This complaint needs manual attention before it can move ahead.';
     supportLine = 'Please review the latest official note for the reason this workflow paused.';
-    liveMessage = complaint.department_message || 'The complaint could not continue in the normal workflow.';
+    liveMessage = departmentMessage || 'The complaint could not continue in the normal workflow.';
   } else if (complaint.status === 'l1_deadline_missed') {
-    humanStatus = 'L1 Deadline Missed';
-    headline = 'The complaint was not completed within the Level 1 SLA window.';
-    supportLine = 'The complaint remains assigned to L1, while L2 can now monitor progress and send reminders.';
-    liveMessage = complaint.department_message || 'The complaint crossed the L1 deadline and is now under L2 monitoring.';
+    humanStatus = 'Action Delay Recorded';
+    headline = 'The complaint has crossed the first action timeline.';
+    supportLine = 'Supervisory monitoring is active and the complaint remains under continuous review.';
+    liveMessage = departmentMessage || 'A service delay has been recorded and the complaint is under monitoring.';
   } else if (complaint.status === 'l2_deadline_missed') {
-    humanStatus = 'L2 Deadline Missed';
-    headline = 'The complaint was not reviewed within the Level 2 SLA window.';
-    supportLine = 'The complaint remains assigned to L2, while L3 now monitors the final review and sends strict reminders.';
-    liveMessage = complaint.department_message || 'The complaint crossed the L2 deadline and is now under L3 monitoring.';
+    humanStatus = 'Senior Monitoring Active';
+    headline = 'The complaint has crossed the closure review timeline.';
+    supportLine = 'Senior supervisory monitoring is active until a close or reopen decision is recorded.';
+    liveMessage = departmentMessage || 'An escalated review delay has been recorded for this complaint.';
+  } else if (complaint.status === 'l3_failed_back_to_l2') {
+    humanStatus = 'Returned For Further Review';
+    headline = 'The complaint has been sent back for another supervisory review cycle.';
+    supportLine = 'Fresh monitoring and review action are active before the next field or closure decision is recorded.';
+    liveMessage = departmentMessage || 'The complaint returned for another supervisory review cycle after senior escalation handling.';
   } else if (isExpired) {
     humanStatus = 'Complaint Expired';
-    headline = 'This complaint expired after missing the 1-day Level 3 SLA.';
+    headline = 'This complaint expired before formal closure could be completed.';
     supportLine = 'This complaint cannot continue further. Please create a new complaint if the issue still exists.';
-    liveMessage = complaint.department_message || 'The complaint expired at Level 3 and now requires a fresh complaint for any further action.';
+    liveMessage = departmentMessage || 'The complaint expired and now requires a fresh complaint for any further action.';
+  } else if (awaitingClosureReview && satisfaction === 'satisfied') {
+    humanStatus = 'Awaiting Formal Closure';
+    headline = 'The reported work has been accepted by the citizen.';
+    supportLine = 'Citizen verification is complete. The complaint now awaits formal closure in the official record.';
+    liveMessage = complaint.rating?.feedback
+      ? `Citizen feedback recorded: ${complaint.rating.feedback}`
+      : 'Citizen satisfaction has been recorded in the official complaint file.';
+  } else if (awaitingClosureReview && satisfaction === 'not_satisfied') {
+    humanStatus = 'Review Decision Pending';
+    headline = 'Citizen feedback has requested further action on this complaint.';
+    supportLine = 'The final review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.';
+    liveMessage = complaint.rating?.feedback
+      ? `Citizen feedback recorded: ${complaint.rating.feedback}`
+      : 'Citizen review requiring further action has been recorded in the official complaint file.';
   } else if (isClosed) {
     humanStatus = 'Complaint Closed';
-    headline = 'This complaint has been closed after Level 2 review.';
-    supportLine = 'The full supervisor chain remains visible below for audit and future reference.';
-    liveMessage = complaint.department_message || 'Citizen feedback was reviewed and the complaint has been formally closed.';
+    headline = 'This complaint has been formally closed in the official record.';
+    supportLine = 'The complete complaint journey remains visible below for audit and future reference.';
+    liveMessage = departmentMessage || 'Citizen feedback was reviewed and the complaint has been formally closed.';
   } else if (reopenedForRework) {
-    humanStatus = complaint.current_level === 'L1' ? 'Reopened for L1 Rework' : 'Reopened for L3 Rework';
-    headline = complaint.current_level === 'L1'
-      ? 'This complaint has been reopened for fresh Level 1 work.'
-      : 'This complaint has been reopened for fresh Level 3 work.';
+    humanStatus = 'Reopened For Rework';
+    headline = 'This complaint has been reopened for fresh field action.';
     supportLine = 'New field work and fresh proof submission are required before the complaint can move again.';
-    liveMessage = complaint.department_message || `Level 2 reopened the complaint after feedback and sent it back to ${complaint.current_level}.`;
-  } else if (waitingForL2Review) {
-    humanStatus = 'Pending L2 Final Review';
-    headline = 'Citizen feedback is now under Level 2 review.';
-    supportLine = 'Level 2 can either close the complaint or reopen it for fresh rework.';
-    liveMessage = complaint.department_message || 'Citizen feedback has been received and the complaint is pending a final review decision.';
+    liveMessage = departmentMessage || 'Citizen feedback or review findings have returned the complaint for fresh action.';
   } else if (complaint.status === 'resolved' && !feedbackRecorded) {
-    humanStatus = complaint.work_status || 'Waiting for Citizen Feedback';
+    humanStatus = 'Waiting For Citizen Feedback';
     headline = 'Proof has been uploaded and citizen verification is pending.';
     supportLine = 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
-    liveMessage = complaint.department_message || 'The complaint has been marked completed and is waiting for citizen feedback.';
-  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Proof Uploaded') {
-    humanStatus = 'Proof Uploaded';
-    headline = 'Proof has been uploaded by the assigned L1 officer.';
-    supportLine = 'The complaint is now in the final completion stage before citizen feedback.';
-    liveMessage = complaint.department_message || 'L1 has uploaded proof for the completed field work.';
-  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Work Started') {
+    liveMessage = departmentMessage || 'The complaint has been marked completed and is waiting for citizen feedback.';
+  } else if (proofSubmitted) {
+    humanStatus = 'Completion Evidence Uploaded';
+    headline = 'Work completion evidence has been uploaded for this complaint.';
+    supportLine = 'Citizen review and verification can now take place on this page.';
+    liveMessage = departmentMessage || 'Completion proof has been uploaded and is ready for verification.';
+  } else if (complaint.work_status === 'Work Started') {
     humanStatus = 'Work Started';
-    headline = 'Field work has started at Level 1.';
-    supportLine = 'Live updates will continue as the assigned L1 officer progresses through the complaint.';
-    liveMessage = complaint.department_message || 'The assigned L1 officer has started work on the complaint.';
-  } else if (complaint.current_level === 'L1' && complaint.work_status === 'On Site') {
+    headline = 'Field work has started on this complaint.';
+    supportLine = 'Live updates will continue here as the assigned team progresses through the site action.';
+    liveMessage = departmentMessage || 'Field work has started on the complaint.';
+  } else if (complaint.work_status === 'On Site') {
     humanStatus = 'On Site';
-    headline = 'The assigned L1 officer has reached the complaint location.';
-    supportLine = 'Field work will continue from this point and proof will be uploaded after execution.';
-    liveMessage = complaint.department_message || 'The assigned L1 officer is now on site.';
-  } else if (complaint.current_level === 'L1' && complaint.work_status === 'Viewed by L1') {
-    humanStatus = 'Viewed by L1';
-    headline = 'The assigned L1 officer has viewed the complaint.';
-    supportLine = 'The complaint is being prepared for on-ground execution.';
-    liveMessage = complaint.department_message || 'The assigned L1 officer has reviewed the complaint details.';
-  } else if (proofSubmitted && complaint.current_level === 'L3' && complaint.status === 'in_progress') {
-    humanStatus = 'Proof Uploaded';
-    headline = 'Proof has been uploaded by Level 3.';
-    supportLine = 'The complaint is in its final resolution stage and will soon move to citizen verification.';
-    liveMessage = complaint.department_message || 'Level 3 has uploaded proof and is preparing final resolution.';
+    headline = 'The assigned team has reached the complaint location.';
+    supportLine = 'Field work will continue from this point and completion evidence will be uploaded after execution.';
+    liveMessage = departmentMessage || 'The assigned team is now on site.';
+  } else if (complaint.work_status === 'Viewed by L1') {
+    humanStatus = 'Reviewed For Action';
+    headline = 'The complaint has been reviewed and prepared for field action.';
+    supportLine = 'Site planning and assignment checks are under way.';
+    liveMessage = departmentMessage || 'The complaint details have been reviewed for field execution.';
   } else if (complaint.status === 'in_progress') {
-    humanStatus = 'Work in Progress at L3';
-    headline = 'Ground work is active at Level 3.';
+    humanStatus = 'Field Action In Progress';
+    headline = 'Ground work is active for this complaint.';
     supportLine = 'Field action has started and further proof updates will appear automatically.';
-    liveMessage = complaint.department_message || 'The assigned Level 3 supervisor is actively working on the complaint.';
-  } else if (complaint.current_level === 'L3') {
-    humanStatus = 'Pending at L3';
-    headline = 'The complaint is now with the Level 3 supervisor.';
-    supportLine = 'Field execution and proof submission will happen from this stage.';
-    liveMessage = complaint.department_message || 'The complaint has reached the final supervisor level for action.';
-  } else if (isPendingAtL2(complaint)) {
-    humanStatus = complaint.current_level === 'L2_ESCALATED' ? 'L3 Failed - Back to L2' : 'Pending at L2';
-    headline = complaint.current_level === 'L2_ESCALATED'
-      ? 'The complaint has returned to Level 2 because L3 missed the SLA deadline.'
-      : 'The complaint is now with the Level 2 supervisor.';
-    supportLine = complaint.current_level === 'L2_ESCALATED'
-      ? 'Level 2 now needs to review the failed L3 handling and decide the next action.'
-      : 'This level handles escalated review before any Level 3 field action.';
-    liveMessage = complaint.department_message || 'The complaint is pending review in the Level 2 queue.';
+    liveMessage = departmentMessage || 'The assigned team is actively working on the complaint.';
+  } else if (isUnderSeniorMonitoring(complaint) || isUnderSupervisoryMonitoring(complaint)) {
+    humanStatus = 'Under Supervisory Review';
+    headline = 'The complaint is under supervisory review or escalation handling.';
+    supportLine = 'Additional review is in progress before the next field action or closure decision.';
+    liveMessage = departmentMessage || 'The complaint is under supervisory handling due to review or escalation requirements.';
   } else if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
     humanStatus = complaint.work_status || 'Pending';
-    headline = 'The complaint has been assigned to the Level 1 supervisor.';
-    supportLine = 'This assignment happened immediately after complaint submission using the mapped routing record.';
-    liveMessage = complaint.department_message || 'The complaint is pending field action in the Level 1 queue.';
+    headline = 'The complaint has been assigned for field review and action.';
+    supportLine = 'Initial review, assignment checks, and field coordination are under way.';
+    liveMessage = departmentMessage || 'The complaint is pending review and field action assignment.';
   }
 
   return {
     headline,
-    subheadline: `Track every Level 1, Level 2, and Level 3 movement using complaint ID ${complaint.complaint_id}.`,
+    subheadline: `Track all official review, field action, completion, and closure updates using complaint ID ${complaint.complaint_id}.`,
     humanStatus,
     supportLine,
     departmentLabel,
@@ -643,14 +903,18 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     latestEventAt: latestStep.timestamp || complaint.updated_at,
     liveMessage,
     timeline,
+    phaseHighlights,
     assignmentLabel: assignment.assignmentLabel,
     assignmentDescription: assignment.assignmentDescription,
     assignmentStatusLabel: assignment.assignmentStatusLabel,
+    feedbackDeskLabel,
+    feedbackDeskDescription,
     workerName: assignment.assignmentLabel,
     workerDescription: assignment.assignmentDescription,
     proofSubmitted,
     waitingForFeedback,
     feedbackSubmitted,
+    citizenJourneyCompleted,
     isClosed,
     isRejected,
   };
@@ -665,7 +929,7 @@ export function buildComplaintHistoryCard(complaint: Complaint): ComplaintHistor
       id: `update:${update.id}`,
       kind: 'update' as const,
       title: formatStatusTitle(update.status),
-      detail: update.note || null,
+      detail: normalizeCitizenFacingNote(update.note),
       timestamp: update.updated_at,
       status: update.status,
     })),

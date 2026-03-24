@@ -26,7 +26,7 @@ import { query, withTransaction } from '@/lib/server/db';
 import { createNotificationForUser } from '@/lib/server/notifications';
 import {
   assignComplaintToInitialOfficer,
-  queueComplaintForL2ReviewAfterCitizenFeedback,
+  queueComplaintForReviewAfterCitizenFeedback,
 } from '@/lib/server/officer-routing';
 import { computeL1ComplaintDeadline } from '@/lib/server/complaint-sla';
 import { saveAttachments, saveProofImage, saveProofImages } from '@/lib/server/uploads';
@@ -1755,7 +1755,7 @@ export async function addComplaintRatingForUser(
   const feedbackNote = trimmedFeedback
     ? `Citizen feedback submitted (${feedbackLabel}): ${trimmedFeedback}`
     : `Citizen submitted feedback: ${feedbackLabel}.`;
-  let reviewRouting: { assigned_officer_id: string; current_level: 'L2'; deadline: string } | null = null;
+  let reviewRouting: { assigned_officer_id: string; current_level: 'L1' | 'L2' | 'L3'; deadline: string | null; review_level: 'L1' | 'L2' | 'L3' } | null = null;
 
   await withTransaction(async (client) => {
     await client.query(
@@ -1778,7 +1778,7 @@ export async function addComplaintRatingForUser(
       updated_by_user_id: user.id,
     });
 
-    reviewRouting = await queueComplaintForL2ReviewAfterCitizenFeedback(client, {
+    reviewRouting = await queueComplaintForReviewAfterCitizenFeedback(client, {
       complaint_id: complaint.id,
       complaint_code: complaint.complaint_id,
       title: complaint.title,
@@ -1789,12 +1789,13 @@ export async function addComplaintRatingForUser(
       category_id: complaint.category_id ?? null,
       assigned_officer_id: complaint.assigned_officer_id ?? null,
       current_level: complaint.current_level ?? null,
+      deadline: complaint.deadline ?? null,
       priority: complaint.priority,
       updated_by_user_id: user.id,
     });
 
     if (!reviewRouting) {
-      throw new AuthError('Citizen feedback could not be routed to Level 2 review.', 500);
+      throw new AuthError('Citizen feedback could not be routed to the correct review desk.', 500);
     }
 
     const deptHeadIds = await listLeaderUserIdsByScope(client, {
@@ -1807,7 +1808,7 @@ export async function addComplaintRatingForUser(
         user_id: deptHeadId,
         complaint_id: complaint.id,
         title: 'Citizen feedback received',
-        message: `${complaint.title} received citizen feedback (${feedbackLabel}) for Level 2 closure review.`,
+        message: `${complaint.title} received citizen feedback (${feedbackLabel}) for ${reviewRouting.review_level} review.`,
         href: '/leader',
       });
     }
@@ -1819,7 +1820,7 @@ export async function addComplaintRatingForUser(
         user_id: adminId,
         complaint_id: complaint.id,
         title: 'Citizen feedback received',
-        message: `${complaint.title} received citizen feedback and has been routed to Level 2 for final review.`,
+        message: `${complaint.title} received citizen feedback and has been routed to ${reviewRouting.review_level} for final review.`,
         href: '/admin/complaints',
       });
     }
@@ -1828,9 +1829,11 @@ export async function addComplaintRatingForUser(
   await invalidateComplaintReadCaches(complaint);
   revalidateTag('complaints', 'max');
   revalidateTag('dashboard', 'max');
-  const finalizedReviewRouting = reviewRouting as { assigned_officer_id: string; current_level: 'L2'; deadline: string } | null;
+  const finalizedReviewRouting = reviewRouting as { assigned_officer_id: string; current_level: 'L1' | 'L2' | 'L3'; deadline: string | null; review_level: 'L1' | 'L2' | 'L3' } | null;
   if (finalizedReviewRouting?.deadline) {
     await scheduleComplaintEscalation(complaint.id, finalizedReviewRouting.deadline);
+  } else if (complaint.deadline) {
+    await scheduleComplaintEscalation(complaint.id, complaint.deadline);
   }
   return getComplaintRating(complaint.id);
 }

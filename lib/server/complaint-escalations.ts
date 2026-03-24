@@ -483,7 +483,7 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
       `,
       [
         complaint.id,
-        `Complaint auto-escalated from ${complaint.current_level} to ${nextLevel}${toOfficerName ? ` and assigned to ${toOfficerName}` : ''} because the due time expired.`,
+        `Complaint auto-escalated into ${nextLevel} higher-level monitoring after the ${complaint.current_level} due time expired${toOfficerName ? ` and is now under ${toOfficerName}` : ''}.`,
       ],
     );
 
@@ -501,8 +501,8 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
       await createNotificationForUser(client, {
         user_id: nextOfficerUserId,
         complaint_id: complaint.id,
-        title: 'Complaint auto-escalated to you',
-        message: `${complaint.title} crossed its ${complaint.current_level} due time and has been moved to your ${nextLevel} queue.`,
+        title: 'Higher-level monitoring activated',
+        message: `${complaint.title} crossed its ${complaint.current_level} due time and now requires your ${nextLevel} monitoring.`,
         href: getOfficerHomePath(nextLevel),
       });
     }
@@ -510,8 +510,8 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
     await createNotificationForUser(client, {
       user_id: complaint.user_id,
       complaint_id: complaint.id,
-      title: 'Complaint auto-escalated',
-      message: `${complaint.title} was not completed at ${complaint.current_level} in time and has been forwarded to ${nextLevel}.`,
+      title: 'Higher-level monitoring activated',
+      message: `${complaint.title} missed the ${complaint.current_level} review window and has moved to ${nextLevel} for higher-level monitoring.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 

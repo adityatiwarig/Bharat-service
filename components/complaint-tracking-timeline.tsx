@@ -42,9 +42,13 @@ const stateStyles = {
   },
 } as const;
 
-function getProgressPercent(total: number, activeIndex: number) {
+function getProgressPercent(total: number, activeIndex: number, onFinalStage: boolean) {
   if (total <= 1) {
     return 100;
+  }
+
+  if (onFinalStage) {
+    return 92;
   }
 
   const completedSegments = Math.max(0, activeIndex);
@@ -53,10 +57,14 @@ function getProgressPercent(total: number, activeIndex: number) {
 
 export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: ComplaintTrackingTimelineProps) {
   const tracker = buildComplaintTrackerSnapshot(complaint);
-  const currentIndex = Math.max(0, tracker.timeline.findIndex((step) => step.state === 'current'));
-  const resolvedStages = tracker.timeline.filter((step) => step.state === 'completed').length;
-  const activeStep = tracker.timeline[currentIndex] || tracker.timeline[0];
-  const progressPercent = getProgressPercent(tracker.timeline.length, currentIndex);
+  const explicitCurrentIndex = tracker.timeline.findIndex((step) => step.state === 'current');
+  const fallbackActiveIndex = Math.max(0, tracker.timeline.map((step) => step.state).lastIndexOf('completed'));
+  const activeIndex = explicitCurrentIndex >= 0 ? explicitCurrentIndex : fallbackActiveIndex;
+  const reachedStages = tracker.timeline.filter((step) => step.state !== 'upcoming').length;
+  const activeStep = tracker.timeline[activeIndex] || tracker.timeline[0];
+  const progressPercent = tracker.citizenJourneyCompleted
+    ? 100
+    : getProgressPercent(tracker.timeline.length, activeIndex, activeIndex === tracker.timeline.length - 1);
 
   return (
     <section className="overflow-hidden rounded-[1.6rem] border border-slate-300 bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfe_100%)] shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
@@ -74,8 +82,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
             </div>
             <h2 className="mt-2 text-xl font-semibold text-slate-950">Live complaint movement tracker</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Each completed stage is automatically connected in sequence so the full complaint journey remains easy to
-              follow as an official service workflow.
+              This tracker follows 5 official service phases: receipt, review and assignment, field action, completion verification, and closure. Delays, escalations, and reopen actions are reflected as live updates within these phases.
             </p>
           </div>
 
@@ -85,9 +92,9 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
               <div className="mt-2 text-sm font-semibold text-slate-950">{tracker.currentStageTitle}</div>
             </div>
             <div className="rounded-[1.1rem] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Completed</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Stages Reached</div>
               <div className="mt-2 text-sm font-semibold text-slate-950">
-                {resolvedStages}/{tracker.timeline.length} stages
+                {reachedStages}/{tracker.timeline.length} stages
               </div>
             </div>
             <div className="rounded-[1.1rem] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
@@ -111,7 +118,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
 
           <div className="rounded-[1.2rem] border border-slate-200 bg-white px-4 py-4">
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-slate-900">Process Completion</span>
+              <span className="font-semibold text-slate-900">Workflow Progress</span>
               <span className="font-medium text-slate-600">{progressPercent}%</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
@@ -125,6 +132,11 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
               {' '}
               <span className="font-semibold text-slate-950">{activeStep.title}</span>
             </div>
+            {tracker.citizenJourneyCompleted ? (
+              <div className="mt-3 rounded-[0.95rem] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
+                Citizen-facing tracking has been completed for this complaint.
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -132,8 +144,8 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
       <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-5 sm:px-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-slate-950">Chained Stage Overview</div>
-            <div className="mt-1 text-sm text-slate-600">Completed steps connect automatically as the complaint moves forward.</div>
+            <div className="text-sm font-semibold text-slate-950">Official Phase Chain</div>
+            <div className="mt-1 text-sm text-slate-600">The 5-phase chain below remains fixed while live service activity updates inside the relevant phase.</div>
           </div>
         </div>
 
@@ -192,6 +204,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
           {tracker.timeline.map((step, index) => {
             const style = stateStyles[step.state];
             const isLast = index === tracker.timeline.length - 1;
+            const highlights = tracker.phaseHighlights[step.key] || [];
             const statusIcon =
               step.state === 'completed'
                 ? <BadgeCheck className="h-4 w-4" />
@@ -251,6 +264,22 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                           <div className="mt-1 text-sm leading-6 text-slate-700">{step.description}</div>
                         </div>
                       </div>
+
+                      {highlights.length ? (
+                        <div className="mt-3 rounded-[0.85rem] border border-white/70 bg-white/80 px-3 py-2.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Live Highlights
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {highlights.map((highlight) => (
+                              <div key={highlight} className="flex items-start gap-2 text-sm leading-6 text-slate-700">
+                                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                <span>{highlight}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="border-t border-slate-200/70 bg-white/80 px-4 py-4 lg:border-t-0 lg:border-l lg:px-5">
@@ -302,9 +331,9 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                 <div className="text-sm font-semibold text-slate-950">Resolution verification lane</div>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   {tracker.feedbackSubmitted
-                    ? 'Citizen feedback has already been added to the official complaint record.'
+                    ? 'Citizen feedback has already been added to the official complaint record and remains visible below.'
                     : tracker.waitingForFeedback
-                      ? 'Work proof has been uploaded. Citizen confirmation can now help the department close the complaint faster.'
+                      ? 'Work proof has been uploaded. Citizen confirmation can now move the complaint into its final review cycle.'
                       : 'Work proof will appear here automatically once field execution is completed.'}
                 </p>
               </div>

@@ -6,6 +6,9 @@ import { createComplaintForUser, listComplaintsForUser } from '@/lib/server/comp
 
 export const runtime = 'nodejs';
 
+const MAX_COMPLAINT_ATTACHMENTS = 6;
+const MAX_COMPLAINT_ATTACHMENT_SIZE = 8 * 1024 * 1024;
+
 function parseBoolean(value: string | null) {
   return value === 'true' || value === '1';
 }
@@ -87,6 +90,38 @@ export async function POST(request: Request) {
       .getAll('attachments')
       .filter((value): value is File => value instanceof File && value.size > 0);
 
+    if (!attachments.length) {
+      return NextResponse.json(
+        { error: 'Upload at least one complaint photo before submitting the complaint.' },
+        { status: 400 },
+      );
+    }
+
+    if (attachments.length > MAX_COMPLAINT_ATTACHMENTS) {
+      return NextResponse.json(
+        { error: `You can upload up to ${MAX_COMPLAINT_ATTACHMENTS} complaint photos only.` },
+        { status: 400 },
+      );
+    }
+
+    const invalidAttachment = attachments.find((file) => !file.type.startsWith('image/'));
+
+    if (invalidAttachment) {
+      return NextResponse.json(
+        { error: 'Only image files are allowed for citizen complaint photos.' },
+        { status: 400 },
+      );
+    }
+
+    const oversizedAttachment = attachments.find((file) => file.size > MAX_COMPLAINT_ATTACHMENT_SIZE);
+
+    if (oversizedAttachment) {
+      return NextResponse.json(
+        { error: 'Each complaint photo must be 8 MB or smaller.' },
+        { status: 400 },
+      );
+    }
+
     if (
       !applicant_name ||
       !applicant_mobile ||
@@ -103,7 +138,7 @@ export async function POST(request: Request) {
       category_id <= 0
     ) {
       return NextResponse.json(
-        { error: 'Zone, ward, department, category, applicant details, and complaint details are required.' },
+        { error: 'Zone, ward, department, category, applicant details, complaint details, and at least one photo are required.' },
         { status: 400 },
       );
     }

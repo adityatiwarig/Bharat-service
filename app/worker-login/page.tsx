@@ -19,12 +19,12 @@ const panels = [
   },
   {
     title: 'L2 Dashboard',
-    description: 'Escalated complaints that were manually forwarded from L1.',
+    description: 'Monitoring and review desk for complaints whose L1 field window has expired.',
     icon: Shield,
   },
   {
     title: 'L3 Dashboard',
-    description: 'Final officer escalation queue before administrative intervention.',
+    description: 'Final monitoring and closure review desk for complaints delayed beyond L2 review.',
     icon: UserCog,
   },
   {

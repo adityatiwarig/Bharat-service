@@ -382,7 +382,7 @@ export async function markComplaintReachedByL3(complaintId: string) {
   return data.result;
 }
 
-export async function uploadComplaintProofByL3(
+export async function uploadComplaintProofByL1Field(
   complaintId: string,
   input: { image: File; description?: string },
 ) {
@@ -411,11 +411,25 @@ export async function uploadComplaintProofByL3(
   return data.proof;
 }
 
+export async function uploadComplaintProofByL1Execution(
+  complaintId: string,
+  input: { image: File; description?: string },
+) {
+  return uploadComplaintProofByL1Field(complaintId, input);
+}
+
 export async function uploadComplaintProofByExecutionOfficer(
   complaintId: string,
   input: { image: File; description?: string },
 ) {
-  return uploadComplaintProofByL3(complaintId, input);
+  return uploadComplaintProofByL1Execution(complaintId, input);
+}
+
+export async function uploadComplaintProofByL3(
+  complaintId: string,
+  input: { image: File; description?: string },
+) {
+  return uploadComplaintProofByL1Field(complaintId, input);
 }
 
 export async function markComplaintResolvedByL3(complaintId: string, note?: string) {
@@ -435,7 +449,7 @@ export async function markComplaintResolvedByL3(complaintId: string, note?: stri
   return data.result;
 }
 
-export async function closeComplaintByL2Review(complaintId: string, note?: string) {
+export async function closeComplaintByReviewDesk(complaintId: string, note?: string) {
   const data = await fetchJson<{
     success: boolean;
     result: {
@@ -452,7 +466,11 @@ export async function closeComplaintByL2Review(complaintId: string, note?: strin
   return data.result;
 }
 
-export async function reopenComplaintByL2Review(complaintId: string, note?: string) {
+export async function closeComplaintByL2Review(complaintId: string, note?: string) {
+  return closeComplaintByReviewDesk(complaintId, note);
+}
+
+export async function reopenComplaintByReviewDesk(complaintId: string, note?: string) {
   const data = await fetchJson<{
     success: boolean;
     result: {
@@ -468,6 +486,10 @@ export async function reopenComplaintByL2Review(complaintId: string, note?: stri
 
   invalidateComplaintCache(complaintId);
   return data.result;
+}
+
+export async function reopenComplaintByL2Review(complaintId: string, note?: string) {
+  return reopenComplaintByReviewDesk(complaintId, note);
 }
 
 export async function sendReminderToL1FromL2(complaintId: string, note?: string) {

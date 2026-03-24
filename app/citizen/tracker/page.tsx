@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   buildComplaintTrackerSnapshot,
   formatTrackerDateTime,
+  normalizeCitizenFacingNote,
   type ComplaintTrackerSnapshot,
 } from '@/lib/complaint-tracker';
 import { fetchComplaintById, fetchComplaints, rateComplaint } from '@/lib/client/complaints';
@@ -169,7 +170,7 @@ function buildComplaintReportPdf({
     ['Complaint ID', complaint.complaint_id],
     ['Status', tracker.humanStatus],
     ['Department', tracker.departmentLabel],
-    ['Assigned Supervisor', tracker.assignmentLabel || 'Not assigned'],
+    ['Current Handling Desk', tracker.assignmentLabel || 'Not assigned'],
     ['Current Stage', tracker.currentStageTitle],
     ['Last Updated', tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : 'Not yet updated'],
     ['Last Synced', lastSyncedAt ? formatTrackerDateTime(lastSyncedAt) : 'Not yet updated'],
@@ -439,11 +440,24 @@ function buildComplaintReportPdf({
   addSectionHeading('Complaint Description');
   addParagraphBlock(getPdfText(complaint.text));
 
+  addSectionHeading('Citizen Submitted Evidence');
+  addDetailRow(
+    'Photographs Attached',
+    complaint.attachments?.length
+      ? `${complaint.attachments.length} photograph(s) were submitted with the original complaint.`
+      : 'No complaint photographs are recorded.',
+  );
+  if (complaint.attachments?.length) {
+    addParagraphBlock(
+      `Citizen Evidence File Reference: ${complaint.attachments.map((attachment) => attachment.url).join(', ')}\nOpen the complaint tracker portal for image preview and verification.`,
+    );
+  }
+
   addSectionHeading('Official Progress Log');
   tracker.timeline.forEach((step, index) => addProgressRecord(step, index));
 
-  addSectionHeading('Assigned Supervisor Details');
-  addDetailRow('Assigned Supervisor', getPdfText(tracker.assignmentLabel, 'Not assigned'));
+  addSectionHeading('Current Handling Desk');
+  addDetailRow('Handling Desk', getPdfText(tracker.assignmentLabel, 'Not assigned'));
   addDetailRow('Department', getPdfText(tracker.departmentLabel));
   addDetailRow('Status', getPdfText(tracker.assignmentStatusLabel));
   addDetailRow('Assignment Note', getPdfText(tracker.assignmentDescription));
@@ -465,7 +479,12 @@ function buildComplaintReportPdf({
   addDetailRow('Description', getPdfText(complaint.proof_text));
   addDetailRow(
     'Submitted Timestamp',
-    formatTrackerDateTime(complaint.resolved_at || tracker.timeline.find((step) => step.key === 'proof_uploaded')?.timestamp || null),
+    formatTrackerDateTime(
+      complaint.resolved_at ||
+      complaint.completed_at ||
+      tracker.timeline.find((step) => step.key === 'completion_verification')?.timestamp ||
+      complaint.updated_at,
+    ),
   );
   addDetailRow('Evidence Status', tracker.proofSubmitted ? 'Evidence available in complaint record' : 'Pending action');
   const proofImageLinks = complaint.proof_images?.length
@@ -607,6 +626,29 @@ export default function TrackerPage() {
     void loadComplaintSummary(complaintId);
   }, [complaintId, loadComplaintSummary]);
 
+  useEffect(() => {
+    const liveComplaintId = complaint?.complaint_id || complaintId;
+
+    if (!liveComplaintId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      fetchComplaintById(liveComplaintId, { view: 'full', force: true })
+        .then((nextComplaint) => {
+          setComplaint(nextComplaint);
+          setLastSyncedAt(new Date().toISOString());
+        })
+        .catch((pollError) => {
+          console.error('Unable to refresh complaint tracker automatically', pollError);
+        });
+    }, 20000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [complaint?.complaint_id, complaintId]);
+
   function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -692,16 +734,24 @@ function handleExportReport() {
 
   const proofSubmittedAt =
     complaint?.resolved_at ||
-    tracker?.timeline.find((step) => step.key === 'proof_uploaded')?.timestamp ||
+    complaint?.completed_at ||
+    tracker?.timeline.find((step) => step.key === 'completion_verification')?.timestamp ||
+    complaint?.updated_at ||
     null;
+  const submittedAttachments = complaint?.attachments || [];
   const proofImages = complaint?.proof_images?.length
     ? complaint.proof_images
     : complaint?.proof_image
       ? [complaint.proof_image]
       : [];
-  const canRateResolution = complaint?.status === 'resolved';
+  const canRateResolution = complaint?.status === 'resolved' || tracker?.waitingForFeedback;
   const isExpiredComplaint = complaint?.status === 'expired';
   const updateCount = complaint?.updates?.length || 0;
+  const citizenRatingLabel = complaint?.rating
+    ? `${complaint.rating.rating}/5${complaint.rating.rating >= 4 ? ' - Satisfied' : ' - Review Required'}`
+    : tracker?.waitingForFeedback
+      ? 'Pending citizen confirmation'
+      : 'Not yet submitted';
 
   return (
     <DashboardLayout title="Complaint Tracker" compactCitizenHeader>
@@ -719,7 +769,7 @@ function handleExportReport() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-950">Citizen Complaint Tracking System</h1>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-                  This portal provides structured L1, L2, and L3 visibility, live field-work progress, official proof records, and citizen feedback submission.
+                  This portal provides real-time complaint progress, field-work visibility, official evidence records, and citizen feedback submission in one verified tracking journey.
                 </p>
               </div>
               <Button
@@ -788,7 +838,7 @@ function handleExportReport() {
                   <SummaryField label="Complaint ID" value={complaint.complaint_id} />
                   <SummaryField label="Department" value={tracker.departmentLabel} />
                   <SummaryField
-                    label="Assigned Supervisor"
+                    label="Current Handling Desk"
                     value={tracker.assignmentLabel || 'Not assigned'}
                   />
                   <SummaryField label="Current Stage" value={tracker.currentStageTitle} />
@@ -825,6 +875,35 @@ function handleExportReport() {
                     </div>
                   ) : null}
 
+                  <div className="border border-slate-200 bg-white px-4 py-4">
+                    <div className="text-sm font-semibold text-slate-950">Citizen Submitted Photos</div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {submittedAttachments.length
+                        ? `${submittedAttachments.length} photograph${submittedAttachments.length > 1 ? 's were' : ' was'} submitted with the original complaint and saved in the complaint record.`
+                        : 'No complaint photographs are available in this record.'}
+                    </div>
+
+                    {submittedAttachments.length ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {submittedAttachments.map((attachment, index) => (
+                          <a
+                            key={attachment.id || `${attachment.url}-${index}`}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="border border-slate-200 bg-slate-50 p-2"
+                          >
+                            <img
+                              src={attachment.url}
+                              alt={`Citizen submitted evidence ${index + 1}`}
+                              className="max-h-72 w-full object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
                   {detailsLoading ? (
                     <LoadingSummary label="Fetching latest updates..." description="Administrative records are being loaded." className="rounded-none" />
                   ) : complaint.updates?.length ? (
@@ -836,7 +915,7 @@ function handleExportReport() {
                             <div>
                               <div className="text-sm font-semibold text-slate-950">Record {updateCount - index}</div>
                               <div className="mt-1 text-sm leading-6 text-slate-600">
-                                {update.note || 'Status update recorded by the department.'}
+                                {normalizeCitizenFacingNote(update.note) || 'Status update recorded by the department.'}
                               </div>
                             </div>
                             <div className="text-xs text-slate-500">{formatTrackerDateTime(update.updated_at)}</div>
@@ -850,14 +929,14 @@ function handleExportReport() {
 
               <div className="space-y-6">
                 <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title="Assigned Officer Details" description="Current L1, L2, or L3 assignment record without exposing officer identity." />
+                  <SectionHeading title="Assignment Details" description="Current official handling desk and service responsibility without exposing internal officer identity." />
                   <CardContent className="px-5 py-5">
                     {detailsLoading ? (
-                      <LoadingSummary label="Fetching latest updates..." description="Supervisor assignment details are being loaded." className="rounded-none" />
+                      <LoadingSummary label="Fetching latest updates..." description="Handling desk details are being loaded." className="rounded-none" />
                     ) : (
                       <div className="border border-slate-200 bg-slate-50">
                         <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">Assigned Supervisor</div>
+                          <div className="font-semibold text-slate-900">Handling Desk</div>
                           <div className="text-slate-700">{tracker.assignmentLabel || 'Not assigned'}</div>
                         </div>
                         <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
@@ -878,12 +957,23 @@ function handleExportReport() {
                 </Card>
 
                 <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title="Work Completion Evidence" description="Evidence submitted after complaint resolution." />
+                  <SectionHeading title="Work Completion Evidence" description="Evidence submitted by the assigned field officer at the stage where work was completed." />
                   <CardContent className="space-y-4 px-5 py-5">
                     {detailsLoading ? (
                       <LoadingSummary label="Fetching latest updates..." description="Evidence records are being loaded." className="rounded-none" />
                     ) : tracker.proofSubmitted ? (
                       <>
+                        <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
+                          <div className="text-sm font-semibold text-slate-950">Citizen Verification Status</div>
+                          <div className="mt-2 text-sm leading-6 text-slate-700">
+                            {complaint.rating
+                              ? 'Citizen verification has been submitted for the uploaded work evidence.'
+                              : tracker.waitingForFeedback
+                                ? 'The assigned officer has uploaded work completion evidence. Citizen feedback can now be submitted from this page.'
+                                : tracker.feedbackDeskDescription || 'Uploaded work evidence remains available here for citizen review.'}
+                          </div>
+                        </div>
+
                         <div className="border border-slate-200 bg-slate-50">
                           <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
                             <div className="font-semibold text-slate-900">Description</div>
@@ -894,6 +984,19 @@ function handleExportReport() {
                             <div className="text-slate-700">{formatTrackerDateTime(proofSubmittedAt)}</div>
                           </div>
                         </div>
+
+                        {tracker.feedbackDeskLabel ? (
+                          <div className="border border-slate-200 bg-white">
+                            <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
+                              <div className="font-semibold text-slate-900">Review Desk</div>
+                              <div className="text-slate-700">{tracker.feedbackDeskLabel}</div>
+                            </div>
+                            <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
+                              <div className="font-semibold text-slate-900">Review Note</div>
+                              <div className="text-slate-700">{tracker.feedbackDeskDescription || 'Not yet updated'}</div>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {proofImages.length ? (
                           <div className="grid gap-3 sm:grid-cols-2">
@@ -928,7 +1031,7 @@ function handleExportReport() {
                     <SectionHeading title="Complaint Expired" description="This complaint can no longer continue in the existing workflow." />
                     <CardContent className="space-y-4 px-5 py-5">
                       <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                        The complaint crossed the fixed 1-day Level 3 SLA and expired. If the issue still exists, please create a new complaint with the latest details and evidence.
+                        The complaint expired before closure could be completed. If the issue still exists, please create a new complaint with the latest details and evidence.
                       </div>
                       <Button asChild className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]">
                         <Link href="/citizen/submit">Create New Complaint</Link>
@@ -937,17 +1040,53 @@ function handleExportReport() {
                   </Card>
                 ) : (complaint.rating || canRateResolution) ? (
                   <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                    <SectionHeading title="Citizen Feedback" description="Rate the complaint resolution after evidence review." />
+                    <SectionHeading title="Citizen Feedback" description="Citizen verification, rating, and remarks for the uploaded completion evidence." />
                     <CardContent className="space-y-5 px-5 py-5">
                       {detailsLoading ? (
                         <LoadingSummary label="Fetching latest updates..." description="Feedback records are being loaded." className="rounded-none" />
                       ) : (
                         <>
+                          <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Verification Status</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-950">{citizenRatingLabel}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tracking Status</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-950">
+                                  {tracker?.citizenJourneyCompleted
+                                    ? 'Citizen-facing tracking completed'
+                                    : tracker?.waitingForFeedback
+                                      ? 'Waiting for citizen feedback'
+                                      : tracker?.feedbackDeskLabel || 'Under official processing'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {tracker?.feedbackDeskLabel ? (
+                            <div className="border border-slate-200 bg-white">
+                              <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
+                                <div className="font-semibold text-slate-900">Current Review Desk</div>
+                                <div className="text-slate-700">{tracker.feedbackDeskLabel}</div>
+                              </div>
+                              <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
+                                <div className="font-semibold text-slate-900">Review Note</div>
+                                <div className="text-slate-700">{tracker.feedbackDeskDescription || 'Not yet updated'}</div>
+                              </div>
+                            </div>
+                          ) : null}
+
                           {complaint.rating ? (
                             <div className="border border-slate-200 bg-slate-50">
                               <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
                                 <div className="font-semibold text-slate-900">Submitted Rating</div>
                                 <div className="text-slate-700">{complaint.rating.rating}/5</div>
+                              </div>
+                              <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
+                                <div className="font-semibold text-slate-900">Assessment</div>
+                                <div className="text-slate-700">{complaint.rating.rating >= 4 ? 'Satisfied' : 'Review Required'}</div>
                               </div>
                               <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
                                 <div className="font-semibold text-slate-900">Feedback Note</div>
@@ -958,6 +1097,10 @@ function handleExportReport() {
 
                           {canRateResolution ? (
                             <>
+                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
+                                Review the uploaded work evidence and submit your rating. If the work is satisfactory, your feedback will move the complaint into its final closure review. If the work is not satisfactory, the complaint may be returned for fresh action.
+                              </div>
+
                               <div className="grid grid-cols-5 gap-2">
                                 {[1, 2, 3, 4, 5].map((value) => (
                                   <Button
@@ -1024,7 +1167,7 @@ function handleExportReport() {
                   Use the complaint ID search above anytime to reopen this same complaint view.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Supervisor movement, department messages, and work completion evidence will appear here once published.
+                  Handling-desk movement, department messages, and work completion evidence will appear here once published.
                 </div>
                 <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
                   After complaint completion, you can review the proof and submit formal citizen feedback from this page.
