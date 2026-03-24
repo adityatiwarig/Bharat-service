@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'leaflet/dist/leaflet.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -434,6 +435,191 @@
     border: 1px solid rgba(203, 213, 225, 0.95);
     background: rgba(255, 255, 255, 0.92);
     color: rgb(71 85 105);
+  }
+
+  .ward-heatmap-surface {
+    min-height: 24rem;
+    background: #f8fafc;
+  }
+
+  .ward-heatmap-surface .leaflet-container {
+    height: 100%;
+    width: 100%;
+    background: #f8fafc;
+    font-family: var(--font-plus-jakarta);
+    overscroll-behavior: contain;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ward-heatmap-surface .leaflet-control-zoom {
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: none;
+  }
+
+  .ward-heatmap-surface .leaflet-control-zoom a {
+    color: #0f172a;
+    background: #ffffff;
+  }
+
+  .ward-heatmap-surface .leaflet-control-attribution {
+    background: rgba(255, 255, 255, 0.9);
+    color: #475569;
+  }
+
+  .ward-heatmap-surface .leaflet-control-attribution a {
+    color: #0b3c5d;
+  }
+
+  .ward-heatmap-tooltip,
+  .ward-heatmap-popup .leaflet-popup-content-wrapper {
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 0.5rem;
+    background: #ffffff;
+    box-shadow: none;
+    color: #0f172a;
+  }
+
+  .ward-heatmap-tooltip {
+    padding: 0;
+  }
+
+  .ward-heatmap-tooltip .leaflet-tooltip-content,
+  .ward-heatmap-popup .leaflet-popup-content {
+    margin: 0;
+  }
+
+  .ward-heatmap-tooltip-card {
+    min-width: 8.8rem;
+    padding: 0.55rem 0.7rem;
+  }
+
+  .ward-heatmap-tooltip-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .ward-heatmap-tooltip-count {
+    margin-top: 0.2rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .ward-heatmap-popup .leaflet-popup-tip {
+    background: #ffffff;
+  }
+
+  .ward-heatmap-popup-card {
+    min-width: 13rem;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .ward-heatmap-popup-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .ward-heatmap-popup-row {
+    margin-top: 0.45rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.76rem;
+    color: #475569;
+  }
+
+  .ward-heatmap-popup-row strong {
+    color: #0f172a;
+  }
+
+  .ward-heatmap-popup-list {
+    margin: 0.7rem 0 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.95);
+    padding: 0.55rem 0 0;
+    list-style: none;
+  }
+
+  .ward-heatmap-popup-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.22rem 0;
+    font-size: 0.74rem;
+    color: #334155;
+  }
+
+  .ward-heatmap-cluster-shell {
+    background: transparent;
+    border: 0;
+  }
+
+  .ward-heatmap-cluster-bubble {
+    display: flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 2px solid var(--cluster-border, #0f172a);
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 700;
+    box-shadow: 0 0 0 8px var(--cluster-soft, rgba(15, 23, 42, 0.12));
+  }
+
+  .ward-heatmap-count-shell {
+    background: transparent;
+    border: 0;
+  }
+
+  .ward-heatmap-count-badge {
+    display: inline-flex;
+    min-width: 2rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--ward-count-border, #0f172a);
+    border-radius: 9999px;
+    background: #ffffff;
+    padding: 0.12rem 0.45rem;
+    color: var(--ward-count-accent, #0f172a);
+    font-size: 0.68rem;
+    font-weight: 700;
+    box-shadow: 0 0 0 5px var(--ward-count-soft, rgba(15, 23, 42, 0.08));
+  }
+
+  .ward-heatmap-label-shell {
+    background: transparent;
+    border: 0;
+  }
+
+  .ward-heatmap-label-card {
+    display: inline-flex;
+    min-width: 5.5rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    border: 1px solid rgba(203, 213, 225, 0.96);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.96);
+    padding: 0.18rem 0.5rem;
+  }
+
+  .ward-heatmap-label-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #0f172a;
+  }
+
+  .ward-heatmap-label-count {
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: #475569;
   }
 
   .gov-scrollbar {

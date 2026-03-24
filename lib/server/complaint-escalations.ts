@@ -268,7 +268,10 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
             assigned_officer_id = $2,
             current_level = 'L2',
             deadline = $3,
-            status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'l1_deadline_missed' END,
+            status = CASE
+              WHEN status = 'resolved' THEN 'resolved'::complaint_status
+              ELSE 'l1_deadline_missed'::complaint_status
+            END,
             updated_at = NOW(),
             department_message = $4
           WHERE id = $1
@@ -362,7 +365,10 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
             assigned_officer_id = $2,
             current_level = 'L3',
             deadline = $3,
-            status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'l2_deadline_missed' END,
+            status = CASE
+              WHEN status = 'resolved' THEN 'resolved'::complaint_status
+              ELSE 'l2_deadline_missed'::complaint_status
+            END,
             updated_at = NOW(),
             department_message = $4
           WHERE id = $1
@@ -492,9 +498,16 @@ export async function processDueComplaintEscalations(limit = 25) {
   let changed = false;
 
   for (const complaintId of complaintIds) {
-    const result = await processComplaintEscalationById(complaintId);
-    results.push(result);
-    changed ||= result.action === 'escalated' || result.action === 'locked';
+    try {
+      const result = await processComplaintEscalationById(complaintId);
+      results.push(result);
+      changed ||= result.action === 'escalated' || result.action === 'locked';
+    } catch (error) {
+      console.error('Failed to process complaint escalation sweep item', {
+        complaintId,
+        error,
+      });
+    }
   }
 
   if (changed) {
@@ -514,6 +527,10 @@ export async function maybeProcessDueComplaintEscalations(options: { limit?: num
 
   if (!escalationSweepPromise) {
     escalationSweepPromise = processDueComplaintEscalations(options.limit || 10)
+      .catch((error) => {
+        console.error('Failed to process due complaint escalations', error);
+        return [];
+      })
       .finally(() => {
         lastEscalationSweepAt = Date.now();
         escalationSweepPromise = null;

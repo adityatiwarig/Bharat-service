@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { Complaint, ComplaintProofData, ComplaintTimelineData } from '@/lib/types';
+import { COMPLAINT_ANALYTICS_CACHE_KEYS } from '@/lib/server/analytics-cache';
 import { deleteRedisKeys, getRedisJson, setRedisJson } from '@/lib/server/redis-cache';
 
 const COMPLAINT_SUMMARY_TTL_SECONDS = 60;
@@ -110,6 +111,7 @@ export async function invalidateComplaintCache(complaintId: string, identifiers:
     complaintSummaryCacheKey(complaintId),
     complaintTimelineCacheKey(complaintId),
     complaintProofCacheKey(complaintId),
+    ...COMPLAINT_ANALYTICS_CACHE_KEYS,
     ...identifiers
       .map((identifier) => identifier?.trim())
       .filter(Boolean)
