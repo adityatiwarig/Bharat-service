@@ -245,7 +245,11 @@ function findLatestUpdateByNote(updates: ComplaintUpdate[], matcher: (note: stri
   return [...updates].reverse().find((update) => matcher(update.note?.toLowerCase() || '')) || null;
 }
 
-function formatDepartmentLabel(department: string) {
+function formatDepartmentLabel(department?: string | null) {
+  if (!department) {
+    return 'Not assigned';
+  }
+
   return department
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -506,7 +510,7 @@ function buildAssignmentSummary(input: {
 export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTrackerSnapshot {
   const updates = sortUpdatesAsc(complaint.updates);
   const departmentMessage = normalizeCitizenFacingNote(complaint.department_message) || null;
-  const departmentLabel = formatDepartmentLabel(complaint.department);
+  const departmentLabel = complaint.department_name?.trim() || formatDepartmentLabel(complaint.department);
   const priorityLabel = formatPriorityLabel(complaint.priority);
   const satisfaction = normalizeComplaintSatisfaction(complaint);
 

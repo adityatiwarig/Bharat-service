@@ -178,6 +178,30 @@ export interface ComplaintAttachment {
   url: string;
   content_type: string;
   size: number;
+  original_url?: string | null;
+  geo_tagged_url?: string | null;
+  geo?: GeoEvidenceMetadata | null;
+}
+
+export type GeoVerificationStatus =
+  | 'geo_verified'
+  | 'location_captured'
+  | 'location_mismatch'
+  | 'not_verified';
+
+export interface GeoEvidenceMetadata {
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  city?: string | null;
+  area?: string | null;
+  captured_at?: string | null;
+  source?: 'camera' | 'upload' | 'unknown';
+  location_available?: boolean;
+  verification_status?: GeoVerificationStatus;
+  verification_label?: string | null;
+  distance_from_complaint_meters?: number | null;
+  accepted_radius_meters?: number | null;
 }
 
 export interface ComplaintUpdate {

@@ -8,8 +8,23 @@ import {
   reopenComplaintByDeptHead,
   updateComplaintStatusForUser,
 } from '@/lib/server/complaints';
+import type { GeoEvidenceMetadata } from '@/lib/types';
 
 export const runtime = 'nodejs';
+
+function parseGeoMetadataEntries(entries: FormDataEntryValue[]): Array<GeoEvidenceMetadata | null> {
+  return entries.map((entry) => {
+    if (typeof entry !== 'string' || !entry.trim()) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(entry) as GeoEvidenceMetadata;
+    } catch {
+      return null;
+    }
+  });
+}
 
 export async function GET(
   request: Request,
@@ -69,6 +84,10 @@ export async function PATCH(
       const proof_images = formData
         .getAll('proof_images')
         .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+      const proof_image_originals = formData
+        .getAll('proof_image_originals')
+        .map((entry) => (entry instanceof File && entry.size > 0 ? entry : null));
+      const proof_image_metadata = parseGeoMetadataEntries(formData.getAll('proof_image_metadata'));
 
       if (!status) {
         return NextResponse.json({ error: 'Status is required.' }, { status: 400 });
@@ -80,6 +99,11 @@ export async function PATCH(
         proof_text,
         proof_image,
         proof_images,
+        proof_geo_evidence: proof_images.map((file, index) => ({
+          file,
+          originalFile: proof_image_originals[index] || undefined,
+          metadata: proof_image_metadata[index] || undefined,
+        })),
       });
 
       return NextResponse.json({ complaint });

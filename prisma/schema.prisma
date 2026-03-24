@@ -274,6 +274,19 @@ model ComplaintProof {
   @@map("complaint_proofs")
 }
 
+model FileUpload {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stored_name  String
+  original_name String
+  content_type String
+  size         Int
+  file_data    Bytes
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)], map: "idx_file_uploads_created")
+  @@map("file_uploads")
+}
+
 model notifications {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id      String     @db.Uuid

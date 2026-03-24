@@ -14,12 +14,13 @@ import { AuthError } from '@/lib/server/auth';
 import type { DbTransactionClient } from '@/lib/server/db';
 import { query, withTransaction } from '@/lib/server/db';
 import { createNotificationForUser } from '@/lib/server/notifications';
-import { saveProofImage } from '@/lib/server/uploads';
+import { saveGeoEvidenceProofImage, saveProofImage } from '@/lib/server/uploads';
 import type {
   Complaint,
   ComplaintHistoryAction,
   ComplaintLevel,
   ComplaintWorkStatus,
+  GeoEvidenceMetadata,
   Officer,
   OfficerLevel,
   OfficerRole,
@@ -1151,7 +1152,7 @@ export async function markComplaintReachedByL3(user: User, complaintId: string) 
 export async function uploadComplaintProofByL1(
   user: User,
   complaintId: string,
-  input: { image: File; description?: string },
+  input: { image: File; description?: string; originalImage?: File; metadata?: GeoEvidenceMetadata },
 ) {
   const officer = await requireOfficerProfile(user);
 
@@ -1191,7 +1192,9 @@ export async function uploadComplaintProofByL1(
       throw new AuthError('Start work before uploading proof.', 400);
     }
 
-    const proofImage = await saveProofImage(input.image, complaint.id);
+    const proofImage = input.metadata || input.originalImage
+      ? await saveGeoEvidenceProofImage(input.image, complaint.id, input.originalImage, input.metadata)
+      : await saveProofImage(input.image, complaint.id);
     const proofInsert = await client.query<{
       id: string;
       complaint_id: string;
