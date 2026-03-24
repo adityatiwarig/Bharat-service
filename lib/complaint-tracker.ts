@@ -145,8 +145,20 @@ export function normalizeCitizenFacingNote(note?: string | null) {
     return 'L2 supervisory monitoring is active and a reminder has been sent to the L1 field desk.';
   }
 
+  if (lower.includes('l3 reminder sent directly to l1')) {
+    return 'L3 senior monitoring is active and a direct reminder has been sent to the L1 field desk.';
+  }
+
   if (lower.includes('l3 reminder sent to l2')) {
     return 'L3 senior monitoring is active and a reminder has been sent to the L2 review desk.';
+  }
+
+  if (lower.includes('l1 deadline missed. the complaint remains assigned to l1 and is now visible to l2 for monitoring')) {
+    return 'The complaint crossed the first action timeline and is now under L2 supervisory monitoring while L1 continues field work.';
+  }
+
+  if (lower.includes('l2 deadline missed. the complaint remains assigned to l2 and is now visible to l3 for monitoring')) {
+    return 'The complaint crossed the second review timeline and is now under L3 senior monitoring while pending work continues.';
   }
 
   if (
@@ -175,6 +187,7 @@ export function formatAdministrativeUpdate(update: ComplaintUpdate) {
   const lower = rawNote.toLowerCase();
   const statusLabel = formatStatusTitle(update.status);
   const actorName = update.updated_by_name?.trim() || null;
+  const citizenNote = normalizeCitizenFacingNote(rawNote) || rawNote;
 
   let sourceLine = 'Recorded automatically by the workflow.';
 
@@ -188,7 +201,7 @@ export function formatAdministrativeUpdate(update: ComplaintUpdate) {
 
   return {
     title: statusLabel,
-    detail: rawNote ? `${sourceLine} ${rawNote}` : `${sourceLine} Status changed to ${statusLabel}.`,
+    detail: citizenNote ? `${sourceLine} ${citizenNote}` : `${sourceLine} Status changed to ${statusLabel}.`,
   };
 }
 
@@ -359,7 +372,8 @@ export function formatRelativeTimeFromNow(value?: string | null, now = Date.now(
 }
 
 function isClosedOrExpiredOrReopened(status: Complaint['status']) {
-  return status === 'closed' || status === 'expired' || status === 'reopened';
+  const normalizedStatus = String(status);
+  return normalizedStatus === 'closed' || normalizedStatus === 'expired' || normalizedStatus === 'reopened';
 }
 
 function resolveCurrentStepKey(input: {
@@ -530,11 +544,6 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     (note) => note.includes('routed back to l2') || note.includes('final review') || note.includes('pending level 1 review'),
   );
   const reopenedUpdate = findLatestUpdateByNote(updates, (note) => note.includes('reopened'));
-  const l1DelayUpdate = findLatestUpdateByStatus(updates, ['l1_deadline_missed']);
-  const l2DelayUpdate = findLatestUpdateByStatus(updates, ['l2_deadline_missed']);
-  const l2ReminderUpdate = findLatestUpdateByNote(updates, (note) => note.includes('l2 reminder sent to l1'));
-  const l3ReminderUpdate = findLatestUpdateByNote(updates, (note) => note.includes('l3 reminder sent to l2'));
-  const escalationUpdate = findLatestUpdateByNote(updates, (note) => note.includes('auto-escalated'));
   const closedUpdate =
     findLatestUpdateByStatus(updates, ['closed']) ||
     findLatestUpdateByNote(
@@ -552,9 +561,10 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
   );
   const waitingForFeedback =
     (complaint.status === 'resolved' || complaint.work_status === 'Awaiting Citizen Feedback') && !feedbackRecorded;
-  const reopenedForRework = complaint.status === 'reopened' || Boolean(
+  const complaintStatus = String(complaint.status);
+  const reopenedForRework = complaintStatus === 'reopened' || Boolean(
     reopenedUpdate &&
-    (complaint.status === 'assigned' || complaint.status === 'reopened' || complaint.status === 'in_progress'),
+    (complaintStatus === 'assigned' || complaintStatus === 'reopened' || complaintStatus === 'in_progress'),
   );
   const awaitingClosureReview = feedbackRecorded && !isClosedOrExpiredOrReopened(complaint.status);
   const feedbackSubmitted = feedbackRecorded;
@@ -638,34 +648,6 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
   );
   pushUniquePhaseHighlight(
     phaseHighlights,
-    'review_assignment',
-    l1DelayUpdate || complaint.status === 'l1_deadline_missed'
-      ? 'The first action timeline was crossed, so supervisory monitoring is now active.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
-    'review_assignment',
-    l2ReminderUpdate
-      ? 'A supervisory reminder has been issued to the field team after the recorded delay.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
-    'review_assignment',
-    escalationUpdate || isUnderSeniorMonitoring(complaint)
-      ? 'Higher review monitoring has been activated because the complaint required escalation handling.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
-    'review_assignment',
-    l3ReminderUpdate
-      ? 'A senior reminder has been issued during escalated monitoring.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
     'field_action',
     reachedUpdate || complaint.work_status === 'On Site'
       ? 'The field team has reached the complaint location for on-ground action.'
@@ -688,7 +670,7 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
   pushUniquePhaseHighlight(
     phaseHighlights,
     'field_action',
-    reopenedUpdate || complaint.status === 'reopened'
+    reopenedUpdate || complaintStatus === 'reopened'
       ? 'The complaint was reopened and sent back for fresh field action.'
       : null,
   );
@@ -718,20 +700,6 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     'closure',
     feedbackRoutedUpdate || awaitingClosureReview
       ? 'Citizen feedback has reached the active review desk for closure decision.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
-    'closure',
-    l2DelayUpdate || complaint.status === 'l2_deadline_missed'
-      ? 'The closure review timeline was crossed and the complaint is under senior monitoring.'
-      : null,
-  );
-  pushUniquePhaseHighlight(
-    phaseHighlights,
-    'closure',
-    complaint.status === 'l3_failed_back_to_l2'
-      ? 'The complaint was returned for further supervisory review after senior escalation handling.'
       : null,
   );
   pushUniquePhaseHighlight(

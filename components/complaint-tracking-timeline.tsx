@@ -82,7 +82,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
             </div>
             <h2 className="mt-2 text-xl font-semibold text-slate-950">Live complaint movement tracker</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              This tracker follows 5 official service phases: receipt, review and assignment, field action, completion verification, and closure. Delays, escalations, and reopen actions are reflected as live updates within these phases.
+              This tracker follows 5 official service phases: receipt, review and assignment, field action, completion verification, and closure. Supervisory reminders and escalation notes are kept separate from this main chain.
             </p>
           </div>
 

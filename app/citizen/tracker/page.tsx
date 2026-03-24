@@ -492,6 +492,38 @@ function SectionHeading({ title, description }: { title: string; description?: s
   );
 }
 
+function getOperationalLogTone(entry: { kind: 'update' | 'routing'; title: string; detail?: string | null }) {
+  const haystack = `${entry.title} ${entry.detail || ''}`.toLowerCase();
+
+  if (haystack.includes('reminder') || haystack.includes('monitoring') || haystack.includes('senior')) {
+    return 'amber';
+  }
+
+  if (haystack.includes('reopened') || haystack.includes('fresh action')) {
+    return 'rose';
+  }
+
+  if (entry.kind === 'routing') {
+    return 'sky';
+  }
+
+  return 'slate';
+}
+
+function isOperationalSubtimelineEntry(entry: { kind: 'update' | 'routing'; title: string; detail?: string | null }) {
+  const haystack = `${entry.title} ${entry.detail || ''}`.toLowerCase();
+
+  return (
+    entry.kind === 'routing' ||
+    haystack.includes('monitoring') ||
+    haystack.includes('reminder') ||
+    haystack.includes('reopened') ||
+    haystack.includes('fresh action') ||
+    haystack.includes('final review desk') ||
+    haystack.includes('closure review')
+  );
+}
+
 function DetailSkeletonBlock({ title }: { title: string }) {
   return (
     <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
@@ -524,6 +556,10 @@ export default function TrackerPage() {
 
   const tracker = useMemo(
     () => (complaint ? buildComplaintTrackerSnapshot(complaint) : null),
+    [complaint],
+  );
+  const operationalSubtimeline = useMemo(
+    () => (complaint?.history_card?.actions_log || []).filter(isOperationalSubtimelineEntry),
     [complaint],
   );
 
@@ -825,6 +861,46 @@ function handleExportReport() {
                 lastUpdatedLabel={lastSyncedAt ? formatTrackerDateTime(lastSyncedAt) : undefined}
               />
             )}
+
+            <section className="border border-slate-300 bg-white">
+              <SectionHeading
+                title="Operational Subtimeline"
+                description="Supervisory reminders, routing changes, escalations, and reopen decisions are recorded here separately from the main 5-step citizen tracking chain."
+              />
+              <div className="space-y-3 px-5 py-5">
+                {operationalSubtimeline.length ? (
+                  operationalSubtimeline.map((entry) => {
+                    const tone = getOperationalLogTone(entry);
+                    const toneClasses =
+                      tone === 'amber'
+                        ? 'border-amber-200 bg-amber-50 text-amber-900'
+                        : tone === 'rose'
+                          ? 'border-rose-200 bg-rose-50 text-rose-900'
+                          : tone === 'sky'
+                            ? 'border-sky-200 bg-sky-50 text-sky-900'
+                            : 'border-slate-200 bg-slate-50 text-slate-900';
+
+                    return (
+                      <div key={entry.id} className={`border px-4 py-4 ${toneClasses}`}>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">{entry.title}</div>
+                            <div className="mt-2 text-sm leading-6">{entry.detail || 'Administrative movement recorded in the complaint file.'}</div>
+                          </div>
+                          <div className="shrink-0 text-xs font-medium opacity-80">
+                            {formatTrackerDateTime(entry.timestamp)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    No separate supervisory or routing updates have been recorded for this complaint yet.
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.85fr)]">
               <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
