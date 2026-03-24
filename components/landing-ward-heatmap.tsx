@@ -577,6 +577,9 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
   const requestSequenceRef = useRef(0);
   const renderFrameRef = useRef<number | null>(null);
   const autoRefreshIntervalRef = useRef<number | null>(null);
+  const lastHeatmapDataVersionRef = useRef<string | null>(null);
+  const lastHeatmapRequestUrlRef = useRef<string | null>(null);
+  const hasLoadedHeatmapRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -588,6 +591,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
         return;
       }
 
+      const requestUrl = buildHeatmapRequestUrl(map);
       requestAbortRef.current?.abort();
       const requestId = requestSequenceRef.current + 1;
       requestSequenceRef.current = requestId;
@@ -596,7 +600,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
 
       try {
         const payload = await fetchJson<WardHeatmapResponse>(
-          buildHeatmapRequestUrl(map),
+          requestUrl,
           {
             signal: controller.signal,
           },
@@ -606,7 +610,17 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
           return;
         }
 
+        const isSameViewRequest = lastHeatmapRequestUrlRef.current === requestUrl;
+        const isSameDataVersion = lastHeatmapDataVersionRef.current === payload.data_version;
+
+        if (hasLoadedHeatmapRef.current && isSameViewRequest && isSameDataVersion) {
+          return;
+        }
+
         wardsRef.current = payload.points.length ? payload.points : FALLBACK_WARD_ROWS;
+        hasLoadedHeatmapRef.current = true;
+        lastHeatmapDataVersionRef.current = payload.data_version;
+        lastHeatmapRequestUrlRef.current = requestUrl;
         dataVersionRef.current += 1;
         renderSignatureRef.current = '';
         scheduleRender();
@@ -615,11 +629,14 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
           return;
         }
 
-        console.warn('Falling back to static ward markers on landing map.', error);
-        wardsRef.current = FALLBACK_WARD_ROWS;
-        dataVersionRef.current += 1;
-        renderSignatureRef.current = '';
-        scheduleRender();
+        console.warn('Unable to refresh ward heatmap; preserving last successful map data.', error);
+
+        if (!hasLoadedHeatmapRef.current) {
+          wardsRef.current = FALLBACK_WARD_ROWS;
+          dataVersionRef.current += 1;
+          renderSignatureRef.current = '';
+          scheduleRender();
+        }
       }
     }
 

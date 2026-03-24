@@ -487,6 +487,7 @@ export interface WardHeatmapResponse {
   points: WardHeatmapPoint[];
   zoom_tier: 'low' | 'mid' | 'high' | 'detail';
   normalization_cap: number;
+  data_version: string;
   generated_at: string;
 }
 
@@ -506,5 +507,6 @@ export interface PublicWardComplaintDistributionSummary {
   total_complaints: number;
   active_wards: number;
   max_count: number;
+  data_version: string;
   generated_at: string;
 }
