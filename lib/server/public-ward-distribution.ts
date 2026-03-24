@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { createHash } from 'node:crypto';
+
 import type {
   PublicWardComplaintDistributionSummary,
   WardHeatmapPoint,
@@ -97,19 +99,28 @@ async function buildPublicWardComplaintDistribution(): Promise<PublicWardComplai
   const totalComplaints = wardRows.reduce((sum, ward) => sum + ward.count, 0);
   const activeWards = wardRows.filter((ward) => ward.count > 0).length;
   const maxCount = wardRows.reduce((max, ward) => Math.max(max, ward.count), 0);
+  const dataVersion = createHash('sha1')
+    .update(
+      JSON.stringify(
+        wardRows.map((ward) => ({
+          ward_id: ward.ward_id,
+          count: ward.count,
+        })),
+      ),
+    )
+    .digest('hex');
 
   return {
     wards: wardRows,
     total_complaints: totalComplaints,
     active_wards: activeWards,
     max_count: maxCount,
+    data_version: dataVersion,
     generated_at: new Date().toISOString(),
   };
 }
 
-export async function getWardHeatmapAnalytics(): Promise<WardHeatmapPoint[]> {
-  const summary = await getPublicWardComplaintDistribution();
-
+function mapWardSummaryToHeatmapPoints(summary: PublicWardComplaintDistributionSummary): WardHeatmapPoint[] {
   return summary.wards.map((ward) => ({
     ward_id: ward.ward_id,
     ward: ward.ward_name,
@@ -122,6 +133,11 @@ export async function getWardHeatmapAnalytics(): Promise<WardHeatmapPoint[]> {
     resolution: 'detail',
     kind: 'ward',
   }));
+}
+
+export async function getWardHeatmapAnalytics(): Promise<WardHeatmapPoint[]> {
+  const summary = await getPublicWardComplaintDistribution();
+  return mapWardSummaryToHeatmapPoints(summary);
 }
 
 function getZoomTier(zoom?: number | null): HeatmapZoomTier {
@@ -294,7 +310,8 @@ export async function getWardHeatmapData(input: {
   zoom?: number | null;
   bounds?: HeatmapBounds | null;
 } = {}): Promise<WardHeatmapResponse> {
-  const basePoints = await getWardHeatmapAnalytics();
+  const summary = await getPublicWardComplaintDistribution();
+  const basePoints = mapWardSummaryToHeatmapPoints(summary);
   const zoomTier = getZoomTier(input.zoom);
   const aggregated = aggregateHeatmapPoints(basePoints, zoomTier, input.bounds)
     .sort((left, right) => right.count - left.count);
@@ -307,6 +324,7 @@ export async function getWardHeatmapData(input: {
     })),
     zoom_tier: zoomTier,
     normalization_cap: normalizationCap,
+    data_version: summary.data_version,
     generated_at: new Date().toISOString(),
   };
 }
