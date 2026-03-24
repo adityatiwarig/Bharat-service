@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   Users2,
+  Wrench,
 } from 'lucide-react'
 
 import type { UserRole } from '@/lib/types'
@@ -47,7 +48,25 @@ export function Sidebar({
   onHoverEnd,
 }: SidebarProps) {
   const pathname = usePathname()
-  const nav = legacyNavigation[userRole]
+  const l1Nav = [
+    {
+      href: '/l1',
+      label: 'Dashboard',
+      description: 'Review fresh complaints and priority-wise queue status.',
+      icon: LayoutDashboard,
+      badge: 'L1',
+    },
+    {
+      href: '/l1/updates',
+      label: 'Update Desk',
+      description: 'Submit proof, work progress, and final field actions.',
+      icon: Wrench,
+      badge: 'Action',
+    },
+  ]
+  const nav = userRole === 'worker' && pathname.startsWith('/l1')
+    ? l1Nav
+    : legacyNavigation[userRole]
   const meta = roleMeta[userRole]
   const isAdmin = userRole === 'admin'
 

@@ -511,6 +511,10 @@ export async function assignComplaintToInitialOfficer(
     throw new AuthError('No officer mapping exists for the selected zone, ward, department, and category.', 400);
   }
 
+  if (!mapping.l1_officer_id) {
+    throw new AuthError('No Level 1 officer is mapped for the selected complaint routing.', 400);
+  }
+
   const deadline = computeL1ComplaintDeadline(complaint.priority);
 
   await client.query(
@@ -784,6 +788,20 @@ async function countComplaintProofRecords(client: DbTransactionClient, complaint
   return Number(proofCountResult.rows[0]?.count || 0);
 }
 
+async function hasComplaintBeenReopened(client: DbTransactionClient, complaintId: string) {
+  const result = await client.query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM complaint_updates
+      WHERE complaint_id = $1
+        AND status = 'reopened'
+    `,
+    [complaintId],
+  );
+
+  return Number(result.rows[0]?.count || 0) > 0;
+}
+
 export async function markComplaintViewedByL1(user: User, complaintId: string) {
   const officer = await requireOfficerProfile(user);
 
@@ -956,7 +974,7 @@ export async function markComplaintWorkStartedByL1(user: User, complaintId: stri
           progress = 'in_progress',
           work_status = $2,
           updated_at = NOW(),
-          department_message = 'Assigned L1 officer has started work on the complaint.'
+          department_message = 'Assigned L1 officer has started work on the complaint. Worker team is currently working on site.'
         WHERE id = $1
       `,
       [complaint.id, EXECUTION_WORK_STATUS.workStarted],
@@ -965,7 +983,7 @@ export async function markComplaintWorkStartedByL1(user: User, complaintId: stri
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'in_progress',
-      note: 'Assigned L1 officer started work on the complaint.',
+      note: 'Assigned L1 officer started work on the complaint. Worker team is currently working on site.',
       updated_by_user_id: user.id,
     });
 
@@ -1007,6 +1025,8 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
   const trimmedNote = note?.trim() || null;
   const hasComplaintProofsTable = await complaintProofsTableExists();
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
+  let completedStatus: 'resolved' | 'closed' = 'resolved';
+  let completedWorkStatus: ComplaintWorkStatus = EXECUTION_WORK_STATUS.awaitingFeedback;
 
   await withTransaction(async (client) => {
     const complaint = await requireComplaintForL1Execution(client, {
@@ -1034,27 +1054,45 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
       throw new AuthError('Upload at least one proof image before completing the complaint.', 400);
     }
 
+    const complaintWasReopened = await hasComplaintBeenReopened(client, complaint.id);
+    const latestReopenReviewLevel = complaintWasReopened
+      ? await getLatestReopenReviewLevel(client, complaint.id)
+      : null;
+    const closingReopenedComplaintDirectly =
+      complaintWasReopened &&
+      !latestReopenReviewLevel;
+
     await client.query(
       `
         UPDATE complaints
         SET
-          status = 'resolved',
+          status = $2,
           progress = 'resolved',
-          work_status = $2,
+          work_status = $3,
           completed_at = NOW(),
           resolved_at = NOW(),
-          resolution_notes = COALESCE($3, proof_text, resolution_notes),
+          resolution_notes = COALESCE($4, proof_text, resolution_notes),
           updated_at = NOW(),
-          department_message = 'Complaint work completed by the assigned L1 officer and is awaiting citizen feedback.'
+          department_message = $5
         WHERE id = $1
       `,
-      [complaint.id, EXECUTION_WORK_STATUS.awaitingFeedback, trimmedNote],
+      [
+        complaint.id,
+        closingReopenedComplaintDirectly ? 'closed' : 'resolved',
+        closingReopenedComplaintDirectly ? EXECUTION_WORK_STATUS.proofUploaded : EXECUTION_WORK_STATUS.awaitingFeedback,
+        trimmedNote,
+        closingReopenedComplaintDirectly
+          ? 'Complaint rework completed by the assigned L1 officer after reopen and closed in the official record.'
+          : 'Complaint work completed by the assigned L1 officer and is awaiting citizen feedback.',
+      ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
-      status: 'resolved',
-      note: trimmedNote || 'Complaint completed by the assigned L1 officer and is awaiting citizen feedback.',
+      status: closingReopenedComplaintDirectly ? 'closed' : 'resolved',
+      note: closingReopenedComplaintDirectly
+        ? trimmedNote || 'Complaint rework completed by the assigned L1 officer after reopen and closed in the official record.'
+        : trimmedNote || 'Complaint completed by the assigned L1 officer and is awaiting citizen feedback.',
       updated_by_user_id: user.id,
     });
 
@@ -1069,11 +1107,17 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
     await createNotificationForUser(client, {
       user_id: complaint.user_id,
       complaint_id: complaint.id,
-      title: 'Complaint completed',
-      message: `${complaint.title} has been completed by the assigned L1 officer and is awaiting your feedback.`,
+      title: closingReopenedComplaintDirectly ? 'Complaint closed after rework' : 'Complaint completed',
+      message: closingReopenedComplaintDirectly
+        ? `${complaint.title} has been completed after rework by the assigned L1 officer and closed in the official record.`
+        : `${complaint.title} has been completed by the assigned L1 officer and is awaiting your feedback.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
+    completedStatus = closingReopenedComplaintDirectly ? 'closed' : 'resolved';
+    completedWorkStatus = closingReopenedComplaintDirectly
+      ? EXECUTION_WORK_STATUS.proofUploaded
+      : EXECUTION_WORK_STATUS.awaitingFeedback;
     updatedComplaint = complaint;
   });
 
@@ -1090,8 +1134,8 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
 
   return {
     complaint_id: finalizedComplaint.id,
-    status: 'resolved' as const,
-    work_status: EXECUTION_WORK_STATUS.awaitingFeedback,
+    status: completedStatus,
+    work_status: completedWorkStatus,
   };
 }
 
@@ -1271,8 +1315,13 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
       throw new AuthError('This complaint is not mapped to your L2 monitoring queue.', 403);
     }
 
-    const l1OfficerUserId = await getOfficerUserId(client, mapping.l1_officer_id);
-    l1OfficerName = await getOfficerName(client, mapping.l1_officer_id);
+    if (!mapping.l1_officer_id) {
+      throw new AuthError('No L1 officer is mapped for this complaint right now.', 400);
+    }
+
+    const l1OfficerId = mapping.l1_officer_id;
+    const l1OfficerUserId = await getOfficerUserId(client, l1OfficerId);
+    l1OfficerName = await getOfficerName(client, l1OfficerId);
 
     if (!l1OfficerUserId) {
       throw new AuthError('Assigned L1 officer cannot receive notifications right now.', 400);
@@ -1281,9 +1330,11 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
     await createNotificationForUser(client, {
       user_id: l1OfficerUserId,
       complaint_id: complaint.id,
-      title: 'Deadline missed',
-      message: 'You missed deadline. Complete immediately.',
-      href: '/l1',
+      title: 'L2 Reminder',
+      message: note?.trim()
+        ? `${complaint.title} is overdue under L2 supervision. L2 note: ${note.trim()}`
+        : `${complaint.title} is overdue under L2 supervision. Complete the field work, upload proof, and send it for citizen feedback immediately.`,
+      href: `/l1/updates?id=${complaint.complaint_id}`,
     });
 
     await appendComplaintUpdate(client, {
@@ -1300,6 +1351,101 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
 
   if (!updatedComplaint) {
     throw new AuthError('Unable to send reminder right now.', 500);
+  }
+
+  await invalidateComplaintReadCaches(updatedComplaint);
+  revalidateTag('complaints', 'max');
+  revalidateTag('dashboard', 'max');
+
+  const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
+
+  return {
+    complaint_id: finalizedComplaint.id,
+    reminded_officer_name: l1OfficerName,
+  };
+}
+
+export async function remindL1OfficerFromL3(user: User, complaintId: string, note?: string) {
+  const officer = await requireOfficerProfile(user);
+
+  if (officer.role !== 'L3') {
+    throw new AuthError('Only L3 officers can send direct reminders to L1.', 403);
+  }
+
+  let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
+  let l1OfficerName: string | null = null;
+
+  await withTransaction(async (client) => {
+    const complaint = await getComplaintRoutingRow(client, complaintId);
+
+    if (!complaint) {
+      throw new AuthError('Complaint not found.', 404);
+    }
+
+    if (
+      complaint.current_level !== 'L3' ||
+      complaint.assigned_officer_id !== officer.id ||
+      !complaint.deadline ||
+      new Date(complaint.deadline).getTime() > Date.now() ||
+      complaint.status === 'resolved' ||
+      complaint.status === 'closed' ||
+      complaint.status === 'rejected' ||
+      complaint.status === 'expired'
+    ) {
+      throw new AuthError('This complaint is not currently eligible for an L3-to-L1 reminder.', 400);
+    }
+
+    if (!complaint.zone_id || !complaint.department_id || !complaint.category_id) {
+      throw new AuthError('Complaint is missing routing metadata required for reminder delivery.', 400);
+    }
+
+    const mapping = await getOfficerMapping(client, {
+      zone_id: complaint.zone_id,
+      ward_id: complaint.ward_id,
+      department_id: complaint.department_id,
+      category_id: complaint.category_id,
+    });
+
+    if (!mapping?.l3_officer_id || mapping.l3_officer_id !== officer.id) {
+      throw new AuthError('This complaint is not mapped to your L3 monitoring queue.', 403);
+    }
+
+    if (!mapping.l1_officer_id) {
+      throw new AuthError('No L1 officer is mapped for this complaint right now.', 400);
+    }
+
+    const l1OfficerId = mapping.l1_officer_id;
+    const l1OfficerUserId = await getOfficerUserId(client, l1OfficerId);
+    l1OfficerName = await getOfficerName(client, l1OfficerId);
+
+    if (!l1OfficerUserId) {
+      throw new AuthError('Assigned L1 officer cannot receive notifications right now.', 400);
+    }
+
+    await createNotificationForUser(client, {
+      user_id: l1OfficerUserId,
+      complaint_id: complaint.id,
+      title: 'L3 Reminder',
+      message: note?.trim()
+        ? `${complaint.title} is overdue under L3 supervision. L3 note: ${note.trim()}`
+        : `${complaint.title} is overdue under L3 supervision. Complete the field work, upload proof, and send it for citizen feedback immediately.`,
+      href: `/l1/updates?id=${complaint.complaint_id}`,
+    });
+
+    await appendComplaintUpdate(client, {
+      complaint_id: complaint.id,
+      status: 'l2_deadline_missed',
+      note: note?.trim()
+        ? `L3 reminder sent directly to L1. ${note.trim()}`
+        : 'L3 reminder sent directly to L1 after the L2 supervisory SLA miss.',
+      updated_by_user_id: user.id,
+    });
+
+    updatedComplaint = complaint;
+  });
+
+  if (!updatedComplaint) {
+    throw new AuthError('Unable to send the direct L1 reminder right now.', 500);
   }
 
   await invalidateComplaintReadCaches(updatedComplaint);
@@ -1336,8 +1482,10 @@ export async function remindL2OfficerFromL3(user: User, complaintId: string, not
       complaint.assigned_officer_id !== officer.id ||
       !complaint.deadline ||
       new Date(complaint.deadline).getTime() > Date.now() ||
+      complaint.status === 'resolved' ||
       complaint.status === 'closed' ||
-      complaint.status === 'rejected'
+      complaint.status === 'rejected' ||
+      complaint.status === 'expired'
     ) {
       throw new AuthError('This complaint is not currently in your L3 monitoring queue.', 400);
     }
@@ -1357,8 +1505,13 @@ export async function remindL2OfficerFromL3(user: User, complaintId: string, not
       throw new AuthError('This complaint is not mapped to your L3 monitoring queue.', 403);
     }
 
-    const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
-    l2OfficerName = await getOfficerName(client, mapping.l2_officer_id);
+    if (!mapping.l2_officer_id) {
+      throw new AuthError('No L2 officer is mapped for this complaint right now.', 400);
+    }
+
+    const l2OfficerId = mapping.l2_officer_id;
+    const l2OfficerUserId = await getOfficerUserId(client, l2OfficerId);
+    l2OfficerName = await getOfficerName(client, l2OfficerId);
 
     if (!l2OfficerUserId) {
       throw new AuthError('Assigned L2 officer cannot receive notifications right now.', 400);
@@ -1367,8 +1520,10 @@ export async function remindL2OfficerFromL3(user: User, complaintId: string, not
     await createNotificationForUser(client, {
       user_id: l2OfficerUserId,
       complaint_id: complaint.id,
-      title: 'L2 deadline missed',
-      message: 'You missed L2 deadline. Resolve immediately.',
+      title: 'L3 Reminder',
+      message: note?.trim()
+        ? `${complaint.title} is overdue under L3 supervision. L3 note: ${note.trim()}`
+        : `${complaint.title} is overdue under L3 supervision. Coordinate with L1 and clear the pending work immediately.`,
       href: '/l2',
     });
 

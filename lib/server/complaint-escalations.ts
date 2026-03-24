@@ -244,9 +244,22 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
     }
 
     if (complaint.current_level === 'L1') {
+      if (!mapping.l1_officer_id || !mapping.l2_officer_id) {
+        return {
+          complaint_id: complaint.id,
+          complaint_code: complaint.complaint_id,
+          action: 'skipped' as const,
+          current_level: complaint.current_level,
+          deadline: complaint.deadline,
+          reason: 'Complaint is missing L1 or L2 mapping required for escalation.',
+        };
+      }
+
       const nextDeadline = computeL2ComplaintDeadline().toISOString();
-      const l1OfficerUserId = await getOfficerUserId(client, mapping.l1_officer_id);
-      const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
+      const l1OfficerId = mapping.l1_officer_id;
+      const l2OfficerId = mapping.l2_officer_id;
+      const l1OfficerUserId = await getOfficerUserId(client, l1OfficerId);
+      const l2OfficerUserId = await getOfficerUserId(client, l2OfficerId);
 
       await client.query(
         `
@@ -260,7 +273,7 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
             department_message = $4
           WHERE id = $1
         `,
-        [complaint.id, mapping.l2_officer_id, nextDeadline, getL1DeadlineMissedDepartmentMessage()],
+        [complaint.id, l2OfficerId, nextDeadline, getL1DeadlineMissedDepartmentMessage()],
       );
 
       await client.query(
@@ -279,16 +292,16 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
           INSERT INTO complaint_history (complaint_id, action, from_officer, to_officer, level)
           VALUES ($1, 'escalated', $2, $3, 'L2')
         `,
-        [complaint.id, mapping.l1_officer_id, mapping.l2_officer_id],
+        [complaint.id, l1OfficerId, l2OfficerId],
       );
 
       if (l1OfficerUserId) {
         await createNotificationForUser(client, {
           user_id: l1OfficerUserId,
           complaint_id: complaint.id,
-          title: 'Deadline missed',
-          message: 'You missed deadline. Complete immediately.',
-          href: '/l1',
+          title: 'L2 Monitoring Active',
+          message: `${complaint.title} crossed the L1 due date. L2 now supervises this complaint. Complete the field work, upload proof, and send it for citizen feedback immediately.`,
+          href: `/l1/updates?id=${complaint.complaint_id}`,
         });
       }
 
@@ -322,9 +335,25 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
     }
 
     if (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') {
+      if (!mapping.l2_officer_id || !mapping.l3_officer_id) {
+        return {
+          complaint_id: complaint.id,
+          complaint_code: complaint.complaint_id,
+          action: 'skipped' as const,
+          current_level: complaint.current_level,
+          deadline: complaint.deadline,
+          reason: 'Complaint is missing L2 or L3 mapping required for escalation.',
+        };
+      }
+
       const nextDeadline = computeL3ComplaintDeadline(complaint.priority).toISOString();
-      const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
-      const l3OfficerUserId = await getOfficerUserId(client, mapping.l3_officer_id);
+      const l2OfficerId = mapping.l2_officer_id;
+      const l3OfficerId = mapping.l3_officer_id;
+      const l1OfficerUserId = mapping.l1_officer_id
+        ? await getOfficerUserId(client, mapping.l1_officer_id)
+        : null;
+      const l2OfficerUserId = await getOfficerUserId(client, l2OfficerId);
+      const l3OfficerUserId = await getOfficerUserId(client, l3OfficerId);
 
       await client.query(
         `
@@ -338,7 +367,7 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
             department_message = $4
           WHERE id = $1
         `,
-        [complaint.id, mapping.l3_officer_id, nextDeadline, getL2DeadlineMissedDepartmentMessage()],
+        [complaint.id, l3OfficerId, nextDeadline, getL2DeadlineMissedDepartmentMessage()],
       );
 
       await client.query(
@@ -357,15 +386,25 @@ async function processComplaintEscalationById(complaintId: string): Promise<Comp
           INSERT INTO complaint_history (complaint_id, action, from_officer, to_officer, level)
           VALUES ($1, 'escalated', $2, $3, 'L3')
         `,
-        [complaint.id, mapping.l2_officer_id, mapping.l3_officer_id],
+        [complaint.id, l2OfficerId, l3OfficerId],
       );
+
+      if (l1OfficerUserId) {
+        await createNotificationForUser(client, {
+          user_id: l1OfficerUserId,
+          complaint_id: complaint.id,
+          title: 'L3 Monitoring Active',
+          message: `${complaint.title} has moved under L3 supervision because the L2 due date also expired. Continue field work and submit proof without delay.`,
+          href: `/l1/updates?id=${complaint.complaint_id}`,
+        });
+      }
 
       if (l2OfficerUserId) {
         await createNotificationForUser(client, {
           user_id: l2OfficerUserId,
           complaint_id: complaint.id,
-          title: 'L2 deadline missed',
-          message: 'You missed L2 deadline. Resolve immediately.',
+          title: 'L3 Monitoring Active',
+          message: `${complaint.title} crossed the L2 due date. L3 now supervises this complaint. Coordinate with L1 and clear the pending work immediately.`,
           href: '/l2',
         });
       }

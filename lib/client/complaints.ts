@@ -352,8 +352,8 @@ export async function completeComplaintByL1(complaintId: string, note?: string) 
     success: boolean;
     result: {
       complaint_id: string;
-      status: 'resolved';
-      work_status: 'Awaiting Citizen Feedback';
+      status: 'resolved' | 'closed';
+      work_status: 'Awaiting Citizen Feedback' | 'Proof Uploaded';
     };
   }>(`/api/complaints/${complaintId}/l1`, {
     method: 'PATCH',
@@ -520,6 +520,23 @@ export async function sendReminderToL2FromL3(complaintId: string, note?: string)
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'remind_l2', note }),
+  });
+
+  invalidateComplaintCache(complaintId);
+  return data.result;
+}
+
+export async function sendReminderToL1FromL3(complaintId: string, note?: string) {
+  const data = await fetchJson<{
+    success: boolean;
+    result: {
+      complaint_id: string;
+      reminded_officer_name?: string | null;
+    };
+  }>(`/api/complaints/${complaintId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'remind_l1_from_l3', note }),
   });
 
   invalidateComplaintCache(complaintId);

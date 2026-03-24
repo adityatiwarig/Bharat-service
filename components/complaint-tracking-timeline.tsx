@@ -334,7 +334,11 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                     ? 'Citizen feedback has already been added to the official complaint record and remains visible below.'
                     : tracker.waitingForFeedback
                       ? 'Work proof has been uploaded. Citizen confirmation can now move the complaint into its final review cycle.'
-                      : 'Work proof will appear here automatically once field execution is completed.'}
+                      : tracker.proofSubmitted && tracker.isClosed
+                        ? 'Work proof remains stored in the complaint record and no further citizen action is required for this closed complaint.'
+                        : tracker.proofSubmitted
+                          ? 'Work proof has been recorded in the complaint file and remains available for official review.'
+                          : 'Work proof will appear here automatically once field execution is completed.'}
                 </p>
               </div>
             </div>

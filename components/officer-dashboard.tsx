@@ -9,6 +9,8 @@ import { ComplaintCard } from '@/components/complaint-card';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { EmptyState } from '@/components/empty-state';
 import { KPICard } from '@/components/kpi-card';
+import { OfficerSupervisoryAlerts } from '@/components/officer-supervisory-alerts';
+import { PriorityBadge, StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,6 +22,7 @@ import {
   markComplaintWorkStartedByL1,
   reopenComplaintByReviewDesk,
   sendReminderToL1FromL2,
+  sendReminderToL1FromL3,
   sendReminderToL2FromL3,
   uploadComplaintProofByExecutionOfficer,
 } from '@/lib/client/complaints';
@@ -71,6 +74,16 @@ function isL1WorkStarted(complaint: Complaint) {
 
 function isL1Completed(complaint: Complaint) {
   return getWorkStatus(complaint) === 'Awaiting Citizen Feedback' || complaint.status === 'resolved' || complaint.status === 'closed';
+}
+
+function canDirectlyCloseRework(complaint: Complaint) {
+  if (complaint.status !== 'reopened') {
+    return false;
+  }
+
+  const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
+
+  return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
 }
 
 function normalizeDashboardLevel(level?: ComplaintLevel | null) {
@@ -242,6 +255,7 @@ export function OfficerDashboard({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [dashboardSummary, setDashboardSummary] = useState(summary);
+  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(summary.items[0]?.id || null);
   const [l3ActionId, setL3ActionId] = useState<string | null>(null);
   const [proofFiles, setProofFiles] = useState<Record<string, File | null>>({});
   const [proofDescriptions, setProofDescriptions] = useState<Record<string, string>>({});
@@ -251,6 +265,20 @@ export function OfficerDashboard({
   useEffect(() => {
     setDashboardSummary(summary);
   }, [summary]);
+
+  useEffect(() => {
+    setSelectedComplaintId((current) => {
+      if (!dashboardSummary.items.length) {
+        return null;
+      }
+
+      if (current && dashboardSummary.items.some((item) => item.id === current)) {
+        return current;
+      }
+
+      return dashboardSummary.items[0]?.id || null;
+    });
+  }, [dashboardSummary.items]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -333,7 +361,7 @@ export function OfficerDashboard({
             status: 'in_progress',
             progress: 'in_progress',
             work_status: 'Work Started',
-            department_message: 'Assigned L1 officer has started work on the complaint.',
+            department_message: 'Assigned L1 officer has started work on the complaint. Worker team is currently working on site.',
             updated_at: new Date().toISOString(),
           },
           level,
@@ -408,24 +436,32 @@ export function OfficerDashboard({
     setL3ActionId(complaint.id);
 
     try {
-      await completeComplaintByL1(complaint.id, note);
-      setDashboardSummary((current) =>
-        patchComplaintInSummary(
-          current,
-          complaint.id,
-          {
-            status: 'resolved',
-            progress: 'resolved',
-            work_status: 'Awaiting Citizen Feedback',
-            completed_at: new Date().toISOString(),
-            resolved_at: new Date().toISOString(),
-            resolution_notes: note ?? complaint.resolution_notes ?? complaint.proof_text ?? null,
-            department_message: 'Complaint work completed by the assigned L1 officer and is awaiting citizen feedback.',
-          },
-          level,
-        ),
-      );
-      toast.success('Complaint completed and moved to citizen feedback.');
+      const result = await completeComplaintByL1(complaint.id, note);
+      const completionTimestamp = new Date().toISOString();
+
+      if (result.status === 'closed') {
+        setDashboardSummary((current) => patchSummaryAfterQueueChange(current, complaint, level));
+        toast.success('Rework completed and complaint closed directly.');
+      } else {
+        setDashboardSummary((current) =>
+          patchComplaintInSummary(
+            current,
+            complaint.id,
+            {
+              status: 'resolved',
+              progress: 'resolved',
+              work_status: 'Awaiting Citizen Feedback',
+              completed_at: completionTimestamp,
+              resolved_at: completionTimestamp,
+              resolution_notes: note ?? complaint.resolution_notes ?? complaint.proof_text ?? null,
+              department_message: 'Complaint work completed by the assigned L1 officer and is awaiting citizen feedback.',
+            },
+            level,
+          ),
+        );
+        toast.success('Complaint completed and moved to citizen feedback.');
+      }
+
       startTransition(() => {
         router.refresh();
       });
@@ -527,6 +563,54 @@ export function OfficerDashboard({
     }
   }
 
+  async function handleSendReminderToL1FromL3(complaint: Complaint) {
+    const note = resolutionNotes[complaint.id]?.trim() || undefined;
+    setL3ActionId(complaint.id);
+
+    try {
+      const result = await sendReminderToL1FromL3(complaint.id, note);
+      toast.success(
+        result.reminded_officer_name
+          ? `Reminder sent to ${result.reminded_officer_name}.`
+          : 'Reminder sent to the assigned L1 officer.',
+      );
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to send reminder to L1.');
+    } finally {
+      setL3ActionId(null);
+    }
+  }
+
+  const selectedComplaint = level === 'L1'
+    ? dashboardSummary.items.find((item) => item.id === selectedComplaintId) ?? dashboardSummary.items[0] ?? null
+    : null;
+  const l1PriorityRank: Record<Complaint['priority'], number> = {
+    critical: 0,
+    urgent: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+  const sortedL1Items = level === 'L1'
+    ? [...dashboardSummary.items].sort((left, right) => {
+        const priorityDiff = l1PriorityRank[left.priority] - l1PriorityRank[right.priority];
+
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
+      })
+    : [];
+  const newComplaintItems = sortedL1Items.filter((item) => ['Pending', 'Viewed by L1'].includes(getWorkStatus(item)) || item.status === 'assigned' || item.status === 'reopened');
+  const updateDeskItems = sortedL1Items.filter((item) => !newComplaintItems.some((newItem) => newItem.id === item.id));
+  const visibleComplaintItems = level === 'L1'
+    ? (selectedComplaint ? [selectedComplaint] : [])
+    : dashboardSummary.items;
+
   return (
     <DashboardLayout title={title} userRole="worker" userName={userName}>
       <div className="space-y-8">
@@ -539,7 +623,7 @@ export function OfficerDashboard({
                   ? 'This panel loads complaints mapped to your L1 field desk. L1 handles all ground execution, uploads proof, and completes work before citizen feedback is collected.'
                   : level === 'L2'
                     ? 'This panel loads complaints whose L1 due window has expired and which now require L2 monitoring or final review after citizen feedback.'
-                    : 'This panel loads complaints whose L2 due window has expired and which now require L3 monitoring or final review after citizen feedback.'}
+                    : 'This panel loads complaints whose L2 due window has expired and which now require L3 monitoring, reminders to L2 or L1 while work is pending, or final review after citizen feedback.'}
               </p>
               <div className="mt-4 flex flex-wrap gap-3 text-xs font-medium text-slate-600">
                 {departmentName ? (
@@ -570,7 +654,7 @@ export function OfficerDashboard({
             </div>
           </div>
           <div className="mt-6 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600">
-            Visible queue follows the new workflow only. {level === 'L1' ? 'L1 is the only execution desk: Pending -> Viewed by L1 -> On Site -> Work Started -> Proof Uploaded -> Awaiting Citizen Feedback.' : level === 'L2' ? 'L2 never performs field work. It monitors overdue L1 complaints, reminds L1, and takes close/reopen decisions once citizen feedback arrives on overdue complaints.' : 'L3 never performs field work. It monitors overdue L2 complaints, reminds L2, and takes the final close/reopen decision once citizen feedback arrives on L3-stage complaints.'}
+            Visible queue follows the new workflow only. {level === 'L1' ? 'L1 is the only execution desk: Pending -> Viewed by L1 -> On Site -> Work Started -> Proof Uploaded -> Awaiting Citizen Feedback.' : level === 'L2' ? 'L2 never performs field work. It monitors overdue L1 complaints, reminds L1, and takes close/reopen decisions once citizen feedback arrives on overdue complaints.' : 'L3 never performs field work. It monitors overdue complaints after the L2 deadline, can remind L2 or L1 while work is still pending, and takes the final close/reopen decision once citizen feedback arrives on L3-stage complaints.'}
           </div>
         </div>
 
@@ -582,13 +666,107 @@ export function OfficerDashboard({
           <KPICard title="Overdue" value={dashboardSummary.overdue} variant="danger" icon={<AlertCircle className="h-4 w-4" />} />
         </div>
 
+        {level === 'L1' || level === 'L2' ? (
+          <OfficerSupervisoryAlerts
+            role={level}
+            complaints={dashboardSummary.items}
+            selectedComplaintId={selectedComplaintId}
+          />
+        ) : null}
+
+        {level === 'L1' && dashboardSummary.items.length ? (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <Card className="gov-fade-in overflow-hidden rounded-[1.8rem] border-[#d7e2eb]">
+              <CardHeader className="border-b border-[#d7e2eb] bg-[linear-gradient(180deg,#f8fbff_0%,#eef5fb_100%)]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">Priority Intake</div>
+                <CardTitle className="mt-2 text-[1.5rem] text-[#12385b]">New Complaints</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-6">
+                {newComplaintItems.length ? newComplaintItems.map((complaint) => {
+                  const active = complaint.id === selectedComplaint?.id;
+
+                  return (
+                    <button
+                      key={complaint.id}
+                      type="button"
+                      onClick={() => setSelectedComplaintId(complaint.id)}
+                      className={`w-full rounded-[1.3rem] border px-4 py-4 text-left transition ${
+                        active
+                          ? 'border-[#0b3c5d] bg-[#0b3c5d] text-white shadow-[0_16px_36px_rgba(11,60,93,0.18)]'
+                          : 'border-[#d7e2eb] bg-white hover:border-[#9fb8cf] hover:bg-[#f8fbff]'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <PriorityBadge priority={complaint.priority} />
+                        <StatusBadge status={complaint.status} />
+                      </div>
+                      <div className={`mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] ${active ? 'text-white/70' : 'text-[#60758a]'}`}>
+                        {complaint.complaint_id}
+                      </div>
+                      <div className="mt-1 text-base font-semibold">
+                        {complaint.title}
+                      </div>
+                      <div className={`mt-3 text-sm ${active ? 'text-white/80' : 'text-[#53687d]'}`}>
+                        {complaint.ward_name || `Ward ${complaint.ward_id}`} | {getWorkStatus(complaint)}
+                      </div>
+                    </button>
+                  );
+                }) : (
+                  <div className="rounded-[1.2rem] border border-dashed border-[#d7e2eb] bg-[#f8fbff] px-4 py-6 text-sm text-[#60758a]">
+                    No fresh complaints are waiting in the new-intake queue.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="gov-fade-in overflow-hidden rounded-[1.8rem] border-[#d7e2eb]">
+              <CardHeader className="border-b border-[#d7e2eb] bg-[linear-gradient(180deg,#fffaf2_0%,#fff4df_100%)]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8d5a13]">Field Operations</div>
+                <CardTitle className="mt-2 text-[1.5rem] text-[#12385b]">Update Desk</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-6">
+                {updateDeskItems.length ? updateDeskItems.map((complaint) => {
+                  const active = complaint.id === selectedComplaint?.id;
+
+                  return (
+                    <button
+                      key={complaint.id}
+                      type="button"
+                      onClick={() => setSelectedComplaintId(complaint.id)}
+                      className={`w-full rounded-[1.2rem] border px-4 py-3 text-left transition ${
+                        active
+                          ? 'border-[#c2410c] bg-[#fff7ed] shadow-[0_14px_32px_rgba(194,65,12,0.10)]'
+                          : 'border-[#e7d4bf] bg-white hover:border-[#d8b48a] hover:bg-[#fffaf5]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-[#12385b]">{complaint.title}</div>
+                          <div className="mt-1 text-xs text-[#60758a]">{complaint.complaint_id} | {complaint.ward_name || `Ward ${complaint.ward_id}`}</div>
+                        </div>
+                        <div className="rounded-full border border-[#fed7aa] bg-[#fff7ed] px-3 py-1 text-[11px] font-semibold text-[#9a3412]">
+                          {getWorkStatus(complaint)}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                }) : (
+                  <div className="rounded-[1.2rem] border border-dashed border-[#e7d4bf] bg-[#fffaf5] px-4 py-6 text-sm text-[#8d5a13]">
+                    No field updates are pending in the update desk right now.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+
         <Card className="gov-fade-in rounded-[1.8rem] border-slate-200/80">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Assigned Complaints</CardTitle>
+            <CardTitle>{level === 'L1' ? 'Complaint Detail And Decision Desk' : 'Assigned Complaints'}</CardTitle>
           </CardHeader>
           <CardContent className="gov-stagger space-y-4">
-            {dashboardSummary.items.length ? (
-              dashboardSummary.items.map((complaint) => {
+            {visibleComplaintItems.length ? (
+              visibleComplaintItems.map((complaint) => {
                 const operationalLevel = normalizeDashboardLevel(complaint.current_level);
                 const workStatus = getWorkStatus(complaint);
                 const deadlineCountdown = formatCountdown(complaint.deadline, currentTime);
@@ -601,6 +779,7 @@ export function OfficerDashboard({
                 const proofDescription = proofDescriptions[complaint.id] ?? '';
                 const proofFile = proofFiles[complaint.id];
                 const reviewDeskLabel = getReviewDeskLabel(level);
+                const directCloseAfterRework = canDirectlyCloseRework(complaint);
                 const canReviewAtDesk =
                   operationalLevel === level &&
                   complaint.status === 'resolved' &&
@@ -643,6 +822,252 @@ export function OfficerDashboard({
                   !isL1Completed(complaint) &&
                   workStatus === 'Proof Uploaded' &&
                   hasProof;
+                const renderL1ActionDesk = () => {
+                  if (canReviewAtDesk) {
+                    return (
+                      <div className="space-y-3">
+                        <div className="rounded-[1.1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                          Citizen feedback has been received. L1 can now close the complaint or reopen it for fresh field action.
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-slate-600" htmlFor={`review-note-${level.toLowerCase()}-${complaint.id}`}>
+                            Review Note
+                          </label>
+                          <Textarea
+                            id={`review-note-${level.toLowerCase()}-${complaint.id}`}
+                            value={resolutionNote}
+                            placeholder="Add the final review note before closing or reopening..."
+                            disabled={complaint.status === 'closed' || isBusy || isPending}
+                            onChange={(event) => {
+                              setResolutionNotes((current) => ({ ...current, [complaint.id]: event.target.value }));
+                            }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
+                            disabled={complaint.status === 'closed' || isBusy || isPending}
+                            onClick={() => {
+                              void handleCloseByReviewDesk(complaint);
+                            }}
+                          >
+                            {complaint.status === 'closed' ? 'Closed' : isBusy ? 'Closing...' : 'Mark Work Completed'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-full"
+                            disabled={complaint.status === 'closed' || isBusy || isPending}
+                            onClick={() => {
+                              void handleReopenByReviewDesk(complaint);
+                            }}
+                          >
+                            {isBusy ? 'Reopening...' : 'Reopen Complaint'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (waitingForCitizenAtDesk) {
+                    return (
+                      <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Work completion is submitted. Citizen feedback access is open now, and final completion will unlock after feedback arrives.
+                      </div>
+                    );
+                  }
+
+                  if (canExecuteAtL1) {
+                    return (
+                      <div className="space-y-4">
+                        <div className="rounded-[1.1rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                          {hasProof
+                            ? 'Proof is ready. Complete the complaint from this action desk.'
+                            : workStatus === 'Work Started'
+                              ? 'Worker team is currently working on site. Upload proof after the work is completed.'
+                              : 'Follow the sequence carefully: Viewed -> On Site -> Work Started -> Proof -> Complete.'}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-full"
+                            variant={canMarkViewed ? 'default' : 'outline'}
+                            disabled={!canMarkViewed || isBusy || isPending}
+                            onClick={() => {
+                              void handleMarkViewedByL1(complaint);
+                            }}
+                          >
+                            {workStatus === 'Viewed by L1' || isL1OnSite(complaint) ? 'Viewed' : isBusy && canMarkViewed ? 'Saving...' : 'Mark Viewed'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-full"
+                            variant={canMarkOnSite ? 'default' : 'outline'}
+                            disabled={!canMarkOnSite || isBusy || isPending}
+                            onClick={() => {
+                              void handleMarkOnSiteByL1(complaint);
+                            }}
+                          >
+                            {isL1OnSite(complaint) ? 'On Site' : isBusy && canMarkOnSite ? 'Saving...' : 'Mark On Site'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-full"
+                            variant={canMarkWorkStarted ? 'default' : 'outline'}
+                            disabled={!canMarkWorkStarted || isBusy || isPending}
+                            onClick={() => {
+                              void handleMarkWorkStartedByL1(complaint);
+                            }}
+                          >
+                            {isL1WorkStarted(complaint) ? 'Work Started' : isBusy && canMarkWorkStarted ? 'Saving...' : 'Start Work'}
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-slate-600" htmlFor={`proof-file-desk-${complaint.id}`}>
+                              Submit Proof Image
+                            </label>
+                            <input
+                              id={`proof-file-desk-${complaint.id}`}
+                              type="file"
+                              accept="image/*"
+                              className="block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 file:mr-3 file:rounded-full file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+                              disabled={!canUploadProof || isBusy || isPending}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0] || null;
+                                setProofFiles((current) => ({ ...current, [complaint.id]: file }));
+                              }}
+                            />
+                            <div className="text-[11px] text-slate-500">
+                              {proofFile ? `Selected: ${proofFile.name}` : 'Choose the proof image from device gallery or camera.'}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-slate-600" htmlFor={`proof-description-desk-${complaint.id}`}>
+                              Proof Description
+                            </label>
+                            <Textarea
+                              id={`proof-description-desk-${complaint.id}`}
+                              value={proofDescription}
+                              placeholder="Describe what the proof image shows..."
+                              disabled={!canUploadProof || isBusy || isPending}
+                              onChange={(event) => {
+                                setProofDescriptions((current) => ({ ...current, [complaint.id]: event.target.value }));
+                              }}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-slate-600" htmlFor={`resolution-note-desk-${complaint.id}`}>
+                              Completion Note
+                            </label>
+                            <Textarea
+                              id={`resolution-note-desk-${complaint.id}`}
+                              value={resolutionNote}
+                              placeholder="Add the completion note for this complaint..."
+                              disabled={isTerminalComplaint(complaint) || isBusy || isPending}
+                              onChange={(event) => {
+                                setResolutionNotes((current) => ({ ...current, [complaint.id]: event.target.value }));
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-full"
+                            variant={canUploadProof && proofFile ? 'default' : 'outline'}
+                            disabled={!canUploadProof || !proofFile || isBusy || isPending}
+                            onClick={() => {
+                              void handleUploadProof(complaint);
+                            }}
+                          >
+                            <Upload className="mr-1 h-4 w-4" />
+                            {isBusy && proofFile ? 'Uploading...' : 'Submit Proof'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
+                            disabled={!canCompleteAtL1 || isBusy || isPending}
+                            onClick={() => {
+                              void handleCompleteByL1(complaint);
+                            }}
+                          >
+                            {isL1Completed(complaint) ? 'Completed' : isBusy && canCompleteAtL1 ? 'Completing...' : 'Complete Work'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (complaint.status === 'closed' || complaint.status === 'expired') {
+                    return (
+                      <div className="rounded-[1.1rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        {complaint.department_message || 'This complaint is already locked for official record purposes.'}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="rounded-[1.1rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      {complaint.department_message || 'No direct action is available right now. Please monitor the complaint status from this desk.'}
+                    </div>
+                  );
+                };
+                const l1ActionFooter = (
+                  <div
+                    className="space-y-3 rounded-2xl border border-[#d7e2eb] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#60758a]">Action Desk</div>
+                        <div className="mt-1 text-sm font-semibold text-[#12385b]">Submit updates in a separate operations panel</div>
+                      </div>
+                      <Button
+                        type="button"
+                        className="rounded-full bg-[#0b3c5d] text-white hover:bg-[#082d46]"
+                        onClick={() => {
+                          startTransition(() => {
+                            router.push(`/l1/updates?id=${encodeURIComponent(complaint.complaint_id)}`);
+                          });
+                        }}
+                      >
+                        Open Update Panel
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Priority</div>
+                        <div className="mt-2"><PriorityBadge priority={complaint.priority} /></div>
+                      </div>
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Current Status</div>
+                        <div className="mt-2"><StatusBadge status={complaint.status} /></div>
+                      </div>
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Work Stage</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{workStatus}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-[1rem] border border-dashed border-[#d7e2eb] bg-white px-3 py-3 text-xs leading-6 text-[#60758a]">
+                      File selection, proof submission, and citizen-feedback-gated completion now run from the dedicated L1 update page.
+                    </div>
+                  </div>
+                );
 
                 return (
                   <ComplaintCard
@@ -650,6 +1075,9 @@ export function OfficerDashboard({
                     complaint={complaint}
                     ward={complaint.ward_name ? { id: complaint.ward_id, name: complaint.ward_name, city: 'Delhi' } : undefined}
                     compact
+                    onViewDetails={() => {
+                      setSelectedComplaintId(complaint.id);
+                    }}
                     badgeExtras={
                       <div className="flex flex-wrap items-center gap-2">
                         {complaint.current_level ? <LevelBadge level={complaint.current_level} /> : null}
@@ -677,6 +1105,7 @@ export function OfficerDashboard({
                       </div>
                     }
                     footer={
+                      level === 'L1' ? l1ActionFooter : (
                       canReviewAtDesk ? (
                         <div
                           className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
@@ -772,7 +1201,7 @@ export function OfficerDashboard({
                             <Textarea
                               id={`l3-reminder-note-${complaint.id}`}
                               value={resolutionNote}
-                              placeholder="Optional monitoring note for the L2 reminder..."
+                              placeholder="Optional monitoring note for the L2 or L1 reminder..."
                               disabled={isBusy || isPending}
                               onChange={(event) => {
                                 setResolutionNotes((current) => ({ ...current, [complaint.id]: event.target.value }));
@@ -782,19 +1211,33 @@ export function OfficerDashboard({
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-slate-500">
-                              L1 still performs the field work. L3 only supervises delay, reminds L2, and waits for the citizen-feedback review stage.
+                              L1 still performs the field work. L3 supervises the delay, can remind L2 or L1 directly while work is pending, and becomes the final review desk after citizen feedback.
                             </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="rounded-full"
-                              disabled={isBusy || isPending}
-                              onClick={() => {
-                                void handleSendReminderToL2(complaint);
-                              }}
-                            >
-                              {isBusy ? 'Sending...' : 'Send Reminder to L2'}
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-full"
+                                disabled={isBusy || isPending}
+                                onClick={() => {
+                                  void handleSendReminderToL2(complaint);
+                                }}
+                              >
+                                {isBusy ? 'Sending...' : 'Send Reminder to L2'}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="rounded-full"
+                                disabled={isBusy || isPending}
+                                onClick={() => {
+                                  void handleSendReminderToL1FromL3(complaint);
+                                }}
+                              >
+                                {isBusy ? 'Sending...' : 'Send Reminder to L1'}
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ) : canMonitorMissedL1 ? (
@@ -966,8 +1409,14 @@ export function OfficerDashboard({
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-slate-500">
                               {hasProof
-                                ? 'Proof is uploaded. You can now complete the complaint and move it to citizen feedback.'
-                                : 'Upload proof after work has started.'}
+                                ? complaint.status === 'reopened' && directCloseAfterRework
+                                  ? 'Proof is uploaded. You can now complete the complaint, and this L1-review rework will close directly.'
+                                  : complaint.status === 'reopened'
+                                    ? 'Proof is uploaded. You can now complete the complaint. Because this rework came from a higher review desk, citizen feedback will open again after completion.'
+                                    : 'Proof is uploaded. You can now complete the complaint and send it for citizen feedback.'
+                                : workStatus === 'Work Started'
+                                  ? 'Worker team is currently working on site. Upload proof once the job is finished.'
+                                  : 'Upload proof after work has started.'}
                             </div>
                             <Button
                               type="button"
@@ -1012,7 +1461,7 @@ export function OfficerDashboard({
                             {complaint.department_message || 'This complaint is progressing under the current workflow. No direct action is available from this desk right now.'}
                           </div>
                         </div>
-                      )
+                      ))
                     }
                   />
                 );
@@ -1025,6 +1474,7 @@ export function OfficerDashboard({
             )}
           </CardContent>
         </Card>
+
       </div>
     </DashboardLayout>
   );
