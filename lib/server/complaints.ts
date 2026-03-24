@@ -15,6 +15,7 @@ import {
   getCachedComplaintSummary,
   getCachedComplaintTimeline,
   getCachedWorkerInfoByUserId,
+  invalidateComplaintAnalyticsCache,
   invalidateComplaintCache,
 } from '@/lib/server/complaint-cache';
 import { maybeProcessDueComplaintEscalations } from '@/lib/server/complaint-escalations';
@@ -1595,6 +1596,7 @@ export async function createComplaintForUser(
   if (complaint.deadline && complaint.current_level && complaint.current_level !== 'L2_ESCALATED') {
     await scheduleComplaintEscalation(complaint.id, complaint.deadline);
   }
+  await invalidateComplaintAnalyticsCache();
   await cacheComplaintSummary(complaint);
   return complaint;
 }

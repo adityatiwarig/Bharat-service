@@ -120,3 +120,7 @@ export async function invalidateComplaintCache(complaintId: string, identifiers:
 
   await deleteRedisKeys(keys);
 }
+
+export async function invalidateComplaintAnalyticsCache() {
+  await deleteRedisKeys([...COMPLAINT_ANALYTICS_CACHE_KEYS]);
+}

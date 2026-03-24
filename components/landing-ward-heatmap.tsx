@@ -12,6 +12,7 @@ const COUNT_BADGE_ZOOM_THRESHOLD = 14;
 const LABEL_ZOOM_THRESHOLD = 15;
 const MAX_VISIBLE_LABELS = 4;
 const HEATMAP_FETCH_DEBOUNCE_MS = 140;
+const HEATMAP_AUTO_REFRESH_MS = 20000;
 
 type LeafletModule = typeof import('leaflet');
 type LeafletMapInstance = ReturnType<LeafletModule['map']>;
@@ -575,6 +576,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
   const renderFrameRef = useRef<number | null>(null);
+  const autoRefreshIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -630,6 +632,20 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
         refreshTimerRef.current = null;
         void refreshHeatmapData();
       }, HEATMAP_FETCH_DEBOUNCE_MS);
+    }
+
+    function startAutoRefresh() {
+      if (autoRefreshIntervalRef.current !== null) {
+        window.clearInterval(autoRefreshIntervalRef.current);
+      }
+
+      autoRefreshIntervalRef.current = window.setInterval(() => {
+        if (document.visibilityState !== 'visible') {
+          return;
+        }
+
+        void refreshHeatmapData();
+      }, HEATMAP_AUTO_REFRESH_MS);
     }
 
     function scheduleRender(invalidateSignature = false) {
@@ -968,6 +984,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
       mapRef.current = map;
 
       await refreshHeatmapData();
+      startAutoRefresh();
       map.on('zoom', () => {
         scheduleRender(true);
       });
@@ -988,6 +1005,19 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
 
     void initializeMap();
 
+    const handleWindowFocus = () => {
+      void refreshHeatmapData();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshHeatmapData();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const resizeObserver = typeof ResizeObserver !== 'undefined' && mapElementRef.current
       ? new ResizeObserver(() => {
           mapRef.current?.invalidateSize();
@@ -1006,10 +1036,16 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
         window.clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
+      if (autoRefreshIntervalRef.current !== null) {
+        window.clearInterval(autoRefreshIntervalRef.current);
+        autoRefreshIntervalRef.current = null;
+      }
       if (renderFrameRef.current !== null) {
         window.cancelAnimationFrame(renderFrameRef.current);
         renderFrameRef.current = null;
       }
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       resizeObserver?.disconnect();
       mapRef.current?.off('zoom zoomend moveend');
       clearRenderedLayers();
