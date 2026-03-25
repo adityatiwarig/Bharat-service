@@ -93,7 +93,7 @@ function PublicTrackPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language } = useLandingLanguage();
-  const codeFromUrl = searchParams.get('code')?.trim() || '';
+  const codeFromUrl = searchParams?.get('code')?.trim() || '';
   const [lookupCode, setLookupCode] = useState(codeFromUrl);
   const [result, setResult] = useState<PublicComplaintLookupResult | null>(null);
   const [loading, setLoading] = useState(Boolean(codeFromUrl));

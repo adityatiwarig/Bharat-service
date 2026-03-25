@@ -771,7 +771,7 @@ export default function TrackerPage() {
   const { language } = useLandingLanguage();
   const text = TRACKER_TEXT[language];
   const uiText = TRACKER_PAGE_TEXT[language];
-  const complaintId = searchParams.get('id')?.trim() || '';
+  const complaintId = searchParams?.get('id')?.trim() || '';
   const [complaint, setComplaint] = useState<Complaint | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);

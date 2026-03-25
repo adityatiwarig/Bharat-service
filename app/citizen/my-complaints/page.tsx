@@ -109,12 +109,13 @@ const TEXT = {
 } as const;
 
 type ComplaintFilterStatus = 'all' | 'pending' | 'in_progress' | 'resolved' | 'closed';
+type PageText = (typeof TEXT)[keyof typeof TEXT];
 
 function normalizeComplaintStatus(value?: ComplaintStatus | null) {
   return value || 'submitted';
 }
 
-function formatStatusLabel(value: ComplaintStatus | null | undefined, text: (typeof TEXT)['en']) {
+function formatStatusLabel(value: ComplaintStatus | null | undefined, text: PageText) {
   const normalizedValue = normalizeComplaintStatus(value);
 
   if (normalizedValue === 'submitted' || normalizedValue === 'received' || normalizedValue === 'assigned') {
@@ -166,7 +167,7 @@ function getStatusClassName(value?: ComplaintStatus | null) {
   return 'text-rose-600';
 }
 
-function formatDepartment(value: string | null | undefined, text: (typeof TEXT)['en']) {
+function formatDepartment(value: string | null | undefined, text: PageText) {
   if (!value?.trim()) {
     return text.notAssigned;
   }
@@ -174,7 +175,7 @@ function formatDepartment(value: string | null | undefined, text: (typeof TEXT)[
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function formatSubmittedDate(value: string | null | undefined, text: (typeof TEXT)['en']) {
+function formatSubmittedDate(value: string | null | undefined, text: PageText) {
   if (!value) {
     return text.notAvailable;
   }

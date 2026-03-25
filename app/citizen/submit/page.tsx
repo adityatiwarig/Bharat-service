@@ -21,7 +21,7 @@ import {
 import { toast } from 'sonner';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
-import { useLandingLanguage } from '@/components/landing-language';
+import { useLandingLanguage, type LandingLanguage as Language } from '@/components/landing-language';
 import { LoadingSummary } from '@/components/loading-skeletons';
 import { useSession } from '@/components/session-provider';
 import { VoiceAssistantButton } from '@/components/VoiceAssistantButton';
