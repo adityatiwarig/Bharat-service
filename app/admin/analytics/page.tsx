@@ -14,6 +14,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { buildAdminZoneOptions, findAdminZoneLabel } from '@/app/admin/_lib/zone-options';
 import { fetchAdminDashboard, fetchWards } from '@/lib/client/complaints';
 import { subscribeComplaintFeedChanged } from '@/lib/client/live-updates';
 import type { Ward } from '@/lib/types';
@@ -60,11 +61,6 @@ const wardChartConfig = {
   },
 } satisfies ChartConfig;
 const ADMIN_ANALYTICS_REFRESH_INTERVAL_MS = 15000;
-const ZONE_OPTIONS = [
-  { value: 'all', label: 'All zones' },
-  { value: '1', label: 'Rohini' },
-  { value: '2', label: 'Karol Bagh' },
-] as const;
 
 function formatLevel(value: string) {
   return value === 'L2_ESCALATED' ? 'L2 Escalated' : value === 'unassigned' ? 'Unassigned' : value;
@@ -117,7 +113,7 @@ export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AnalyticsSummary>(INITIAL_SUMMARY);
   const [wards, setWards] = useState<Ward[]>([]);
-  const [zoneFilter, setZoneFilter] = useState<'all' | '1' | '2'>('all');
+  const [zoneFilter, setZoneFilter] = useState('all');
   const [activeLevel, setActiveLevel] = useState<string | null>(null);
   const [wardView, setWardView] = useState<'affected' | 'hotspot'>('affected');
   const [activeWard, setActiveWard] = useState<string | null>(null);
@@ -237,7 +233,8 @@ export default function AdminAnalyticsPage() {
 
   const activeLevelEntry = levelData.find((item) => item.level === activeLevel) ?? levelData[0];
   const activeWardEntry = wardData.find((item) => item.ward_name === activeWard) ?? wardData[0];
-  const activeZoneLabel = ZONE_OPTIONS.find((item) => item.value === zoneFilter)?.label || 'All zones';
+  const zoneOptions = buildAdminZoneOptions(wards);
+  const activeZoneLabel = findAdminZoneLabel(zoneOptions, zoneFilter);
   const zoneWardIds = zoneFilter === 'all'
     ? null
     : new Set(wards.filter((ward) => String(ward.zone_id) === zoneFilter).map((ward) => ward.id));
@@ -283,21 +280,40 @@ export default function AdminAnalyticsPage() {
       <div className="space-y-6">
         {loading ? <LoadingSummary label="Loading reports" description="Preparing administrative reporting and ward pressure views." /> : null}
 
-        <section className="gov-admin-card overflow-hidden rounded-md">
-          <div className="px-5 py-5">
+        <section className="overflow-hidden rounded-[28px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.96),_rgba(240,246,255,0.92)_48%,_rgba(227,237,248,0.95)_100%)] shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
+          <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.1fr_0.9fr] lg:px-6 lg:py-6">
             <SectionHeading
               eyebrow="Analytics"
               title="Administrative Reports"
-              description="Zone, ward, and officer-level reporting for Rohini and Karol Bagh across the live L1, L2, and L3 workflow."
+              description="Zone, ward, and officer-level reporting generated from the live complaints database across the current L1, L2, and L3 workflow."
             />
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Current Scope</div>
+                <div className="mt-2 text-xl font-semibold tracking-tight text-[#12385b]">{activeZoneLabel}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">Live reporting slice</div>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Open Complaints</div>
+                <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{summary.open_count}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">Database-backed active queue</div>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Visible Zones</div>
+                <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{Math.max(zoneOptions.length - 1, 0)}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">Loaded from live ward records</div>
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-white/70 bg-white/55 px-5 py-4 backdrop-blur lg:px-6">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="text-sm text-[#5d7287]">Zone scope</div>
-              <Select value={zoneFilter} onValueChange={(value) => setZoneFilter(value as 'all' | '1' | '2')}>
-                <SelectTrigger className="h-10 w-full max-w-[220px] border-[#c8d4e0] bg-white text-[#12385b]">
+              <Select value={zoneFilter} onValueChange={setZoneFilter}>
+                <SelectTrigger className="h-10 w-full max-w-[220px] rounded-xl border-[#c8d4e0] bg-white text-[#12385b]">
                   <SelectValue placeholder="All zones" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ZONE_OPTIONS.map((zone) => (
+                  {zoneOptions.map((zone) => (
                     <SelectItem key={zone.value} value={zone.value}>
                       {zone.label}
                     </SelectItem>
@@ -317,7 +333,7 @@ export default function AdminAnalyticsPage() {
             </>
           ) : (
             <>
-              <section className="gov-admin-card rounded-md p-5">
+              <section className="rounded-[28px] border border-white/70 bg-white/92 p-5 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <SectionHeading
                     eyebrow="Officer Workflow"
@@ -347,7 +363,7 @@ export default function AdminAnalyticsPage() {
                   ))}
                 </div>
 
-                <div className="mt-6 rounded-md border border-[#d7e0e8] bg-[#f8fafc] p-4">
+                <div className="mt-6 rounded-[24px] border border-[#d7e0e8] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f7fb_100%)] p-4">
                   <ChartContainer config={levelChartConfig} className="h-[300px] w-full">
                     <BarChart data={levelData} margin={{ top: 18, right: 12, left: -12, bottom: 0 }}>
                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -401,7 +417,7 @@ export default function AdminAnalyticsPage() {
                 </div>
               </section>
 
-              <section className="gov-admin-card rounded-md p-5">
+              <section className="rounded-[28px] border border-white/70 bg-white/92 p-5 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <SectionHeading
                     eyebrow="Zone and Ward Monitor"
@@ -430,7 +446,7 @@ export default function AdminAnalyticsPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-md border border-[#d7e0e8] bg-[#fffaf4] p-4">
+                <div className="mt-6 rounded-[24px] border border-[#d7e0e8] bg-[linear-gradient(180deg,#fffaf4_0%,#fff5e8_100%)] p-4">
                   <ChartContainer config={wardChartConfig} className="h-[320px] w-full">
                     <BarChart data={scopedWardData} layout="vertical" margin={{ top: 10, right: 10, left: 12, bottom: 0 }}>
                       <CartesianGrid horizontal={false} strokeDasharray="3 3" />
@@ -504,7 +520,7 @@ export default function AdminAnalyticsPage() {
             </>
           ) : (
             <>
-              <section className="gov-admin-card rounded-md p-5">
+              <section className="rounded-[28px] border border-white/70 bg-white/92 p-5 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
                 <SectionHeading
                   eyebrow="Report Brief"
                   title="Quick Command Insights"
@@ -534,7 +550,7 @@ export default function AdminAnalyticsPage() {
                 </div>
               </section>
 
-              <section className="gov-admin-card rounded-md p-5">
+              <section className="rounded-[28px] border border-white/70 bg-white/92 p-5 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <SectionHeading
                   eyebrow="Pressure Lanes"

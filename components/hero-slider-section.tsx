@@ -4,15 +4,10 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Landmark, Languages } from 'lucide-react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { Button } from '@/components/ui/button'
 
 const images = ['/images/hero1.jpg', '/images/hero2.jpg', '/images/hero3.jpg']
-const heroHighlights = [
-  { value: '1.2L+', label: 'Complaints Resolved' },
-  { value: '72 hrs', label: 'Average SLA' },
-  { value: '58K+', label: 'Active Citizens' },
-  { value: '24x7', label: 'Availability' },
-]
 
 type HeroSliderSectionProps = {
   primaryHref: string
@@ -21,6 +16,14 @@ type HeroSliderSectionProps = {
 
 export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectionProps) {
   const [index, setIndex] = useState(0)
+  const { language, setLanguage, t } = useLandingLanguage()
+
+  const heroHighlights = [
+    { value: '1.2L+', label: t.hero.stats.complaintsResolved },
+    { value: '72 hrs', label: t.hero.stats.averageSla },
+    { value: '58K+', label: t.hero.stats.activeCitizens },
+    { value: '24x7', label: t.hero.stats.availability },
+  ]
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -56,11 +59,32 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
 
       <div className="absolute right-6 top-10 hidden items-center gap-4 text-white lg:flex">
         <a href="#main-content" className="text-sm font-medium transition hover:text-white">
-          Skip to main content
+          {t.header.skipToMainContent}
         </a>
         <div className="h-6 w-px bg-white/30" />
-        <div className="flex items-center gap-3 text-white">
-          <span className="text-xl">|</span>
+        <button
+          type="button"
+          aria-label="Toggle language"
+          className="inline-flex items-center gap-1 rounded-full border border-white/18 bg-white/10 px-1.5 py-1 text-[0.8rem] font-semibold text-white/80 backdrop-blur-sm transition hover:bg-white/16"
+          onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+        >
+          <span
+            className={`rounded-full px-2.5 py-1 transition ${
+              language === 'en' ? 'bg-white text-[#0b3c5d]' : 'text-white/75'
+            }`}
+          >
+            {t.language.en}
+          </span>
+          <span className="text-white/40">|</span>
+          <span
+            className={`rounded-full px-2.5 py-1 transition ${
+              language === 'hi' ? 'bg-white text-[#0b3c5d]' : 'text-white/75'
+            }`}
+          >
+            {t.language.hi}
+          </span>
+        </button>
+        <div className="flex items-center gap-3 text-white/90">
           <Languages className="h-5 w-5" />
           <Landmark className="h-5 w-5" />
         </div>
@@ -72,16 +96,16 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
         </div>
 
         <div className="mt-6 text-sm font-semibold tracking-[0.32em] text-white uppercase drop-shadow-[0_4px_12px_rgba(0,0,0,0.4)]">
-          Municipal Corporation of Delhi
+          {t.hero.mcd}
         </div>
 
         <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
           <Landmark className="h-4 w-4" />
-          Official Municipal Citizen Grievance Portal
+          {t.hero.officialPortal}
         </div>
 
         <h1 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-white drop-shadow-[0_8px_26px_rgba(0,0,0,0.58)] sm:text-5xl lg:text-[3.45rem] lg:leading-[0.98]">
-          Public Grievance Portal
+          {t.hero.title}
         </h1>
 
         <div className="mt-4 flex items-center gap-3">
@@ -91,7 +115,7 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
         </div>
 
         <p className="mt-3 max-w-3xl text-base leading-7 text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.42)] sm:text-[1rem]">
-          File and track complaints easily with transparency
+          {t.hero.subtitle}
         </p>
 
         <div className="mt-3 rounded-[28px] border border-white/14 bg-[linear-gradient(180deg,rgba(31,38,58,0.42)_0%,rgba(47,56,79,0.34)_100%)] px-5 py-4 backdrop-blur-md shadow-[0_24px_70px_rgba(0,0,0,0.26)]">
@@ -101,7 +125,7 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
                 size="lg"
                 className="rounded-full bg-[#0b3c5d] px-8 text-white shadow-[0_16px_32px_rgba(8,19,36,0.28)] hover:bg-[#0a3350]"
               >
-                Lodge Complaint
+                {t.hero.lodgeComplaint}
               </Button>
             </Link>
             <Link href={trackerHref}>
@@ -110,7 +134,7 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
                 size="lg"
                 className="rounded-full border-white/60 bg-white/8 px-8 text-white backdrop-blur-sm hover:bg-white hover:text-[#0b3c5d]"
               >
-                Track Complaint
+                {t.hero.trackComplaint}
               </Button>
             </Link>
           </div>

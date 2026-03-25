@@ -13,18 +13,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
-const citizenLinks = [
-  { label: 'Lodge Complaint', href: '/citizen/submit', icon: FileText },
-  { label: 'Track Complaint', href: '/track', icon: SearchCheck },
-  { label: 'FAQs', href: '#footer-faqs', icon: CircleHelp },
-  { label: 'How it Works', href: '#how-it-works', icon: ShieldCheck },
-]
-
-const policyLinks = [
-  { label: 'Privacy Policy', href: '#footer-privacy', icon: ShieldCheck },
-  { label: 'Terms & Conditions', href: '#footer-terms', icon: Scale },
-  { label: 'Disclaimer', href: '#footer-disclaimer', icon: FileText },
-]
+import { useLandingLanguage } from '@/components/landing-language'
 
 const importantLinks = [
   { label: 'National Portal of India', href: 'https://www.india.gov.in' },
@@ -37,6 +26,21 @@ type LandingFooterProps = {
 }
 
 export function LandingFooter({ lastUpdated }: LandingFooterProps) {
+  const { t } = useLandingLanguage()
+
+  const citizenLinks = [
+    { label: t.footer.citizenLinks.lodgeComplaint, href: '/citizen/submit', icon: FileText },
+    { label: t.footer.citizenLinks.trackComplaint, href: '/track', icon: SearchCheck },
+    { label: t.footer.citizenLinks.faqs, href: '#footer-faqs', icon: CircleHelp },
+    { label: t.footer.citizenLinks.howItWorks, href: '#how-it-works', icon: ShieldCheck },
+  ]
+
+  const policyLinks = [
+    { label: t.footer.policyLinks.privacyPolicy, href: '#footer-privacy', icon: ShieldCheck },
+    { label: t.footer.policyLinks.terms, href: '#footer-terms', icon: Scale },
+    { label: t.footer.policyLinks.disclaimer, href: '#footer-disclaimer', icon: FileText },
+  ]
+
   return (
     <footer className="border-t border-[#1a2d46] bg-[#0c1a2b] text-[#d8e4f0]">
       <div className="h-1 w-full bg-[linear-gradient(90deg,#ff9933_0%,#ffffff_50%,#138808_100%)]" />
@@ -44,25 +48,22 @@ export function LandingFooter({ lastUpdated }: LandingFooterProps) {
       <div className="border-b border-[#1a2d46] bg-[#101f32]">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="text-sm font-semibold tracking-[0.14em] text-white uppercase">
-            Government of NCT of Delhi | Municipal Corporation of Delhi
+            {t.footer.topTitle}
           </div>
-          <div className="mt-1 text-sm text-slate-300">Official Public Grievance Redressal Portal</div>
+          <div className="mt-1 text-sm text-slate-300">{t.footer.topSubtitle}</div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid gap-8 border-b border-[#1a2d46] pb-8 md:grid-cols-2 xl:grid-cols-4">
-          <FooterColumn title="About">
+          <FooterColumn title={t.footer.about}>
             <div className="space-y-3">
-              <div className="text-lg font-semibold text-white">GovCRM Portal</div>
-              <p className="max-w-sm text-sm leading-7 text-slate-300">
-                Official grievance redressal system for citizens. Submit complaints, track status, and ensure
-                accountability across departments.
-              </p>
+              <div className="text-lg font-semibold text-white">{t.footer.aboutTitle}</div>
+              <p className="max-w-sm text-sm leading-7 text-slate-300">{t.footer.aboutDescription}</p>
             </div>
           </FooterColumn>
 
-          <FooterColumn title="Citizen Services">
+          <FooterColumn title={t.footer.citizenServices}>
             {citizenLinks.map((item) => (
               <FooterLink key={item.label} href={item.href} icon={item.icon}>
                 {item.label}
@@ -70,7 +71,7 @@ export function LandingFooter({ lastUpdated }: LandingFooterProps) {
             ))}
           </FooterColumn>
 
-          <FooterColumn title="Policies">
+          <FooterColumn title={t.footer.policies}>
             {policyLinks.map((item) => (
               <FooterLink key={item.label} href={item.href} icon={item.icon}>
                 {item.label}
@@ -78,14 +79,14 @@ export function LandingFooter({ lastUpdated }: LandingFooterProps) {
             ))}
           </FooterColumn>
 
-          <FooterColumn title="Contact & Authority">
+          <FooterColumn title={t.footer.contactAuthority}>
             <div className="space-y-3 text-sm leading-7 text-slate-300">
               <div>
-                <div className="font-semibold text-white">Owned by:</div>
-                <div>Municipal Corporation of Delhi</div>
+                <div className="font-semibold text-white">{t.footer.ownedBy}</div>
+                <div>{t.header.mcd}</div>
               </div>
               <div>
-                <div className="font-semibold text-white">Developed by:</div>
+                <div className="font-semibold text-white">{t.footer.developedBy}</div>
                 <div>NIC / GovCRM Unit</div>
               </div>
               <div className="flex items-start gap-2">
@@ -105,7 +106,7 @@ export function LandingFooter({ lastUpdated }: LandingFooterProps) {
         </div>
 
         <div className="border-b border-[#1a2d46] py-4">
-          <div className="text-xs font-semibold tracking-[0.14em] text-white uppercase">Important Links</div>
+          <div className="text-xs font-semibold tracking-[0.14em] text-white uppercase">{t.footer.importantLinks}</div>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-300">
             {importantLinks.map((item, index) => (
               <span key={item.label} className="flex items-center gap-4">
@@ -120,17 +121,14 @@ export function LandingFooter({ lastUpdated }: LandingFooterProps) {
 
         <div className="border-b border-[#1a2d46] py-4">
           <div id="footer-disclaimer" className="text-xs font-semibold tracking-[0.14em] text-white uppercase">
-            Disclaimer
+            {t.footer.disclaimer}
           </div>
-          <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
-            This portal is intended for civic grievance redressal only. RTI matters, court cases, and policy issues are
-            not handled here.
-          </p>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">{t.footer.disclaimerText}</p>
         </div>
 
         <div className="flex flex-col gap-3 py-4 text-sm text-slate-300 lg:flex-row lg:items-center lg:justify-between">
-          <div>(c) 2026 Municipal Corporation of Delhi | All Rights Reserved</div>
-          <div>Last Updated: {lastUpdated}</div>
+          <div>(c) 2026 {t.header.mcd} | {t.footer.rightsReserved}</div>
+          <div>{t.footer.lastUpdated}: {lastUpdated}</div>
         </div>
       </div>
     </footer>

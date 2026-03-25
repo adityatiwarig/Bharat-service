@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Landmark } from 'lucide-react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { Button } from '@/components/ui/button'
 
 type PublicNavbarProps = {
@@ -15,6 +16,7 @@ type PublicNavbarProps = {
 export function PublicNavbar({ isLoggedIn, primaryHref, trackerHref }: PublicNavbarProps) {
   const ticking = useRef(false)
   const [visible, setVisible] = useState(false)
+  const { t } = useLandingLanguage()
 
   useEffect(() => {
     const updateVisibility = () => {
@@ -51,9 +53,9 @@ export function PublicNavbar({ isLoggedIn, primaryHref, trackerHref }: PublicNav
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 text-[11px] font-medium text-[#24415e] sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <Landmark className="h-3.5 w-3.5" />
-            <span>Official Municipal Citizen Grievance Portal</span>
+            <span>{t.header.officialPortal}</span>
           </div>
-          <div className="hidden sm:block">Citizen Helpdesk: 1800-100-2024</div>
+          <div className="hidden sm:block">{t.header.helpdesk}: 1800-100-2024</div>
         </div>
       </div>
 
@@ -66,40 +68,42 @@ export function PublicNavbar({ isLoggedIn, primaryHref, trackerHref }: PublicNav
               </div>
               <div className="min-w-0">
                 <div className="truncate text-[11px] font-semibold tracking-[0.28em] text-[#0b3c5d] uppercase">
-                  Government of NCT of Delhi
+                  {t.header.govDelhi}
                 </div>
-                <div className="mt-0.5 truncate text-base font-semibold text-slate-950">Municipal Corporation of Delhi</div>
-                <div className="text-[13px] text-slate-600">GovCRM Public Grievance Redressal Portal</div>
+                <div className="mt-0.5 truncate text-base font-semibold text-slate-950">{t.header.mcd}</div>
+                <div className="text-[13px] text-slate-600">{t.header.govcrmPortal}</div>
               </div>
             </Link>
 
             <div className="hidden items-center gap-5 lg:flex">
               <a href="#services" className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
-                Complaint Categories
+                {t.header.complaintCategories}
               </a>
               <a href="#how-it-works" className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
-                Process Flow
+                {t.header.processFlow}
               </a>
               <Link href={trackerHref} className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
-                Track Complaint
+                {t.header.trackComplaint}
               </Link>
               <Link href="/worker-login">
                 <Button variant="outline" className="rounded-md border-[#c8d4df] px-4 text-[#0b3c5d] hover:bg-[#f8fbff]">
-                  Officer Login
+                  {t.header.officerLogin}
                 </Button>
               </Link>
               <Link href={primaryHref}>
-                <Button className="rounded-md bg-[#0b3c5d] px-4 text-white hover:bg-[#092f48]">Lodge Complaint</Button>
+                <Button className="rounded-md bg-[#0b3c5d] px-4 text-white hover:bg-[#092f48]">
+                  {t.header.lodgeComplaint}
+                </Button>
               </Link>
             </div>
 
             <div className="flex items-center gap-2 lg:hidden">
               <Link href={primaryHref}>
-                <Button className="rounded-md bg-[#0b3c5d] px-4 text-white hover:bg-[#092f48]">Citizen</Button>
+                <Button className="rounded-md bg-[#0b3c5d] px-4 text-white hover:bg-[#092f48]">{t.header.citizen}</Button>
               </Link>
               <Link href="/worker-login">
                 <Button variant="outline" className="rounded-md border-[#c8d4df] px-4 text-[#0b3c5d] hover:bg-[#f8fbff]">
-                  Officer
+                  {t.header.officer}
                 </Button>
               </Link>
             </div>

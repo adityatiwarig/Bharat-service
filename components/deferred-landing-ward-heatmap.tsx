@@ -3,6 +3,8 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
+import { useLandingLanguage } from '@/components/landing-language';
+
 const LandingWardHeatmap = dynamic(
   () => import('@/components/landing-ward-heatmap').then((mod) => mod.LandingWardHeatmap),
   {
@@ -17,13 +19,13 @@ type IdleWindow = Window & typeof globalThis & {
 };
 
 function LandingWardHeatmapFallback() {
+  const { t } = useLandingLanguage();
+
   return (
     <div className="relative overflow-hidden rounded-[1rem] border border-[#cfd8e3] bg-white">
       <div className="absolute left-4 top-4 z-[1] max-w-[14rem] rounded-[0.9rem] border border-[#cfd8e3] bg-white px-4 py-3 sm:left-6 sm:top-6">
-        <div className="text-[11px] font-semibold tracking-[0.2em] text-[#0b3c5d] uppercase">Ward Complaint Map</div>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Loading ward complaint distribution.
-        </p>
+        <div className="text-[11px] font-semibold tracking-[0.2em] text-[#0b3c5d] uppercase">{t.map.fallbackTitle}</div>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{t.map.fallbackDescription}</p>
       </div>
 
       <div
