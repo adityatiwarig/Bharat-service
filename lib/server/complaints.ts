@@ -1142,6 +1142,10 @@ async function findRecentComplaintFallbackForUser(
   userId: string,
   input: { wardId: number; categoryId: number },
 ): Promise<IssueGroupDetectionResult | null> {
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
+  const activePrimaryComplaintClause = issueGroupingEnabled
+    ? `AND (c.issue_group_id IS NULL OR c.is_primary = TRUE)`
+    : '';
   const result = await query<{
     primary_complaint_id: string;
     primary_tracking_code: string;
@@ -1163,6 +1167,7 @@ async function findRecentComplaintFallbackForUser(
           AND c.category_id = $3
           AND c.created_at >= NOW() - INTERVAL '7 days'
           AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          ${activePrimaryComplaintClause}
         ORDER BY c.created_at DESC
         LIMIT 1
       ),
@@ -1173,6 +1178,7 @@ async function findRecentComplaintFallbackForUser(
           AND c.category_id = $3
           AND c.created_at >= NOW() - INTERVAL '7 days'
           AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+          ${activePrimaryComplaintClause}
       ),
       joined_complaint AS (
         SELECT c.id, c.tracking_code, c.status
