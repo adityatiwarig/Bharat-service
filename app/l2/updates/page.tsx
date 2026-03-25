@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { BellRing, CheckCircle2, ClipboardCheck, LoaderCircle, MapPinned } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useLandingLanguage } from '@/components/landing-language';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary } from '@/components/loading-skeletons';
 import { OfficerSupervisoryAlerts } from '@/components/officer-supervisory-alerts';
@@ -87,12 +88,12 @@ function isComplaintForwardedToL2ByL1(complaint: Complaint) {
   );
 }
 
-function formatDeadline(deadline?: string | null) {
+function formatDeadline(deadline?: string | null, language: 'en' | 'hi' = 'en') {
   if (!deadline) {
-    return 'No deadline';
+    return language === 'hi' ? 'कोई समय-सीमा नहीं' : 'No deadline';
   }
 
-  return new Date(deadline).toLocaleString('en-IN', {
+  return new Date(deadline).toLocaleString(language === 'hi' ? 'hi-IN' : 'en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -102,16 +103,16 @@ function formatDeadline(deadline?: string | null) {
   });
 }
 
-function formatFeedbackLabel(complaint: Complaint) {
+function formatFeedbackLabel(complaint: Complaint, language: 'en' | 'hi' = 'en') {
   if (!complaint.rating) {
-    return 'No citizen feedback yet';
+    return language === 'hi' ? 'अभी तक कोई नागरिक फीडबैक नहीं' : 'No citizen feedback yet';
   }
 
   if (complaint.rating.satisfaction === 'satisfied' || complaint.rating.rating >= 4) {
-    return `Satisfied (${complaint.rating.rating}/5)`;
+    return language === 'hi' ? `संतुष्ट (${complaint.rating.rating}/5)` : `Satisfied (${complaint.rating.rating}/5)`;
   }
 
-  return `Not Satisfied (${complaint.rating.rating}/5)`;
+  return language === 'hi' ? `असंतुष्ट (${complaint.rating.rating}/5)` : `Not Satisfied (${complaint.rating.rating}/5)`;
 }
 
 function getCitizenComplaintDescription(complaint: Complaint) {
@@ -121,6 +122,7 @@ function getCitizenComplaintDescription(complaint: Complaint) {
 export default function L2UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { language } = useLandingLanguage();
   const preferredComplaintCode = searchParams?.get('id')?.trim() || '';
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(true);
@@ -128,6 +130,91 @@ export default function L2UpdatesPage() {
   const [selectedComplaintId, setSelectedComplaintId] = useState('');
   const [actionId, setActionId] = useState<string | null>(null);
   const [deskNote, setDeskNote] = useState('');
+  const t = language === 'hi'
+    ? {
+        pageTitle: 'L2 अपडेट डेस्क',
+        unableLoadDesk: 'L2 डेस्क लोड नहीं हो सकी।',
+        unableProcessAction: 'अभी इस L2 कार्रवाई को संसाधित नहीं किया जा सका।',
+        loadingLabel: 'L2 पर्यवेक्षण डेस्क लोड हो रही है',
+        loadingDescription: 'रिमाइंडर, फीडबैक समीक्षा और समापन कार्रवाई तैयार की जा रही हैं।',
+        headerEyebrow: 'L2 पर्यवेक्षण डेस्क',
+        headerTitle: 'रिमाइंडर, नागरिक फीडबैक और अंतिम समीक्षा',
+        headerDescription: 'यह पेज स्तर 2 पर्यवेक्षण के लिए समर्पित है। इसका उपयोग अग्रेषित या विलंबित L1 शिकायतों की निगरानी, L1 को रिमाइंडर भेजने, L1 कार्य पूर्ण होने के बाद नागरिक फीडबैक की प्रतीक्षा करने और फिर अंतिम बंद या पुनः खोलने का निर्णय लेने के लिए करें।',
+        queueEyebrow: 'L2 कतार',
+        queueTitle: 'आवंटित शिकायतें',
+        ward: 'वार्ड',
+        l2Escalated: 'L2 को अग्रेषित',
+        noAssignedComplaints: 'इस L2 डेस्क पर अभी कोई शिकायत आवंटित नहीं है।',
+        consoleEyebrow: 'L2 कार्रवाई कंसोल',
+        consoleTitle: 'पर्यवेक्षण और समीक्षा पैनल',
+        deskState: 'डेस्क स्थिति',
+        deadline: 'समय-सीमा',
+        citizenFeedback: 'नागरिक फीडबैक',
+        citizenDescription: 'नागरिक विवरण',
+        lockedComplaint: 'यह शिकायत आधिकारिक अभिलेख में पहले ही अंतिम रूप से बंद की जा चुकी है। L2 कार्रवाई कंसोल अब लॉक है और इस डेस्क से कोई रिमाइंडर, समीक्षा या पुनः खोलने की कार्रवाई नहीं की जा सकती।',
+        finalReviewDesk: 'अंतिम L2 समीक्षा डेस्क',
+        finalReviewDescription: 'नागरिक फीडबैक L2 तक पहुँच चुका है। यहाँ प्रमाण और नागरिक टिप्पणियों की समीक्षा करें, फिर शिकायत बंद करें या नए L1 कार्य के लिए पुनः खोलें।',
+        finalReviewPlaceholder: 'अंतिम L2 समीक्षा टिप्पणी जोड़ें...',
+        complaintClosed: 'L2 नागरिक-फीडबैक समीक्षा के बाद शिकायत बंद कर दी गई।',
+        complaintReopened: 'शिकायत पुनः खोली गई और नए कार्य हेतु L1 को लौटाई गई।',
+        closeComplaint: 'शिकायत बंद करें',
+        reopenComplaint: 'शिकायत पुनः खोलें',
+        waitingCitizen: 'L1 ने कार्य पूर्णता प्रमाण पहले ही जमा कर दिया है। नागरिक फीडबैक लंबित है, इसलिए L2 अभी शिकायत बंद नहीं कर सकता। फीडबैक जमा होते ही अंतिम L2 कार्रवाई यहाँ स्वतः उपलब्ध हो जाएगी।',
+        manualSupervision: 'मैनुअल L2 पर्यवेक्षण',
+        monitoringDesk: 'L2 निगरानी डेस्क',
+        manualSupervisionDescription: 'L1 ने मूल नियत समय से पहले इस शिकायत को अग्रेषित किया। अब L2 मामले की निगरानी करता है, समय-रेखा बढ़ाई गई है, और अंतिम L2 समीक्षा खुलने से पहले L1 को फील्ड कार्य पूरा करना होगा।',
+        monitoringDescription: 'L1 अपनी कार्य-समय सीमा पार कर चुका है। अब L2 शिकायत की निगरानी करता है, L1 के साथ समन्वय करता है, और नागरिक फीडबैक जमा होने के बाद समीक्षा डेस्क बनता है।',
+        reminderPlaceholder: 'L1 के लिए वैकल्पिक रिमाइंडर या समन्वय टिप्पणी...',
+        monitoringNote: 'L2 फील्ड कार्य नहीं करता। इस कार्रवाई का उपयोग केवल L1 को रिमाइंडर भेजने और शिकायत को आगे बढ़ाने के लिए करें, जब तक प्रमाण अपलोड न हो जाए और नागरिक फीडबैक दर्ज न हो जाए।',
+        reminderSent: 'L1 को रिमाइंडर सफलतापूर्वक भेजा गया।',
+        sending: 'भेजा जा रहा है...',
+        sendReminder: 'L1 को रिमाइंडर भेजें',
+        deadlineMissed: 'L2 समीक्षा विंडो पहले ही समाप्त हो चुकी है। यह शिकायत अब L3 निगरानी या समीक्षा के अंतर्गत है।',
+        noActionAvailable: 'अभी इस शिकायत के लिए कोई प्रत्यक्ष L2 कार्रवाई उपलब्ध नहीं है।',
+        selectComplaint: 'रिमाइंडर, नागरिक फीडबैक और समीक्षा नियंत्रण खोलने के लिए L2 कतार से कोई शिकायत चुनें।',
+      }
+    : {
+        pageTitle: 'L2 Update Desk',
+        unableLoadDesk: 'Unable to load the L2 desk.',
+        unableProcessAction: 'Unable to process this L2 action right now.',
+        loadingLabel: 'Loading L2 supervision desk',
+        loadingDescription: 'Preparing reminder, feedback review, and closure actions.',
+        headerEyebrow: 'L2 Supervision Desk',
+        headerTitle: 'Reminder, Citizen Feedback, And Final Review',
+        headerDescription: 'This page is dedicated to Level 2 supervision. Use it to monitor forwarded or overdue L1 complaints, send reminders to L1, wait for citizen feedback after L1 completion, and then take the final close or reopen decision.',
+        queueEyebrow: 'L2 Queue',
+        queueTitle: 'Assigned Complaints',
+        ward: 'Ward',
+        l2Escalated: 'L2 Escalated',
+        noAssignedComplaints: 'No complaints are currently assigned to this L2 desk.',
+        consoleEyebrow: 'L2 Action Console',
+        consoleTitle: 'Supervision And Review Panel',
+        deskState: 'Desk State',
+        deadline: 'Deadline',
+        citizenFeedback: 'Citizen Feedback',
+        citizenDescription: 'Citizen Description',
+        lockedComplaint: 'This complaint has already been finalized in the official record. The L2 action console is now locked, and no reminder, review, or reopen action can be taken from this desk.',
+        finalReviewDesk: 'Final L2 Review Desk',
+        finalReviewDescription: 'Citizen feedback has reached L2. Review the proof and citizen remarks here, then close the complaint or reopen it for fresh L1 action.',
+        finalReviewPlaceholder: 'Add the final L2 review note...',
+        complaintClosed: 'Complaint closed after L2 citizen-feedback review.',
+        complaintReopened: 'Complaint reopened and returned to L1 for fresh action.',
+        closeComplaint: 'Close Complaint',
+        reopenComplaint: 'Reopen Complaint',
+        waitingCitizen: 'L1 has already submitted completion proof. Citizen feedback is pending, so L2 cannot close the complaint yet. Final L2 action will unlock here automatically after feedback is submitted.',
+        manualSupervision: 'Manual L2 Supervision',
+        monitoringDesk: 'L2 Monitoring Desk',
+        manualSupervisionDescription: 'L1 forwarded this complaint before the original due date. L2 now supervises the case, the timeline is extended, and L1 must still complete the field work before citizen feedback opens the final L2 review.',
+        monitoringDescription: 'L1 has crossed its execution window. L2 now monitors the complaint, coordinates with L1, and later becomes the review desk after citizen feedback is submitted.',
+        reminderPlaceholder: 'Optional reminder or coordination note for L1...',
+        monitoringNote: 'L2 does not execute field work. Use this action only to remind L1 and keep the complaint moving until proof is uploaded and citizen feedback is recorded.',
+        reminderSent: 'Reminder sent to L1 successfully.',
+        sending: 'Sending...',
+        sendReminder: 'Send Reminder to L1',
+        deadlineMissed: 'The L2 review window has already expired. This complaint now belongs to L3 monitoring or review.',
+        noActionAvailable: 'No direct L2 action is available for this complaint right now.',
+        selectComplaint: 'Select a complaint from the L2 queue to open reminder, citizen feedback, and review controls.',
+      };
 
   async function loadDesk(
     preferredCode?: string,
@@ -178,7 +265,7 @@ export default function L2UpdatesPage() {
         setDeskNote('');
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to load the L2 desk.');
+      toast.error(error instanceof Error ? error.message : t.unableLoadDesk);
     } finally {
       if (!options.silent) {
         setLoading(false);
@@ -264,7 +351,7 @@ export default function L2UpdatesPage() {
       await action();
       await loadDesk(preferredComplaintCode || complaint.complaint_id, complaint.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to process this L2 action right now.');
+      toast.error(error instanceof Error ? error.message : t.unableProcessAction);
     } finally {
       setActionId(null);
     }
@@ -273,13 +360,13 @@ export default function L2UpdatesPage() {
   if (loading && !summary) {
     return (
       <DashboardLayout title="L2 Update Desk" userRole="worker">
-        <LoadingSummary label="Loading L2 supervision desk" description="Preparing reminder, feedback review, and closure actions." />
+        <LoadingSummary label={t.loadingLabel} description={t.loadingDescription} />
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="L2 Update Desk" userRole="worker">
+    <DashboardLayout title={t.pageTitle} userRole="worker">
       <div className="space-y-6">
         <section className="overflow-hidden rounded-[2rem] border border-[#d7e2eb] bg-[linear-gradient(180deg,#ffffff_0%,#eef5fb_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
           <div className="grid h-1.5 w-full grid-cols-3 overflow-hidden">
@@ -289,11 +376,10 @@ export default function L2UpdatesPage() {
           </div>
 
           <div className="px-6 py-6">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">L2 Supervision Desk</div>
-            <h1 className="mt-2 text-[1.8rem] font-semibold tracking-tight text-[#12385b]">Reminder, Citizen Feedback, And Final Review</h1>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">{t.headerEyebrow}</div>
+            <h1 className="mt-2 text-[1.8rem] font-semibold tracking-tight text-[#12385b]">{t.headerTitle}</h1>
             <p className="mt-3 max-w-4xl text-sm leading-7 text-[#53687d]">
-              This page is dedicated to Level 2 supervision. Use it to monitor forwarded or overdue L1 complaints, send reminders to L1,
-              wait for citizen feedback after L1 completion, and then take the final close or reopen decision.
+              {t.headerDescription}
             </p>
           </div>
         </section>
@@ -307,8 +393,8 @@ export default function L2UpdatesPage() {
         <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
           <Card className="overflow-hidden rounded-[1.8rem] border-[#d7e2eb]">
             <CardHeader className="border-b border-[#d7e2eb] bg-[linear-gradient(180deg,#f8fbff_0%,#eef5fb_100%)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">L2 Queue</div>
-              <CardTitle className="mt-2 text-[1.45rem] text-[#12385b]">Assigned Complaints</CardTitle>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">{t.queueEyebrow}</div>
+              <CardTitle className="mt-2 text-[1.45rem] text-[#12385b]">{t.queueTitle}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 pt-6">
               {complaintItems.length ? complaintItems.map((item) => {
@@ -340,13 +426,13 @@ export default function L2UpdatesPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold">{item.title}</div>
                     <div className={`mt-2 text-xs ${active ? 'text-white/80' : 'text-[#60758a]'}`}>
-                      {item.ward_name || `Ward ${item.ward_id}`} | {item.current_level === 'L2_ESCALATED' ? 'L2 Escalated' : item.current_level || 'L2'}
+                      {item.ward_name || `${t.ward} ${item.ward_id}`} | {item.current_level === 'L2_ESCALATED' ? t.l2Escalated : item.current_level || 'L2'}
                     </div>
                   </button>
                 );
               }) : (
                 <div className="rounded-[1.2rem] border border-dashed border-[#d7e2eb] bg-[#f8fbff] px-4 py-6 text-sm text-[#60758a]">
-                  No complaints are currently assigned to this L2 desk.
+                  {t.noAssignedComplaints}
                 </div>
               )}
             </CardContent>
@@ -354,8 +440,8 @@ export default function L2UpdatesPage() {
 
           <Card className="overflow-hidden rounded-[1.8rem] border-[#d7e2eb]">
             <CardHeader className="border-b border-[#d7e2eb] bg-[linear-gradient(180deg,#fffaf2_0%,#fff4df_100%)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8d5a13]">L2 Action Console</div>
-              <CardTitle className="mt-2 text-[1.45rem] text-[#12385b]">Supervision And Review Panel</CardTitle>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8d5a13]">{t.consoleEyebrow}</div>
+              <CardTitle className="mt-2 text-[1.45rem] text-[#12385b]">{t.consoleTitle}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
               {complaint ? (
@@ -367,7 +453,7 @@ export default function L2UpdatesPage() {
                         <div className="mt-2 text-xl font-semibold text-[#12385b]">{complaint.title}</div>
                         <div className="mt-2 flex items-center gap-2 text-sm text-[#60758a]">
                           <MapPinned className="h-4 w-4" />
-                          {complaint.ward_name || `Ward ${complaint.ward_id}`}
+                          {complaint.ward_name || `${t.ward} ${complaint.ward_id}`}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -378,22 +464,22 @@ export default function L2UpdatesPage() {
 
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Desk State</div>
-                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{complaint.current_level === 'L2_ESCALATED' ? 'L2 Escalated' : complaint.current_level || 'L2'}</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">{t.deskState}</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{complaint.current_level === 'L2_ESCALATED' ? t.l2Escalated : complaint.current_level || 'L2'}</div>
                       </div>
                       <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Deadline</div>
-                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{formatDeadline(complaint.deadline)}</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">{t.deadline}</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{formatDeadline(complaint.deadline, language)}</div>
                       </div>
                       <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Citizen Feedback</div>
-                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{formatFeedbackLabel(complaint)}</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">{t.citizenFeedback}</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{formatFeedbackLabel(complaint, language)}</div>
                       </div>
                     </div>
 
                     {citizenComplaintDescription ? (
                       <div className="mt-4 rounded-[1rem] border border-[#d7e2eb] bg-white px-4 py-4">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Citizen Description</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">{t.citizenDescription}</div>
                         <div className="mt-2 text-sm leading-6 text-slate-700">{citizenComplaintDescription}</div>
                       </div>
                     ) : null}
@@ -401,16 +487,16 @@ export default function L2UpdatesPage() {
 
                   {isLockedComplaint ? (
                     <section className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
-                      This complaint has already been finalized in the official record. The L2 action console is now locked, and no reminder, review, or reopen action can be taken from this desk.
+                      {t.lockedComplaint}
                     </section>
                   ) : canReviewAtDesk ? (
                     <section className="space-y-4 rounded-[1.35rem] border border-emerald-200 bg-emerald-50/70 p-5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
                         <ClipboardCheck className="h-4 w-4" />
-                        Final L2 Review Desk
+                        {t.finalReviewDesk}
                       </div>
                       <div className="text-sm leading-6 text-emerald-900">
-                        Citizen feedback has reached L2. Review the proof and citizen remarks here, then close the complaint or reopen it for fresh L1 action.
+                        {t.finalReviewDescription}
                       </div>
                       {complaint.rating?.feedback ? (
                         <div className="rounded-[1rem] border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-700">
@@ -421,7 +507,7 @@ export default function L2UpdatesPage() {
                         value={deskNote}
                         onChange={(event) => setDeskNote(event.target.value)}
                         rows={4}
-                        placeholder="Add the final L2 review note..."
+                        placeholder={t.finalReviewPlaceholder}
                         disabled={isBusy || isPending}
                       />
                       <div className="flex flex-wrap gap-2">
@@ -432,12 +518,12 @@ export default function L2UpdatesPage() {
                           onClick={() => {
                             void runAction(async () => {
                               await closeComplaintByReviewDesk(complaint.id, deskNote.trim() || undefined);
-                              toast.success('Complaint closed after L2 citizen-feedback review.');
+                              toast.success(t.complaintClosed);
                             });
                           }}
                         >
                           {isBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                          Close Complaint
+                          {t.closeComplaint}
                         </Button>
                         <Button
                           type="button"
@@ -447,39 +533,39 @@ export default function L2UpdatesPage() {
                           onClick={() => {
                             void runAction(async () => {
                               await reopenComplaintByReviewDesk(complaint.id, deskNote.trim() || undefined);
-                              toast.success('Complaint reopened and returned to L1 for fresh action.');
+                              toast.success(t.complaintReopened);
                             });
                           }}
                         >
-                          Reopen Complaint
+                          {t.reopenComplaint}
                         </Button>
                       </div>
                     </section>
                   ) : waitingForCitizenAtDesk ? (
                     <section className="rounded-[1.35rem] border border-amber-200 bg-amber-50/80 p-5 text-sm leading-6 text-amber-900">
-                      L1 has already submitted completion proof. Citizen feedback is pending, so L2 cannot close the complaint yet. Final L2 action will unlock here automatically after feedback is submitted.
+                      {t.waitingCitizen}
                     </section>
                   ) : canMonitorAtL2 ? (
                     <section className={`space-y-4 rounded-[1.35rem] border p-5 ${forwardedToL2ByL1 ? 'border-indigo-200 bg-indigo-50/80' : 'border-rose-200 bg-rose-50/80'}`}>
                       <div className="flex items-center gap-2 text-sm font-semibold text-[#12385b]">
                         <BellRing className="h-4 w-4" />
-                        {forwardedToL2ByL1 ? 'Manual L2 Supervision' : 'L2 Monitoring Desk'}
+                        {forwardedToL2ByL1 ? t.manualSupervision : t.monitoringDesk}
                       </div>
                       <div className="text-sm leading-6 text-slate-700">
                         {forwardedToL2ByL1
-                          ? 'L1 forwarded this complaint before the original due date. L2 now supervises the case, the timeline is extended, and L1 must still complete the field work before citizen feedback opens the final L2 review.'
-                          : 'L1 has crossed its execution window. L2 now monitors the complaint, coordinates with L1, and later becomes the review desk after citizen feedback is submitted.'}
+                          ? t.manualSupervisionDescription
+                          : t.monitoringDescription}
                       </div>
                       <Textarea
                         value={deskNote}
                         onChange={(event) => setDeskNote(event.target.value)}
                         rows={4}
-                        placeholder="Optional reminder or coordination note for L1..."
+                        placeholder={t.reminderPlaceholder}
                         disabled={isBusy || isPending}
                       />
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-xs text-slate-600">
-                          L2 does not execute field work. Use this action only to remind L1 and keep the complaint moving until proof is uploaded and citizen feedback is recorded.
+                          {t.monitoringNote}
                         </div>
                         <Button
                           type="button"
@@ -488,27 +574,27 @@ export default function L2UpdatesPage() {
                           onClick={() => {
                             void runAction(async () => {
                               await sendReminderToL1FromL2(complaint.id, deskNote.trim() || undefined);
-                              toast.success('Reminder sent to L1 successfully.');
+                              toast.success(t.reminderSent);
                             });
                           }}
                         >
-                          {isBusy ? 'Sending...' : 'Send Reminder to L1'}
+                          {isBusy ? t.sending : t.sendReminder}
                         </Button>
                       </div>
                     </section>
                   ) : l2DeadlineMissed ? (
                     <section className="rounded-[1.35rem] border border-rose-200 bg-rose-50/80 p-5 text-sm leading-6 text-rose-900">
-                      The L2 review window has already expired. This complaint now belongs to L3 monitoring or review.
+                      {t.deadlineMissed}
                     </section>
                   ) : (
                     <section className="rounded-[1.35rem] border border-[#d7e2eb] bg-white p-5 text-sm leading-6 text-[#53687d]">
-                      {complaint.department_message || 'No direct L2 action is available for this complaint right now.'}
+                      {complaint.department_message || t.noActionAvailable}
                     </section>
                   )}
                 </>
               ) : (
                 <div className="rounded-[1.2rem] border border-dashed border-[#d7e2eb] bg-[#f8fbff] px-4 py-8 text-sm text-[#60758a]">
-                  Select a complaint from the L2 queue to open reminder, citizen feedback, and review controls.
+                  {t.selectComplaint}
                 </div>
               )}
             </CardContent>

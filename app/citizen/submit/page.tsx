@@ -10,7 +10,6 @@ import {
   Copy,
   Crosshair,
   FileImage,
-  Globe,
   Landmark,
   LocateFixed,
   Send,
@@ -434,7 +433,7 @@ function ComplaintSubmissionSuccessOverlay({
 export default function SubmitComplaintPage() {
   const router = useRouter();
   const session = useSession();
-  const { language, setLanguage } = useLandingLanguage();
+  const { language } = useLandingLanguage();
   const formRef = useRef<HTMLFormElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -946,28 +945,6 @@ export default function SubmitComplaintPage() {
                     disabled={loadingMapping}
                     className="mt-4 h-11 w-full justify-center rounded-xl px-4 lg:self-end"
                   />
-                </div>
-                <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] p-1.5 shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
-                  <div className="mb-2 flex items-center gap-2 px-3 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    <Globe className="h-3.5 w-3.5" />
-                    {text.language}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setLanguage('en')}
-                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'en' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
-                    >
-                      {text.english}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLanguage('hi')}
-                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'hi' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
-                    >
-                      {text.hindi}
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
