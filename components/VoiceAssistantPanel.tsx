@@ -1309,12 +1309,12 @@ export function VoiceAssistantPanel({
         <div className="space-y-5 px-5 py-5 sm:px-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Voice capture</div>
-                <div className="mt-1 text-sm text-slate-500">
-                  Browser speech recognition runs in `{speechLanguage}`. We also try a lightweight voice-pitch estimate for gender, but you still verify it before fill.
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Voice capture</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    Browser speech recognition runs in `{speechLanguage}`. We also try a lightweight voice-pitch estimate for gender, but you still verify it before fill.
+                  </div>
                 </div>
-              </div>
               <div className="flex flex-wrap gap-2">
                 {isListening ? (
                   <Button type="button" onClick={handleStopListening} className="h-11 rounded-full bg-rose-600 px-5 text-white hover:bg-rose-700">

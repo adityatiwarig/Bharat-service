@@ -39,7 +39,6 @@ async function persistUpload(file: File, prefix: string) {
   if (!hasFileUploadsTable) {
     throw new Error('Attachment storage is not initialized. Run the latest database setup for file_uploads.');
   }
-
   const attachmentId = randomUUID();
   const storedName = `${prefix}-${attachmentId}-${sanitizeFilename(file.name || 'attachment.bin')}`;
   const buffer = Buffer.from(await file.arrayBuffer());
