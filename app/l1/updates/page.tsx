@@ -17,6 +17,7 @@ import {
   closeComplaintByReviewDesk,
   completeComplaintByL1,
   fetchOfficerDashboard,
+  forwardComplaintToNextLevel,
   markComplaintOnSiteByL1,
   markComplaintViewedByL1,
   markComplaintWorkStartedByL1,
@@ -465,6 +466,13 @@ export default function L1UpdatesPage() {
   const canMarkWorkStarted = Boolean(complaint && canExecuteAtL1 && workStatus === 'On Site');
   const canUploadProof = Boolean(complaint && canExecuteAtL1 && workStatus === 'Work Started');
   const canSubmitWorkCompletion = Boolean(complaint && canExecuteAtL1 && workStatus === 'Proof Uploaded' && hasProof);
+  const canForwardToL2 = Boolean(
+    complaint &&
+    canExecuteAtL1 &&
+    operationalLevel === 'L1' &&
+    !l1DeadlineMissed &&
+    workStatus !== 'Awaiting Citizen Feedback',
+  );
   const savedProofs = complaint?.proof_images?.length
     ? complaint.proof_images
     : complaint?.proof_image
@@ -831,6 +839,20 @@ export default function L1UpdatesPage() {
                           <Send className="h-4 w-4" />
                           {complaint.status === 'reopened' && directCloseAfterRework ? 'Complete Rework And Close' : 'Send For Citizen Feedback'}
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={!canForwardToL2 || isBusy || isPending}
+                          onClick={() => {
+                            void runAction(complaint, async () => {
+                              await forwardComplaintToNextLevel(complaint.id);
+                              toast.success('Complaint forwarded to L2. L1 completion access is removed now.');
+                            });
+                          }}
+                        >
+                          Forward To L2
+                        </Button>
                         <div className="text-xs text-[#60758a]">
                           {complaint.status === 'reopened' && directCloseAfterRework
                             ? 'This reopened complaint was returned by the L1 review desk, so rework completion will close it directly.'
@@ -838,6 +860,11 @@ export default function L1UpdatesPage() {
                               ? 'This reopened complaint was returned by a higher review desk, so citizen feedback will open again after rework completion.'
                               : 'The final `Mark Work Completed` action is not available here. It appears in the review desk only after citizen feedback is submitted.'}
                         </div>
+                        {canForwardToL2 ? (
+                          <div className="text-xs text-[#60758a]">
+                            If this work is not manageable at L1, forward it to Level 2 before the L1 deadline. After forwarding, this complaint will leave the L1 desk.
+                          </div>
+                        ) : null}
                       </div>
                     </section>
                   )}
