@@ -90,7 +90,7 @@ function canDirectlyCloseRework(complaint: Complaint) {
 function isComplaintForwardedToL2ByL1(complaint: Complaint) {
   return (
     complaint.current_level === 'L2' &&
-    `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2')
+    `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision')
   );
 }
 
@@ -484,9 +484,22 @@ export function OfficerDashboard({
     setL3ActionId(complaint.id);
 
     try {
-      await forwardComplaintToNextLevel(complaint.id);
-      setDashboardSummary((current) => patchSummaryAfterQueueChange(current, complaint, level));
-      toast.success('Complaint forwarded to L2. L1 execution access is removed now.');
+      const result = await forwardComplaintToNextLevel(complaint.id);
+      setDashboardSummary((current) =>
+        patchComplaintInSummary(
+          current,
+          complaint.id,
+          {
+            current_level: result.next_level,
+            assigned_officer_id: result.assigned_officer_id,
+            deadline: result.deadline,
+            department_message: 'Complaint has been forwarded by the assigned Level 1 officer to Level 2 supervision. Level 1 continues field work under an extended timeline, and Level 2 will take the final close or reopen decision after citizen feedback.',
+            updated_at: new Date().toISOString(),
+          },
+          level,
+        ),
+      );
+      toast.success('Complaint forwarded to L2 supervision. L1 field work continues under the extended timeline.');
       startTransition(() => {
         router.refresh();
       });
@@ -504,7 +517,6 @@ export function OfficerDashboard({
     try {
       await closeComplaintByReviewDesk(complaint.id, note);
       const reviewDesk = getReviewDeskLabel(level);
-      const directL2ForwardClose = level === 'L2' && isComplaintForwardedToL2ByL1(complaint) && complaint.status !== 'resolved';
       setDashboardSummary((current) =>
         patchComplaintInSummary(
           current,
@@ -513,14 +525,12 @@ export function OfficerDashboard({
             status: 'closed',
             progress: 'resolved',
             resolution_notes: note ?? complaint.resolution_notes ?? null,
-            department_message: directL2ForwardClose
-              ? 'Complaint closed by Level 2 after direct takeover from Level 1.'
-              : `Complaint closed by ${reviewDesk} after citizen feedback review.`,
+            department_message: `Complaint closed by ${reviewDesk} after citizen feedback review.`,
           },
           level,
         ),
       );
-      toast.success(directL2ForwardClose ? 'Forwarded complaint closed by L2.' : `Complaint closed by ${reviewDesk}.`);
+      toast.success(`Complaint closed by ${reviewDesk}.`);
       startTransition(() => {
         router.refresh();
       });
@@ -814,7 +824,7 @@ export function OfficerDashboard({
                   complaint.status === 'resolved' &&
                   feedbackRecorded &&
                   !((level === 'L1' && l1DeadlineMissed) || (level === 'L2' && l2DeadlineMissed));
-                const canDirectlyCloseForwardedAtL2 =
+                const canMonitorForwardedAtL2 =
                   level === 'L2' &&
                   forwardedToL2ByL1 &&
                   complaint.status !== 'resolved' &&
@@ -1293,7 +1303,7 @@ export function OfficerDashboard({
                             </div>
                           </div>
                         </div>
-                      ) : canDirectlyCloseForwardedAtL2 ? (
+                      ) : canMonitorForwardedAtL2 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-3"
                           onClick={(event) => {
@@ -1302,19 +1312,19 @@ export function OfficerDashboard({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-700">
                             <span>
-                              This complaint was forwarded by L1 for direct handling. L2 now owns the complaint and can close it directly after completing the required coordination.
+                              This complaint was manually forwarded by L1 before the deadline. L2 supervision is now active, the work window has been extended, and L1 must still finish the field work before citizen feedback opens the final L2 review.
                             </span>
                             <span>{deadlineCountdown}</span>
                           </div>
 
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-600" htmlFor={`l2-direct-close-note-${complaint.id}`}>
-                              Closure Note
+                            <label className="text-xs font-medium text-slate-600" htmlFor={`l2-forward-note-${complaint.id}`}>
+                              L2 Coordination Note
                             </label>
                             <Textarea
-                              id={`l2-direct-close-note-${complaint.id}`}
+                              id={`l2-forward-note-${complaint.id}`}
                               value={resolutionNote}
-                              placeholder="Add the Level 2 closure note..."
+                              placeholder="Optional note for the L1 reminder or coordination update..."
                               disabled={isBusy || isPending}
                               onChange={(event) => {
                                 setResolutionNotes((current) => ({ ...current, [complaint.id]: event.target.value }));
@@ -1324,18 +1334,18 @@ export function OfficerDashboard({
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-slate-500">
-                              L1 no longer has completion access on this complaint. Close it from the L2 desk once the matter has been handled.
+                              L1 still performs the field work and marks completion. After citizen feedback is recorded, this complaint returns here for the final L2 close or reopen decision.
                             </div>
                             <Button
                               type="button"
                               size="sm"
-                              className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
+                              className="rounded-full"
                               disabled={isBusy || isPending}
                               onClick={() => {
-                                void handleCloseByReviewDesk(complaint);
+                                void handleSendReminderToL1(complaint);
                               }}
                             >
-                              {isBusy ? 'Closing...' : 'Close Complaint'}
+                              {isBusy ? 'Sending...' : 'Send Reminder to L1'}
                             </Button>
                           </div>
                         </div>

@@ -3,6 +3,7 @@ import 'server-only';
 import { revalidateTag } from 'next/cache';
 
 import {
+  computeForwardedL2ComplaintDeadline,
   computeL2ComplaintDeadline,
   computeL3ComplaintDeadline,
   computeL1ComplaintDeadline,
@@ -80,7 +81,7 @@ const EXECUTION_WORK_STATUS = {
   awaitingFeedback: 'Awaiting Citizen Feedback',
 } as const satisfies Record<string, ComplaintWorkStatus>;
 
-const MANUAL_L1_FORWARD_MESSAGE = 'Complaint has been forwarded by the assigned Level 1 officer to Level 2 for direct handling and final closure.';
+const MANUAL_L1_FORWARD_MESSAGE = 'Complaint has been forwarded by the assigned Level 1 officer to Level 2 supervision. Level 1 continues field work under an extended timeline, and Level 2 will take the final close or reopen decision after citizen feedback.';
 
 function isLikelyImageUpload(file: File) {
   if (file.type?.startsWith('image/')) {
@@ -96,13 +97,6 @@ function getExecutionActorLabel() {
 
 function isTerminalComplaintStatus(status: string) {
   return ['resolved', 'closed', 'rejected', 'expired'].includes(status);
-}
-
-function isComplaintForwardedToL2ForDirectClosure(complaint: Pick<ComplaintRoutingRow, 'current_level' | 'department_message'>) {
-  return (
-    complaint.current_level === 'L2' &&
-    String(complaint.department_message || '').toLowerCase().includes('forwarded by the assigned level 1 officer to level 2')
-  );
 }
 
 function mapOfficer(row: OfficerRow): Officer {
@@ -682,7 +676,7 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
       throw new AuthError('This complaint is already mapped to the current Level 2 officer.', 400);
     }
 
-    nextDeadline = computeL2ComplaintDeadline().toISOString();
+    nextDeadline = computeForwardedL2ComplaintDeadline(complaint.priority).toISOString();
     nextOfficerId = mapping.l2_officer_id;
     const l2OfficerName = await getOfficerName(client, mapping.l2_officer_id);
     const l2OfficerUserId = await getOfficerUserId(client, mapping.l2_officer_id);
@@ -695,7 +689,6 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
           current_level = 'L2',
           deadline = $3,
           updated_at = NOW(),
-          work_status = 'Pending',
           department_message = $4
         WHERE id = $1
       `,
@@ -706,8 +699,8 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
       complaint_id: complaint.id,
       status: complaint.status as Complaint['status'],
       note: l2OfficerName
-        ? `Assigned L1 officer forwarded the complaint to Level 2 (${l2OfficerName}) for direct handling.`
-        : 'Assigned L1 officer forwarded the complaint to Level 2 for direct handling.',
+        ? `Assigned L1 officer forwarded the complaint to Level 2 (${l2OfficerName}) for supervision while Level 1 continues field work under an extended timeline.`
+        : 'Assigned L1 officer forwarded the complaint to Level 2 for supervision while Level 1 continues field work under an extended timeline.',
       updated_by_user_id: user.id,
     });
 
@@ -724,7 +717,7 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
         user_id: l2OfficerUserId,
         complaint_id: complaint.id,
         title: 'Complaint forwarded from L1',
-        message: `${complaint.title} has been forwarded to your Level 2 desk for direct handling and final closure.`,
+        message: `${complaint.title} has been forwarded to your Level 2 desk for supervision. Coordinate with L1, extend the work window, and take the final review decision after citizen feedback.`,
         href: '/l2',
       });
     }
@@ -733,7 +726,7 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint moved to Level 2',
-      message: `${complaint.title} has been forwarded from Level 1 to Level 2 for direct handling.`,
+      message: `${complaint.title} has been forwarded from Level 1 to Level 2 supervision. Field work continues while Level 2 now manages the extended review window.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1699,12 +1692,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       level: officer.role,
     });
 
-    const isDirectL2ForwardClosure =
-      officer.role === 'L2' &&
-      isComplaintForwardedToL2ForDirectClosure(complaint) &&
-      complaint.status !== 'resolved';
-
-    if (!isDirectL2ForwardClosure && complaint.status !== 'resolved') {
+    if (complaint.status !== 'resolved') {
       throw new AuthError('Only complaints awaiting a final review decision can be closed.', 400);
     }
 
@@ -1721,23 +1709,21 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       );
     }
 
-    if (!isDirectL2ForwardClosure) {
-      const ratingResult = await client.query<{ count: string; rating: number | null }>(
-        `
-          SELECT COUNT(*)::text AS count, MAX(rating)::int AS rating
-          FROM ratings
-          WHERE complaint_id = $1
-        `,
-        [complaint.id],
-      );
+    const ratingResult = await client.query<{ count: string; rating: number | null }>(
+      `
+        SELECT COUNT(*)::text AS count, MAX(rating)::int AS rating
+        FROM ratings
+        WHERE complaint_id = $1
+      `,
+      [complaint.id],
+    );
 
-      if (Number(ratingResult.rows[0]?.count || 0) <= 0) {
-        throw new AuthError('Citizen feedback is required before the complaint can be closed.', 400);
-      }
+    if (Number(ratingResult.rows[0]?.count || 0) <= 0) {
+      throw new AuthError('Citizen feedback is required before the complaint can be closed.', 400);
+    }
 
-      if (Number(ratingResult.rows[0]?.rating || 0) < 4) {
-        throw new AuthError('The complaint can only be closed when the citizen marked it as satisfied.', 400);
-      }
+    if (Number(ratingResult.rows[0]?.rating || 0) < 4) {
+      throw new AuthError('The complaint can only be closed when the citizen marked it as satisfied.', 400);
     }
 
     await client.query(
@@ -1754,26 +1740,16 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       `,
       [
         complaint.id,
-        isDirectL2ForwardClosure
-          ? (
-            trimmedNote
-              ? `Complaint closed by Level 2 after direct takeover from Level 1. ${trimmedNote}`
-              : 'Complaint closed by Level 2 after direct takeover from Level 1.'
-          )
-          : (
-            trimmedNote
-              ? `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review. ${trimmedNote}`
-              : `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`
-          ),
+        trimmedNote
+          ? `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review. ${trimmedNote}`
+          : `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`,
       ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'closed',
-      note: isDirectL2ForwardClosure
-        ? trimmedNote || 'Complaint closed by Level 2 after direct takeover from Level 1.'
-        : trimmedNote || `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`,
+      note: trimmedNote || `Complaint closed by ${getReviewDecisionLabel(officer.role)} after citizen feedback review.`,
       updated_by_user_id: user.id,
     });
 
@@ -1781,9 +1757,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint closed',
-      message: isDirectL2ForwardClosure
-        ? `${complaint.title} has been closed by the Level 2 desk after direct takeover from Level 1.`
-        : `${complaint.title} has been closed after ${getReviewDecisionLabel(officer.role).toLowerCase()} of your feedback.`,
+      message: `${complaint.title} has been closed after ${getReviewDecisionLabel(officer.role).toLowerCase()} of your feedback.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 

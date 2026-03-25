@@ -847,7 +847,7 @@ export default function L1UpdatesPage() {
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await forwardComplaintToNextLevel(complaint.id);
-                              toast.success('Complaint forwarded to L2. L1 completion access is removed now.');
+                              toast.success('Complaint forwarded to L2 supervision. L1 field work continues under the extended timeline.');
                             });
                           }}
                         >
@@ -862,7 +862,7 @@ export default function L1UpdatesPage() {
                         </div>
                         {canForwardToL2 ? (
                           <div className="text-xs text-[#60758a]">
-                            If this work is not manageable at L1, forward it to Level 2 before the L1 deadline. After forwarding, this complaint will leave the L1 desk.
+                            If this work is not manageable at L1, forward it to Level 2 before the L1 deadline. The deadline will extend, L2 supervision will activate, and the final close decision will move to L2 after citizen feedback.
                           </div>
                         ) : null}
                       </div>
