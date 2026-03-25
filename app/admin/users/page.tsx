@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from 'rec
 import { ShieldCheck, Users2 } from 'lucide-react';
 
 import { useAdminWorkspace } from '@/components/admin-workspace';
+import { useLandingLanguage } from '@/components/landing-language';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary, StatListSkeleton } from '@/components/loading-skeletons';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
@@ -35,19 +36,19 @@ type AdminUser = {
   created_at: string;
 };
 
-function formatRole(role: string, officerRole?: AdminUser['officer_role']) {
+function formatRole(role: string, officerRole?: AdminUser['officer_role'], language: 'en' | 'hi' = 'en') {
   if (officerRole === 'L1' || officerRole === 'L2' || officerRole === 'L3') {
     return officerRole;
   }
 
-  if (officerRole === 'ADMIN') return 'Officer Admin';
-  if (role === 'admin') return 'Admin';
-  if (role === 'leader') return 'Dept Head';
-  if (role === 'worker') return 'Worker';
-  return 'Citizen';
+  if (officerRole === 'ADMIN') return language === 'hi' ? 'अधिकारी प्रशासक' : 'Officer Admin';
+  if (role === 'admin') return language === 'hi' ? 'प्रशासक' : 'Admin';
+  if (role === 'leader') return language === 'hi' ? 'विभाग प्रमुख' : 'Dept Head';
+  if (role === 'worker') return language === 'hi' ? 'कर्मचारी' : 'Worker';
+  return language === 'hi' ? 'नागरिक' : 'Citizen';
 }
 
-function formatDepartment(user: AdminUser) {
+function formatDepartment(user: AdminUser, language: 'en' | 'hi' = 'en') {
   if (user.officer_department_names?.length) {
     return user.officer_department_names.join(', ');
   }
@@ -56,14 +57,14 @@ function formatDepartment(user: AdminUser) {
     return user.officer_department_name;
   }
 
-  return user.department ? user.department.replace('_', ' ') : 'Not assigned';
+  return user.department ? user.department.replace('_', ' ') : (language === 'hi' ? 'आवंटित नहीं' : 'Not assigned');
 }
 
-function formatOfficerScope(user: AdminUser) {
-  const zoneLabel = user.officer_zone_name || (user.officer_zone_id ? `Zone ${user.officer_zone_id}` : 'Zone pending');
+function formatOfficerScope(user: AdminUser, language: 'en' | 'hi' = 'en') {
+  const zoneLabel = user.officer_zone_name || (user.officer_zone_id ? `${language === 'hi' ? 'ज़ोन' : 'Zone'} ${user.officer_zone_id}` : (language === 'hi' ? 'ज़ोन लंबित' : 'Zone pending'));
   const wardLabel = user.officer_ward_names?.length
     ? user.officer_ward_names.join(', ')
-    : user.officer_ward_name || (user.officer_ward_id ? `Ward ${user.officer_ward_id}` : 'All wards in zone');
+    : user.officer_ward_name || (user.officer_ward_id ? `${language === 'hi' ? 'वार्ड' : 'Ward'} ${user.officer_ward_id}` : (language === 'hi' ? 'ज़ोन के सभी वार्ड' : 'All wards in zone'));
   return { zoneLabel, wardLabel };
 }
 
@@ -102,6 +103,7 @@ function countDistinctOfficers(users: AdminUser[], role: 'L1' | 'L2' | 'L3', inc
 
 export default function AdminUsersPage() {
   const { activateFocusMode } = useAdminWorkspace();
+  const { language } = useLandingLanguage();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [wards, setWards] = useState<Ward[]>([]);
@@ -120,7 +122,7 @@ export default function AdminUsersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const zoneOptions = useMemo(() => buildAdminZoneOptions(wards), [wards]);
+  const zoneOptions = useMemo(() => buildAdminZoneOptions(wards, language), [language, wards]);
   const officerTeam = users.filter((user) => user.officer_role === 'L1' || user.officer_role === 'L2' || user.officer_role === 'L3');
   const zoneScopedOfficerTeam = zoneFilter === 'all'
     ? officerTeam
@@ -136,8 +138,81 @@ export default function AdminUsersPage() {
   const l1Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L1', zoneFilter !== 'all');
   const l2Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L2', zoneFilter !== 'all');
   const l3Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L3', zoneFilter !== 'all');
+  const t = language === 'hi'
+    ? {
+        pageTitle: 'अधिकारी रोस्टर',
+        loadingLabel: 'अधिकारी टीम लोड हो रही है',
+        loadingDescription: 'L1, L2 और L3 अधिकारी अभिलेख प्राप्त किए जा रहे हैं।',
+        heroBadge: 'संचालन',
+        heroTitle: 'अधिकारी संचालन रोस्टर',
+        heroDescription: 'डेटाबेस में उपलब्ध ज़ोनों के L1, L2 और L3 अधिकारियों का लाइव प्रशासनिक दृश्य।',
+        visibleZones: 'दृश्यमान ज़ोन',
+        liveWardMapping: 'लाइव वार्ड मैपिंग से लोड किया गया',
+        currentScope: 'वर्तमान दायरा',
+        distinctOfficers: 'वर्तमान दायरे में विशिष्ट अधिकारी',
+        allOfficers: 'सभी अधिकारी',
+        officersOnlySuffix: 'अधिकारी मात्र',
+        zoneScope: 'ज़ोन दायरा',
+        noZones: 'कोई ज़ोन उपलब्ध नहीं',
+        teamAvailability: 'टीम उपलब्धता अवलोकन',
+        currentAvailableByLevel: 'स्तर अनुसार वर्तमान उपलब्ध अधिकारी',
+        rosterSourceNote: 'अब गणना पुरानी वर्कर-शैली पैनल के बजाय लाइव अधिकारी रोस्टर से आती है।',
+        officersWord: 'अधिकारी',
+        l1Title: 'L1 अधिकारी',
+        l2Title: 'L2 अधिकारी',
+        l3Title: 'L3 अधिकारी',
+        l1Desc: 'लाइव रोस्टर में वर्तमान उपलब्ध निष्पादन-स्तर अधिकारी।',
+        l2Desc: 'लाइव रोस्टर में वर्तमान उपलब्ध समीक्षा अधिकारी।',
+        l3Desc: 'लाइव रोस्टर में वर्तमान उपलब्ध एस्केलेशन अधिकारी।',
+        officerTeam: 'अधिकारी टीम',
+        showing: 'दिखाया जा रहा है',
+        mergedFrom: 'से समेकित',
+        mappingRows: 'मैपिंग पंक्तियाँ',
+        zone: 'ज़ोन',
+        wardScope: 'वार्ड दायरा',
+        department: 'विभाग',
+        created: 'निर्मित',
+      }
+    : {
+        pageTitle: 'Officer Roster',
+        loadingLabel: 'Loading officer teams',
+        loadingDescription: 'Fetching L1, L2, and L3 officer records.',
+        heroBadge: 'Operations',
+        heroTitle: 'Officer Operations Roster',
+        heroDescription: 'Live administrative view of L1, L2, and L3 officers across the zones currently available in the database.',
+        visibleZones: 'Visible Zones',
+        liveWardMapping: 'Loaded from live ward mapping',
+        currentScope: 'Current Scope',
+        distinctOfficers: 'Distinct officers in current scope',
+        allOfficers: 'All officers',
+        officersOnlySuffix: 'officers only',
+        zoneScope: 'Zone scope',
+        noZones: 'No zones available',
+        teamAvailability: 'Team Availability Overview',
+        currentAvailableByLevel: 'Current available officers by level',
+        rosterSourceNote: 'Counts now come from the live officer roster, not the old worker-style panel.',
+        officersWord: 'officers',
+        l1Title: 'L1 Officers',
+        l2Title: 'L2 Officers',
+        l3Title: 'L3 Officers',
+        l1Desc: 'Execution-level officers currently available in the live roster.',
+        l2Desc: 'Review officers currently available in the live roster.',
+        l3Desc: 'Escalation officers currently available in the live roster.',
+        officerTeam: 'Officer Team',
+        showing: 'Showing',
+        mergedFrom: 'Merged from',
+        mappingRows: 'mapping rows',
+        zone: 'Zone',
+        wardScope: 'Ward Scope',
+        department: 'Department',
+        created: 'Created',
+      };
   const activeFilterLabel =
-    `${findAdminZoneLabel(zoneOptions, zoneFilter)} | ${teamFilter === 'all' ? 'All officers' : `${teamFilter} officers only`}`;
+    `${findAdminZoneLabel(zoneOptions, zoneFilter, language)} | ${teamFilter === 'all' ? t.allOfficers : `${teamFilter} ${t.officersOnlySuffix}`}`;
+  const teamFilterOptions = TEAM_FILTER_OPTIONS.map((option) => ({
+    ...option,
+    label: option.key === 'all' ? t.allOfficers : option.label,
+  }));
   const chartDomainMax = Math.max(l1Count, l2Count, l3Count, 1) + 4;
   const teamChartData = [
     { role: 'L1', count: l1Count, fill: '#12385b', filter: 'L1' as const },
@@ -154,7 +229,7 @@ export default function AdminUsersPage() {
 
       return {
         key: zone.value,
-        title: `${zone.label} Officers`,
+        title: language === 'hi' ? `${zone.label} अधिकारी` : `${zone.label} Officers`,
         value: l1ZoneCount + l2ZoneCount + l3ZoneCount,
         detail: `${l1ZoneCount} L1 | ${l2ZoneCount} L2 | ${l3ZoneCount} L3`,
       };
@@ -162,27 +237,27 @@ export default function AdminUsersPage() {
   const roleCards = [
     {
       key: 'L1' as const,
-      title: 'L1 Officers',
+      title: t.l1Title,
       value: l1Count,
-      description: 'Execution-level officers currently available in the live roster.',
+      description: t.l1Desc,
       icon: <Users2 className="h-5 w-5" />,
       cardClassName: 'border-[#d7e0e8] bg-white',
       iconClassName: 'bg-[#eff4fa] text-[#12385b]',
     },
     {
       key: 'L2' as const,
-      title: 'L2 Officers',
+      title: t.l2Title,
       value: l2Count,
-      description: 'Review officers currently available in the live roster.',
+      description: t.l2Desc,
       icon: <ShieldCheck className="h-5 w-5" />,
       cardClassName: 'border-[#f7ddb1] bg-[#fff8eb]',
       iconClassName: 'bg-white text-[#9a3412]',
     },
     {
       key: 'L3' as const,
-      title: 'L3 Officers',
+      title: t.l3Title,
       value: l3Count,
-      description: 'Escalation officers currently available in the live roster.',
+      description: t.l3Desc,
       icon: <ShieldCheck className="h-5 w-5" />,
       cardClassName: 'border-[#b9ddc0] bg-[#eff9f1]',
       iconClassName: 'bg-white text-[#166534]',
@@ -190,48 +265,48 @@ export default function AdminUsersPage() {
   ];
 
   return (
-    <DashboardLayout title="Officer Roster">
+    <DashboardLayout title={t.pageTitle}>
       <div className="space-y-6">
-        {loading ? <LoadingSummary label="Loading officer teams" description="Fetching L1, L2, and L3 officer records." /> : null}
+        {loading ? <LoadingSummary label={t.loadingLabel} description={t.loadingDescription} /> : null}
 
         <section className="overflow-hidden rounded-[28px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(236,244,255,0.88)_48%,_rgba(224,236,248,0.92)_100%)] shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
           <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.1fr_0.9fr] lg:px-6 lg:py-6">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e4f0] bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a3412]">
                 <span className="h-2 w-2 rounded-full bg-[#ff9933]" />
-                Operations
+                {t.heroBadge}
               </div>
-              <h2 className="mt-3 text-[1.7rem] font-semibold tracking-tight text-[#12385b]">Officer Operations Roster</h2>
+              <h2 className="mt-3 text-[1.7rem] font-semibold tracking-tight text-[#12385b]">{t.heroTitle}</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d7287]">
-                Live administrative view of L1, L2, and L3 officers across the zones currently available in the database.
+                {t.heroDescription}
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Visible Zones</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">{t.visibleZones}</div>
                 <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{Math.max(zoneOptions.length - 1, 0)}</div>
-                <div className="mt-1 text-xs text-[#6d8093]">Loaded from live ward mapping</div>
+                <div className="mt-1 text-xs text-[#6d8093]">{t.liveWardMapping}</div>
               </div>
               <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">L1 + L2 + L3</div>
                 <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{l1Count + l2Count + l3Count}</div>
-                <div className="mt-1 text-xs text-[#6d8093]">Distinct officers in current scope</div>
+                <div className="mt-1 text-xs text-[#6d8093]">{t.distinctOfficers}</div>
               </div>
               <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Current Scope</div>
-                <div className="mt-2 text-lg font-semibold tracking-tight text-[#12385b]">{findAdminZoneLabel(zoneOptions, zoneFilter)}</div>
-                <div className="mt-1 text-xs text-[#6d8093]">{teamFilter === 'all' ? 'All officers' : `${teamFilter} officers only`}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">{t.currentScope}</div>
+                <div className="mt-2 text-lg font-semibold tracking-tight text-[#12385b]">{findAdminZoneLabel(zoneOptions, zoneFilter, language)}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">{teamFilter === 'all' ? t.allOfficers : `${teamFilter} ${t.officersOnlySuffix}`}</div>
               </div>
             </div>
           </div>
 
           <div className="border-t border-white/70 bg-white/55 px-5 py-4 backdrop-blur lg:px-6">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-[#5d7287]">Zone scope</div>
+              <div className="text-sm text-[#5d7287]">{t.zoneScope}</div>
               <Select value={zoneFilter} onValueChange={setZoneFilter}>
                 <SelectTrigger className="h-10 w-full max-w-[220px] rounded-xl border-[#c8d4e0] bg-white text-[#12385b]">
-                  <SelectValue placeholder="All zones" />
+                  <SelectValue placeholder={findAdminZoneLabel(zoneOptions, 'all', language)} />
                 </SelectTrigger>
                 <SelectContent>
                   {zoneOptions.map((zone) => (
@@ -242,7 +317,7 @@ export default function AdminUsersPage() {
                 </SelectContent>
               </Select>
               <div className="text-xs text-[#6d8093]">
-                {zoneCards.length ? zoneCards.map((zone) => `${zone.title.replace(' Officers', '')} ${zone.value}`).join(' | ') : 'No zones available'}
+                {zoneCards.length ? zoneCards.map((zone) => `${zone.title.replace(language === 'hi' ? ' अधिकारी' : ' Officers', '')} ${zone.value}`).join(' | ') : t.noZones}
               </div>
             </div>
           </div>
@@ -250,7 +325,7 @@ export default function AdminUsersPage() {
 
         <Card className="rounded-[28px] border-white/70 bg-white/92 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
           <CardHeader>
-            <CardTitle className="text-[#12385b]">Team Availability Overview</CardTitle>
+            <CardTitle className="text-[#12385b]">{t.teamAvailability}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -266,13 +341,13 @@ export default function AdminUsersPage() {
                 <div className="rounded-[24px] border border-[#d7e0e8] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f7fb_100%)] p-4">
                   <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-medium text-[#5d7287]">Current available officers by level</div>
+                      <div className="text-sm font-medium text-[#5d7287]">{t.currentAvailableByLevel}</div>
                       <div className="mt-1 text-xs text-[#7a8da3]">
-                        Counts now come from the live officer roster, not the old worker-style panel.
+                        {t.rosterSourceNote}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      {TEAM_FILTER_OPTIONS.map((option) => (
+                      {teamFilterOptions.map((option) => (
                         <button
                           type="button"
                           key={option.key}
@@ -301,7 +376,7 @@ export default function AdminUsersPage() {
                             formatter={(value, _name, item) => (
                               <div className="flex min-w-[150px] items-center justify-between gap-4">
                                 <span className="text-slate-500">{item.payload.role}</span>
-                                <span className="font-semibold text-slate-900">{String(value)} officers</span>
+                                <span className="font-semibold text-slate-900">{String(value)} {t.officersWord}</span>
                               </div>
                             )}
                           />
@@ -404,11 +479,11 @@ export default function AdminUsersPage() {
         <Card className="rounded-[28px] border-white/70 bg-white/92 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
           <CardHeader>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-[#12385b]">Officer Team</CardTitle>
+              <CardTitle className="text-[#12385b]">{t.officerTeam}</CardTitle>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="text-sm text-[#5d7287]">Showing: {activeFilterLabel}</div>
+                <div className="text-sm text-[#5d7287]">{t.showing}: {activeFilterLabel}</div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {TEAM_FILTER_OPTIONS.map((option) => (
+                  {teamFilterOptions.map((option) => (
                     <button
                       type="button"
                       key={option.key}
@@ -431,7 +506,7 @@ export default function AdminUsersPage() {
               <StatListSkeleton count={5} />
             ) : filteredOfficerTeam.length ? (
               filteredOfficerTeam.map((user) => {
-                const { zoneLabel, wardLabel } = formatOfficerScope(user);
+                const { zoneLabel, wardLabel } = formatOfficerScope(user, language);
 
                 return (
                   <button
@@ -446,30 +521,30 @@ export default function AdminUsersPage() {
                         <div className="text-sm text-[#5d7287]">{user.email}</div>
                         {user.source_row_count && user.source_row_count > 1 ? (
                           <div className="mt-1 text-xs text-[#9a3412]">
-                            Merged from {user.source_row_count} mapping rows
+                            {t.mergedFrom} {user.source_row_count} {t.mappingRows}
                           </div>
                         ) : null}
                       </div>
                       <div className="rounded-sm border border-[#d7e0e8] bg-[#f8fafc] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-[#60758a]">
-                        {formatRole(user.role, user.officer_role)}
+                        {formatRole(user.role, user.officer_role, language)}
                       </div>
                     </div>
                     <div className="mt-4 grid gap-3 text-sm text-[#5d7287] md:grid-cols-4">
                       <div className="rounded-md border border-[#d7e0e8] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[#6d8093]">Zone</div>
+                        <div className="text-[#6d8093]">{t.zone}</div>
                         <div className="mt-1 font-semibold text-[#12385b]">{zoneLabel}</div>
                       </div>
                       <div className="rounded-md border border-[#d7e0e8] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[#6d8093]">Ward Scope</div>
+                        <div className="text-[#6d8093]">{t.wardScope}</div>
                         <div className="mt-1 font-semibold text-[#12385b]">{wardLabel}</div>
                       </div>
                       <div className="rounded-md border border-[#d7e0e8] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[#6d8093]">Department</div>
-                        <div className="mt-1 font-semibold text-[#12385b]">{formatDepartment(user)}</div>
+                        <div className="text-[#6d8093]">{t.department}</div>
+                        <div className="mt-1 font-semibold text-[#12385b]">{formatDepartment(user, language)}</div>
                       </div>
                       <div className="rounded-md border border-[#d7e0e8] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[#6d8093]">Created</div>
-                        <div className="mt-1 font-semibold text-[#12385b]">{new Date(user.created_at).toLocaleDateString()}</div>
+                        <div className="text-[#6d8093]">{t.created}</div>
+                        <div className="mt-1 font-semibold text-[#12385b]">{new Date(user.created_at).toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en-IN')}</div>
                       </div>
                     </div>
                   </button>
@@ -477,7 +552,9 @@ export default function AdminUsersPage() {
               })
             ) : (
               <div className="py-8 text-center text-sm text-[#5d7287]">
-                No {teamFilter === 'all' ? 'officer' : `${teamFilter} officer`} records found.
+                {language === 'hi'
+                  ? `${teamFilter === 'all' ? 'अधिकारी' : `${teamFilter} अधिकारी`} अभिलेख नहीं मिले।`
+                  : `No ${teamFilter === 'all' ? 'officer' : `${teamFilter} officer`} records found.`}
               </div>
             )}
           </CardContent>

@@ -96,13 +96,13 @@ export function Sidebar({
       label: language === 'hi' ? 'मुख्य नियंत्रण' : 'MAIN CONTROL',
       items: [
         {
-          label: 'Dashboard',
+          label: language === 'hi' ? 'डैशबोर्ड' : 'Dashboard',
           href: '/admin',
           icon: LayoutDashboard,
           active: pathname === '/admin',
         },
         {
-          label: 'Complaint Queue',
+          label: language === 'hi' ? 'शिकायत कतार' : 'Complaint Queue',
           href: '/admin/complaints',
           icon: ClipboardList,
           active: pathname.startsWith('/admin/complaints'),
@@ -110,10 +110,10 @@ export function Sidebar({
       ],
     },
     {
-      label: 'OPERATIONS',
+      label: language === 'hi' ? 'संचालन' : 'OPERATIONS',
       items: [
         {
-          label: 'Officer Roster',
+          label: language === 'hi' ? 'अधिकारी रोस्टर' : 'Officer Roster',
           href: '/admin/users',
           icon: Users2,
           active: pathname.startsWith('/admin/users'),
@@ -121,10 +121,10 @@ export function Sidebar({
       ],
     },
     {
-      label: 'ANALYTICS',
+      label: language === 'hi' ? 'विश्लेषण' : 'ANALYTICS',
       items: [
         {
-          label: 'Reports',
+          label: language === 'hi' ? 'रिपोर्ट' : 'Reports',
           href: '/admin/analytics',
           icon: BarChart3,
           active: pathname.startsWith('/admin/analytics'),
