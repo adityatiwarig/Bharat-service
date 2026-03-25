@@ -541,6 +541,9 @@ export async function reopenComplaintByReviewDesk(complaintId: string, note?: st
       complaint_id: string;
       status: 'reopened';
       current_level: 'L1' | 'L3';
+      assigned_officer_id?: string | null;
+      deadline?: string | null;
+      work_status?: 'Pending';
     };
   }>(`/api/complaints/${complaintId}/review`, {
     method: 'PATCH',

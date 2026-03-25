@@ -1002,9 +1002,15 @@ function handleExportReport() {
     tracker?.timeline.find((step) => step.key === 'completion_verification')?.timestamp,
   );
   const canRateResolution = Boolean(
-    complaint?.status === 'resolved' ||
-    tracker?.waitingForFeedback ||
-    (hasCompletionEvidence && complaint?.status !== 'expired'),
+    complaint &&
+    complaint.status !== 'closed' &&
+    complaint.status !== 'expired' &&
+    complaint.status !== 'rejected' &&
+    (
+      complaint.status === 'resolved' ||
+      tracker?.waitingForFeedback ||
+      hasCompletionEvidence
+    ),
   );
   const isExpiredComplaint = complaint?.status === 'expired';
   const citizenRatingLabel = complaint?.rating

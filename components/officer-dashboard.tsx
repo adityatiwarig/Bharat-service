@@ -223,6 +223,10 @@ function getLocalizedWorkStatusLabel(status: string, language: 'en' | 'hi') {
   return labels[status] || status;
 }
 
+function getCitizenComplaintDescription(complaint: Complaint) {
+  return complaint.text?.trim() || complaint.description?.trim() || '';
+}
+
 function isL1Viewed(complaint: Complaint) {
   return getWorkStatus(complaint) !== 'Pending';
 }
@@ -263,6 +267,22 @@ function isComplaintForwardedToL2ByL1(complaint: Complaint) {
       message.includes('under level 2 supervision') ||
       message.includes('final level 2 review')
     )
+  );
+}
+
+function isComplaintAwaitingHigherDeskReview(complaint: Complaint) {
+  const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
+
+  return (
+    complaint.current_level === 'L2' ||
+    complaint.current_level === 'L2_ESCALATED' ||
+    complaint.current_level === 'L3' ||
+    reviewMessage.includes('under level 2 supervision') ||
+    reviewMessage.includes('final level 2 review') ||
+    reviewMessage.includes('level 2 review desk') ||
+    reviewMessage.includes('level 3 review desk') ||
+    reviewMessage.includes('routed to level 2 review') ||
+    reviewMessage.includes('routed to level 3 review')
   );
 }
 
@@ -834,7 +854,42 @@ export function OfficerDashboard({
 
     try {
       const result = await reopenComplaintByReviewDesk(complaint.id, note);
-      setDashboardSummary((current) => patchSummaryAfterQueueChange(current, complaint, level));
+      setProofFiles((current) => ({ ...current, [complaint.id]: null }));
+      setProofDescriptions((current) => ({ ...current, [complaint.id]: '' }));
+      setResolutionNotes((current) => ({ ...current, [complaint.id]: '' }));
+
+      if (level === 'L1' && result.current_level === 'L1') {
+        setDashboardSummary((current) =>
+          patchComplaintInSummary(
+            current,
+            complaint.id,
+            {
+              assigned_officer_id: result.assigned_officer_id ?? complaint.assigned_officer_id ?? null,
+              current_level: 'L1',
+              status: 'reopened',
+              progress: 'pending',
+              deadline: result.deadline ?? null,
+              work_status: result.work_status ?? 'Pending',
+              proof_image: null,
+              proof_images: [],
+              proof_image_url: null,
+              proof_text: null,
+              completed_at: null,
+              resolved_at: null,
+              resolution_notes: null,
+              rating: null,
+              department_message: note
+                ? `Complaint reopened by ${getReviewDeskLabel(level)} after not-satisfied citizen feedback. Fresh L1 field action is required. ${note}`
+                : `Complaint reopened by ${getReviewDeskLabel(level)} after not-satisfied citizen feedback. Fresh L1 field action is required.`,
+              updated_at: new Date().toISOString(),
+            },
+            level,
+          ),
+        );
+      } else {
+        setDashboardSummary((current) => patchSummaryAfterQueueChange(current, complaint, level));
+      }
+
       toast.success(`Complaint reopened and sent back to ${result.current_level} for fresh field action.`);
       startTransition(() => {
         router.refresh();
@@ -1171,8 +1226,10 @@ export function OfficerDashboard({
                 const reviewDeskLabel = getReviewDeskLabel(level, language);
                 const directCloseAfterRework = canDirectlyCloseRework(complaint);
                 const forwardedToL2ByL1 = isComplaintForwardedToL2ByL1(complaint);
+                const awaitingHigherDeskReview = isComplaintAwaitingHigherDeskReview(complaint);
                 const canReviewAtDesk =
                   operationalLevel === level &&
+                  !awaitingHigherDeskReview &&
                   complaint.status === 'resolved' &&
                   feedbackRecorded &&
                   !((level === 'L1' && l1DeadlineMissed) || (level === 'L2' && l2DeadlineMissed));
@@ -1195,6 +1252,7 @@ export function OfficerDashboard({
                   complaint.status !== 'resolved';
                 const waitingForCitizenAtDesk =
                   operationalLevel === level &&
+                  !awaitingHigherDeskReview &&
                   complaint.status === 'resolved' &&
                   !feedbackRecorded;
                 const canExecuteAtL1 =
@@ -1203,15 +1261,21 @@ export function OfficerDashboard({
                   complaint.status !== 'closed' &&
                   complaint.status !== 'expired' &&
                   complaint.status !== 'rejected';
+                const reopenedForDirectWorkStart =
+                  canExecuteAtL1 &&
+                  complaint.status === 'reopened' &&
+                  workStatus === 'Pending';
                 const canMarkViewed =
                   canExecuteAtL1 &&
+                  !reopenedForDirectWorkStart &&
                   !isL1Viewed(complaint);
                 const canMarkOnSite =
                   canExecuteAtL1 &&
+                  !reopenedForDirectWorkStart &&
                   workStatus === 'Viewed by L1';
                 const canMarkWorkStarted =
                   canExecuteAtL1 &&
-                  workStatus === 'On Site';
+                  (workStatus === 'On Site' || reopenedForDirectWorkStart);
                 const canUploadProof =
                   canExecuteAtL1 &&
                   workStatus === 'Work Started';
@@ -1281,11 +1345,29 @@ export function OfficerDashboard({
                     );
                   }
 
+                  if (level === 'L1' && awaitingHigherDeskReview && !feedbackRecorded) {
+                    return (
+                      <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Work completion is already submitted. Because this complaint is now under {operationalLevel} supervision, citizen feedback will route to the {operationalLevel} review desk instead of L1.
+                      </div>
+                    );
+                  }
+
+                  if (level === 'L1' && awaitingHigherDeskReview && feedbackRecorded) {
+                    return (
+                      <div className="rounded-[1.1rem] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                        Citizen feedback is already recorded. This complaint is now waiting for the {operationalLevel} review desk to close it or reopen it for fresh L1 field action.
+                      </div>
+                    );
+                  }
+
                   if (canExecuteAtL1) {
                     return (
                       <div className="space-y-4">
                         <div className="rounded-[1.1rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                          {hasProof
+                          {reopenedForDirectWorkStart
+                            ? 'This complaint was reopened after review. Viewed and on-site steps are skipped for this new cycle, so the field team can restart work directly and then upload fresh proof.'
+                            : hasProof
                             ? (language === 'hi' ? text.proofReadyHelp : 'Proof is ready. Complete the complaint from this action desk.')
                             : workStatus === 'Work Started'
                               ? (language === 'hi' ? text.workStartedHelp : 'Worker team is currently working on site. Upload proof after the work is completed.')
@@ -1293,30 +1375,34 @@ export function OfficerDashboard({
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="rounded-full"
-                            variant={canMarkViewed ? 'default' : 'outline'}
-                            disabled={!canMarkViewed || isBusy || isPending}
-                            onClick={() => {
-                              void handleMarkViewedByL1(complaint);
-                            }}
-                          >
-                            {workStatus === 'Viewed by L1' || isL1OnSite(complaint) ? 'Viewed' : isBusy && canMarkViewed ? 'Saving...' : 'Mark Viewed'}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="rounded-full"
-                            variant={canMarkOnSite ? 'default' : 'outline'}
-                            disabled={!canMarkOnSite || isBusy || isPending}
-                            onClick={() => {
-                              void handleMarkOnSiteByL1(complaint);
-                            }}
-                          >
-                            {isL1OnSite(complaint) ? 'On Site' : isBusy && canMarkOnSite ? 'Saving...' : 'Mark On Site'}
-                          </Button>
+                          {!reopenedForDirectWorkStart ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-full"
+                              variant={canMarkViewed ? 'default' : 'outline'}
+                              disabled={!canMarkViewed || isBusy || isPending}
+                              onClick={() => {
+                                void handleMarkViewedByL1(complaint);
+                              }}
+                            >
+                              {workStatus === 'Viewed by L1' || isL1OnSite(complaint) ? 'Viewed' : isBusy && canMarkViewed ? 'Saving...' : 'Mark Viewed'}
+                            </Button>
+                          ) : null}
+                          {!reopenedForDirectWorkStart ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-full"
+                              variant={canMarkOnSite ? 'default' : 'outline'}
+                              disabled={!canMarkOnSite || isBusy || isPending}
+                              onClick={() => {
+                                void handleMarkOnSiteByL1(complaint);
+                              }}
+                            >
+                              {isL1OnSite(complaint) ? 'On Site' : isBusy && canMarkOnSite ? 'Saving...' : 'Mark On Site'}
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             size="sm"
@@ -1327,7 +1413,7 @@ export function OfficerDashboard({
                               void handleMarkWorkStartedByL1(complaint);
                             }}
                           >
-                            {isL1WorkStarted(complaint) ? 'Work Started' : isBusy && canMarkWorkStarted ? 'Saving...' : 'Start Work'}
+                            {isL1WorkStarted(complaint) ? 'Work Started' : isBusy && canMarkWorkStarted ? 'Saving...' : reopenedForDirectWorkStart ? 'Restart Work' : 'Start Work'}
                           </Button>
                         </div>
 
@@ -1527,6 +1613,17 @@ export function OfficerDashboard({
                         <div className="mt-2 text-sm font-semibold text-[#12385b]">{feedbackRecorded ? getCitizenFeedbackLabel(complaint, language) : text.pendingCitizenFeedback}</div>
                       </div>
                     </div>
+
+                    {getCitizenComplaintDescription(complaint) ? (
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">
+                          {language === 'hi' ? 'नागरिक विवरण' : 'Citizen Description'}
+                        </div>
+                        <div className="mt-2 text-sm leading-6 text-slate-700">
+                          {getCitizenComplaintDescription(complaint)}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="rounded-[1rem] border border-dashed border-[#d7e2eb] bg-white px-3 py-3 text-xs leading-6 text-[#60758a]">
                       {text.l2DeskHelp}
@@ -1838,36 +1935,42 @@ export function OfficerDashboard({
                                 ? `This complaint is under ${complaint.current_level} supervision, but L1 must still complete the field work and upload proof.`
                                 : l1DeadlineMissed
                                   ? 'L1 deadline has passed. L2 monitoring is active, but the L1 field team must still complete the work immediately.'
+                                : reopenedForDirectWorkStart
+                                  ? 'This complaint was reopened after review. L1 can restart work directly, upload fresh proof, and complete the new rework cycle from here.'
                                 : `Current work status: ${workStatus}. Follow the strict L1 execution sequence.`}
                             </span>
                             <span>{complaint.current_level === 'L2' ? 'L2 supervising' : complaint.current_level === 'L3' ? 'L3 supervising' : l1DeadlineMissed ? 'L2 monitoring active' : deadlineCountdown}</span>
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="rounded-full"
-                              variant={canMarkViewed ? 'default' : 'outline'}
-                              disabled={!canMarkViewed || isBusy || isPending}
-                              onClick={() => {
-                                void handleMarkViewedByL1(complaint);
-                              }}
-                            >
-                              {workStatus === 'Viewed by L1' || isL1OnSite(complaint) ? 'Viewed' : isBusy && canMarkViewed ? 'Saving...' : 'Mark Viewed'}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="rounded-full"
-                              variant={canMarkOnSite ? 'default' : 'outline'}
-                              disabled={!canMarkOnSite || isBusy || isPending}
-                              onClick={() => {
-                                void handleMarkOnSiteByL1(complaint);
-                              }}
-                            >
-                              {isL1OnSite(complaint) ? 'On Site' : isBusy && canMarkOnSite ? 'Saving...' : 'Mark On Site'}
-                            </Button>
+                            {!reopenedForDirectWorkStart ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-full"
+                                variant={canMarkViewed ? 'default' : 'outline'}
+                                disabled={!canMarkViewed || isBusy || isPending}
+                                onClick={() => {
+                                  void handleMarkViewedByL1(complaint);
+                                }}
+                              >
+                                {workStatus === 'Viewed by L1' || isL1OnSite(complaint) ? 'Viewed' : isBusy && canMarkViewed ? 'Saving...' : 'Mark Viewed'}
+                              </Button>
+                            ) : null}
+                            {!reopenedForDirectWorkStart ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-full"
+                                variant={canMarkOnSite ? 'default' : 'outline'}
+                                disabled={!canMarkOnSite || isBusy || isPending}
+                                onClick={() => {
+                                  void handleMarkOnSiteByL1(complaint);
+                                }}
+                              >
+                                {isL1OnSite(complaint) ? 'On Site' : isBusy && canMarkOnSite ? 'Saving...' : 'Mark On Site'}
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               size="sm"
@@ -1878,7 +1981,7 @@ export function OfficerDashboard({
                                 void handleMarkWorkStartedByL1(complaint);
                               }}
                             >
-                              {isL1WorkStarted(complaint) ? 'Work Started' : isBusy && canMarkWorkStarted ? 'Saving...' : 'Start Work'}
+                              {isL1WorkStarted(complaint) ? 'Work Started' : isBusy && canMarkWorkStarted ? 'Saving...' : reopenedForDirectWorkStart ? 'Restart Work' : 'Start Work'}
                             </Button>
                             <Button
                               type="button"

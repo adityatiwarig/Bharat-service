@@ -148,6 +148,22 @@ function canDirectlyCloseRework(complaint: Complaint) {
   return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
 }
 
+function isComplaintAwaitingHigherDeskReview(complaint: Complaint) {
+  const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
+
+  return (
+    complaint.current_level === 'L2' ||
+    complaint.current_level === 'L2_ESCALATED' ||
+    complaint.current_level === 'L3' ||
+    reviewMessage.includes('under level 2 supervision') ||
+    reviewMessage.includes('final level 2 review') ||
+    reviewMessage.includes('level 2 review desk') ||
+    reviewMessage.includes('level 3 review desk') ||
+    reviewMessage.includes('routed to level 2 review') ||
+    reviewMessage.includes('routed to level 3 review')
+  );
+}
+
 export default function L1UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -266,13 +282,7 @@ export default function L1UpdatesPage() {
   }, [selectedComplaint]);
 
   useEffect(() => {
-    setProofFile(null);
-    setProofGeoEvidence(null);
-    setProofPreviewUrl('');
-    setExpandedProofPreview(false);
-    setProofDescription('');
-    setCompletionNote('');
-    setReviewNote('');
+    resetDraftState();
   }, [selectedComplaintId]);
 
   useEffect(() => {
@@ -310,6 +320,16 @@ export default function L1UpdatesPage() {
     setCameraLoading(false);
     setCameraReady(false);
     setCameraError('');
+  }
+
+  function resetDraftState() {
+    setProofFile(null);
+    setProofGeoEvidence(null);
+    setProofPreviewUrl('');
+    setExpandedProofPreview(false);
+    setProofDescription('');
+    setCompletionNote('');
+    setReviewNote('');
   }
 
   async function prepareProofFile(file: File, source: 'camera' | 'upload') {
@@ -464,6 +484,7 @@ export default function L1UpdatesPage() {
   const l1DeadlineMissed = complaint ? isL1DeadlineMissed(complaint) : false;
   const directCloseAfterRework = complaint ? canDirectlyCloseRework(complaint) : false;
   const isBusy = complaint ? actionId === complaint.id : false;
+  const awaitingHigherDeskReview = complaint ? isComplaintAwaitingHigherDeskReview(complaint) : false;
   const isLockedComplaint = Boolean(
     complaint &&
     ['closed', 'expired', 'rejected'].includes(complaint.status),
@@ -471,6 +492,7 @@ export default function L1UpdatesPage() {
   const canReviewAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L1' &&
+    !awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     feedbackRecorded &&
     !l1DeadlineMissed
@@ -478,18 +500,19 @@ export default function L1UpdatesPage() {
   const waitingForCitizenAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L1' &&
+    !awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     !feedbackRecorded
   );
   const waitingForCitizenAtHigherDesk = Boolean(
     complaint &&
-    operationalLevel !== 'L1' &&
+    awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     !feedbackRecorded
   );
   const waitingForHigherDeskDecision = Boolean(
     complaint &&
-    operationalLevel !== 'L1' &&
+    awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     feedbackRecorded
   );
@@ -500,9 +523,18 @@ export default function L1UpdatesPage() {
     complaint.status !== 'expired' &&
     complaint.status !== 'rejected'
   );
-  const canMarkViewed = Boolean(complaint && canExecuteAtL1 && workStatus === 'Pending');
-  const canMarkOnSite = Boolean(complaint && canExecuteAtL1 && workStatus === 'Viewed by L1');
-  const canMarkWorkStarted = Boolean(complaint && canExecuteAtL1 && workStatus === 'On Site');
+  const reopenedForDirectWorkStart = Boolean(
+    complaint &&
+    complaint.status === 'reopened' &&
+    workStatus === 'Pending',
+  );
+  const canMarkViewed = Boolean(complaint && canExecuteAtL1 && !reopenedForDirectWorkStart && workStatus === 'Pending');
+  const canMarkOnSite = Boolean(complaint && canExecuteAtL1 && !reopenedForDirectWorkStart && workStatus === 'Viewed by L1');
+  const canMarkWorkStarted = Boolean(
+    complaint &&
+    canExecuteAtL1 &&
+    (workStatus === 'On Site' || reopenedForDirectWorkStart),
+  );
   const canUploadProof = Boolean(complaint && canExecuteAtL1 && workStatus === 'Work Started');
   const canSubmitWorkCompletion = Boolean(complaint && canExecuteAtL1 && workStatus === 'Proof Uploaded' && hasProof);
   const canForwardToL2 = Boolean(
@@ -512,11 +544,23 @@ export default function L1UpdatesPage() {
     !l1DeadlineMissed &&
     workStatus !== 'Awaiting Citizen Feedback',
   );
-  const savedProofs = complaint?.proof_images?.length
-    ? complaint.proof_images
-    : complaint?.proof_image
-      ? [complaint.proof_image]
-      : [];
+  const showSavedProofs = Boolean(
+    complaint &&
+    hasProof &&
+    (
+      workStatus === 'Proof Uploaded' ||
+      workStatus === 'Awaiting Citizen Feedback' ||
+      complaint.status === 'resolved' ||
+      complaint.status === 'closed'
+    ),
+  );
+  const savedProofs = showSavedProofs
+    ? complaint?.proof_images?.length
+      ? complaint.proof_images
+      : complaint?.proof_image
+        ? [complaint.proof_image]
+        : []
+    : [];
 
   return (
     <DashboardLayout title="L1 Update Desk" userRole="worker">
@@ -679,6 +723,7 @@ export default function L1UpdatesPage() {
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await reopenComplaintByReviewDesk(complaint.id, reviewNote.trim() || undefined);
+                              resetDraftState();
                               toast.success('Complaint reopened and sent back for fresh action.');
                             });
                           }}
@@ -694,6 +739,7 @@ export default function L1UpdatesPage() {
                   ) : (
                     complaint &&
                     operationalLevel === 'L1' &&
+                    !awaitingHigherDeskReview &&
                     complaint.status === 'resolved' &&
                     feedbackRecorded &&
                     !feedbackSatisfied
@@ -714,34 +760,46 @@ export default function L1UpdatesPage() {
                       <div className="text-sm font-semibold text-[#12385b]">Field Execution Flow</div>
 
                       <div className="grid gap-3 md:grid-cols-3">
-                        <Button
-                          type="button"
-                          variant={canMarkViewed ? 'default' : 'outline'}
-                          className="rounded-full"
-                          disabled={!canMarkViewed || isBusy || isPending}
-                          onClick={() => {
-                            void runAction(complaint, async () => {
-                              await markComplaintViewedByL1(complaint.id);
-                              toast.success('Complaint marked as viewed.');
-                            });
-                          }}
-                        >
-                          Mark Viewed
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={canMarkOnSite ? 'default' : 'outline'}
-                          className="rounded-full"
-                          disabled={!canMarkOnSite || isBusy || isPending}
-                          onClick={() => {
-                            void runAction(complaint, async () => {
-                              await markComplaintOnSiteByL1(complaint.id);
-                              toast.success('Complaint marked as on site.');
-                            });
-                          }}
-                        >
-                          Mark On Site
-                        </Button>
+                        {!reopenedForDirectWorkStart ? (
+                          <Button
+                            type="button"
+                            variant={canMarkViewed ? 'default' : 'outline'}
+                            className="rounded-full"
+                            disabled={!canMarkViewed || isBusy || isPending}
+                            onClick={() => {
+                              void runAction(complaint, async () => {
+                                await markComplaintViewedByL1(complaint.id);
+                                toast.success('Complaint marked as viewed.');
+                              });
+                            }}
+                          >
+                            Mark Viewed
+                          </Button>
+                        ) : (
+                          <div className="rounded-full border border-dashed border-[#d7e2eb] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[#60758a]">
+                            Viewed skipped after reopen
+                          </div>
+                        )}
+                        {!reopenedForDirectWorkStart ? (
+                          <Button
+                            type="button"
+                            variant={canMarkOnSite ? 'default' : 'outline'}
+                            className="rounded-full"
+                            disabled={!canMarkOnSite || isBusy || isPending}
+                            onClick={() => {
+                              void runAction(complaint, async () => {
+                                await markComplaintOnSiteByL1(complaint.id);
+                                toast.success('Complaint marked as on site.');
+                              });
+                            }}
+                          >
+                            Mark On Site
+                          </Button>
+                        ) : (
+                          <div className="rounded-full border border-dashed border-[#d7e2eb] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[#60758a]">
+                            On-site skipped after reopen
+                          </div>
+                        )}
                         <Button
                           type="button"
                           variant={canMarkWorkStarted ? 'default' : 'outline'}
@@ -754,9 +812,15 @@ export default function L1UpdatesPage() {
                             });
                           }}
                         >
-                          Start Work
+                          {reopenedForDirectWorkStart ? 'Restart Work' : 'Start Work'}
                         </Button>
                       </div>
+
+                      {reopenedForDirectWorkStart ? (
+                        <div className="rounded-[1rem] border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-sky-900">
+                          This complaint was reopened after review. L1 can restart field work directly from here, and a fresh proof upload will be required for the new rework cycle.
+                        </div>
+                      ) : null}
 
                       <div className="rounded-[1.1rem] border border-[#d7e2eb] bg-[#f8fbff] p-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-[#12385b]">

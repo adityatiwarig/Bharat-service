@@ -114,6 +114,10 @@ function formatFeedbackLabel(complaint: Complaint) {
   return `Not Satisfied (${complaint.rating.rating}/5)`;
 }
 
+function getCitizenComplaintDescription(complaint: Complaint) {
+  return complaint.text?.trim() || complaint.description?.trim() || '';
+}
+
 export default function L2UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -189,6 +193,7 @@ export default function L2UpdatesPage() {
   const complaintItems = summary?.items || [];
   const selectedComplaint = complaintItems.find((item) => item.id === selectedComplaintId) || complaintItems[0] || null;
   const complaint = selectedComplaint;
+  const citizenComplaintDescription = complaint ? getCitizenComplaintDescription(complaint) : '';
   const operationalLevel = complaint ? normalizeDashboardLevel(complaint.current_level) : null;
   const feedbackRecorded = complaint ? hasCitizenFeedback(complaint) : false;
   const feedbackSatisfied = complaint ? hasSatisfiedCitizenFeedback(complaint) : false;
@@ -385,6 +390,13 @@ export default function L2UpdatesPage() {
                         <div className="mt-2 text-sm font-semibold text-[#12385b]">{formatFeedbackLabel(complaint)}</div>
                       </div>
                     </div>
+
+                    {citizenComplaintDescription ? (
+                      <div className="mt-4 rounded-[1rem] border border-[#d7e2eb] bg-white px-4 py-4">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Citizen Description</div>
+                        <div className="mt-2 text-sm leading-6 text-slate-700">{citizenComplaintDescription}</div>
+                      </div>
+                    ) : null}
                   </div>
 
                   {isLockedComplaint ? (
