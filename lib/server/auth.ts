@@ -81,7 +81,7 @@ function getUserSelect() {
   `;
 }
 
-function normalizeCitizenPhone(phone?: string) {
+export function normalizeCitizenPhone(phone?: string) {
   const digits = (phone ?? '').replace(/\D/g, '');
 
   if (!digits) {
@@ -192,6 +192,25 @@ export async function getUserByEmail(email: string) {
       LIMIT 1
     `,
     [email],
+  );
+
+  return result.rows[0] ? mapUser(result.rows[0]) : null;
+}
+
+export async function getUserByPhone(phone: string) {
+  const normalizedPhone = normalizeCitizenPhone(phone);
+
+  if (!normalizedPhone) {
+    return null;
+  }
+
+  const result = await query<UserRow>(
+    `
+      ${getUserSelect()}
+      WHERE u.phone = $1
+      LIMIT 1
+    `,
+    [normalizedPhone],
   );
 
   return result.rows[0] ? mapUser(result.rows[0]) : null;

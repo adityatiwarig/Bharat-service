@@ -28,6 +28,23 @@ import type {
   User,
 } from '@/lib/types';
 
+function safeRevalidateTag(tag: string) {
+  try {
+    revalidateTag(tag, 'max');
+  } catch (error) {
+    if (error instanceof Error && /static generation store missing/i.test(error.message)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function revalidateComplaintData() {
+  safeRevalidateTag('complaints');
+  safeRevalidateTag('dashboard');
+}
+
 type OfficerRow = {
   id: string;
   user_id: string | null;
@@ -770,8 +787,7 @@ export async function forwardComplaintToNextOfficer(user: User, complaintId: str
   const finalizedComplaint = forwardedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   await removeComplaintEscalation(finalizedComplaint.id);
   await scheduleComplaintEscalation(finalizedComplaint.id, nextDeadline);
 
@@ -1022,8 +1038,7 @@ export async function markComplaintViewedByL1(user: User, complaintId: string) {
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return {
     complaint_id: finalizedComplaint.id,
@@ -1093,8 +1108,7 @@ export async function markComplaintOnSiteByL1(user: User, complaintId: string) {
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return {
     complaint_id: finalizedComplaint.id,
@@ -1165,8 +1179,7 @@ export async function markComplaintWorkStartedByL1(user: User, complaintId: stri
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return {
     complaint_id: finalizedComplaint.id,
@@ -1301,8 +1314,7 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   await removeComplaintEscalation(finalizedComplaint.id);
 
   return {
@@ -1430,8 +1442,7 @@ export async function uploadComplaintProofByL1(
   }
 
   await invalidateComplaintReadCaches(updatedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return proofRecord;
 }
@@ -1538,8 +1549,7 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
   }
 
   await invalidateComplaintReadCaches(updatedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
@@ -1633,8 +1643,7 @@ export async function remindL1OfficerFromL3(user: User, complaintId: string, not
   }
 
   await invalidateComplaintReadCaches(updatedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
@@ -1728,8 +1737,7 @@ export async function remindL2OfficerFromL3(user: User, complaintId: string, not
   }
 
   await invalidateComplaintReadCaches(updatedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
@@ -1746,7 +1754,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     throw new AuthError('Only review officers can close reviewed complaints.', 403);
   }
 
-  const reviewOfficerLevel = officer.role as OfficerLevel;
+  const reviewLevel: OfficerLevel = officer.role;
 
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
   const trimmedNote = note?.trim() || null;
@@ -1755,7 +1763,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     const complaint = await requireComplaintAssignedToOfficerLevel(client, {
       complaintId,
       officerId: officer.id,
-      level: reviewOfficerLevel,
+      level: reviewLevel,
     });
 
     if (complaint.status !== 'resolved') {
@@ -1763,12 +1771,12 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
     }
 
     if (
-      (officer.role === 'L1' || officer.role === 'L2') &&
+      (reviewLevel === 'L1' || reviewLevel === 'L2') &&
       complaint.deadline &&
       new Date(complaint.deadline).getTime() <= Date.now()
     ) {
       throw new AuthError(
-        officer.role === 'L1'
+        reviewLevel === 'L1'
           ? 'The Level 1 review window has expired. Level 2 must now handle the closure decision.'
           : 'The Level 2 review window has expired. Level 3 must now handle the closure decision.',
         400,
@@ -1807,15 +1815,15 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       [
         complaint.id,
         trimmedNote
-          ? `Complaint closed by ${getReviewDecisionLabel(reviewOfficerLevel)} after citizen feedback review. ${trimmedNote}`
-          : `Complaint closed by ${getReviewDecisionLabel(reviewOfficerLevel)} after citizen feedback review.`,
+          ? `Complaint closed by ${getReviewDecisionLabel(reviewLevel)} after citizen feedback review. ${trimmedNote}`
+          : `Complaint closed by ${getReviewDecisionLabel(reviewLevel)} after citizen feedback review.`,
       ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'closed',
-      note: trimmedNote || `Complaint closed by ${getReviewDecisionLabel(reviewOfficerLevel)} after citizen feedback review.`,
+      note: trimmedNote || `Complaint closed by ${getReviewDecisionLabel(reviewLevel)} after citizen feedback review.`,
       updated_by_user_id: user.id,
     });
 
@@ -1823,7 +1831,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
       user_id: complaint.user_id,
       complaint_id: complaint.id,
       title: 'Complaint closed',
-      message: `${complaint.title} has been closed after ${getReviewDecisionLabel(reviewOfficerLevel).toLowerCase()} of your feedback.`,
+      message: `${complaint.title} has been closed after ${getReviewDecisionLabel(reviewLevel).toLowerCase()} of your feedback.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1837,8 +1845,7 @@ export async function closeComplaintByL2Review(user: User, complaintId: string, 
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   await removeComplaintEscalation(finalizedComplaint.id);
 
   return {
@@ -1854,7 +1861,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     throw new AuthError('Only review officers can reopen reviewed complaints.', 403);
   }
 
-  const reviewOfficerLevel = officer.role as OfficerLevel;
+  const reviewLevel: OfficerLevel = officer.role;
 
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
   let reassignedDeadline: string | null = null;
@@ -1866,7 +1873,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     const complaint = await requireComplaintAssignedToOfficerLevel(client, {
       complaintId,
       officerId: officer.id,
-      level: reviewOfficerLevel,
+      level: reviewLevel,
     });
 
     if (complaint.status !== 'resolved') {
@@ -1874,12 +1881,12 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     }
 
     if (
-      (officer.role === 'L1' || officer.role === 'L2') &&
+      (reviewLevel === 'L1' || reviewLevel === 'L2') &&
       complaint.deadline &&
       new Date(complaint.deadline).getTime() <= Date.now()
     ) {
       throw new AuthError(
-        officer.role === 'L1'
+        reviewLevel === 'L1'
           ? 'The Level 1 review window has expired. Level 2 must now handle the reopen decision.'
           : 'The Level 2 review window has expired. Level 3 must now handle the reopen decision.',
         400,
@@ -1915,7 +1922,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     });
 
     if (!mapping) {
-      throw new AuthError('No routing mapping is available for this complaint.', 400);
+      throw new AuthError('No officer mapping exists for this complaint right now.', 400);
     }
 
     const toOfficerId = mapping.l1_officer_id;
@@ -1973,15 +1980,15 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
         'L1',
         reassignedDeadline,
         trimmedNote
-          ? `Complaint reopened by ${getReviewDecisionLabel(reviewOfficerLevel)} after not-satisfied citizen feedback. Fresh L1 field action is required. ${trimmedNote}`
-          : `Complaint reopened by ${getReviewDecisionLabel(reviewOfficerLevel)} after not-satisfied citizen feedback. Fresh L1 field action is required.`,
+          ? `Complaint reopened by ${getReviewDecisionLabel(reviewLevel)} after not-satisfied citizen feedback. Fresh L1 field action is required. ${trimmedNote}`
+          : `Complaint reopened by ${getReviewDecisionLabel(reviewLevel)} after not-satisfied citizen feedback. Fresh L1 field action is required.`,
       ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'reopened',
-      note: trimmedNote || `Complaint reopened by ${getReviewDecisionLabel(reviewOfficerLevel)} and returned to Level 1 for rework.`,
+      note: trimmedNote || `Complaint reopened by ${getReviewDecisionLabel(reviewLevel)} and returned to Level 1 for rework.`,
       updated_by_user_id: user.id,
     });
 
@@ -2023,8 +2030,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
   const finalizedComplaint = updatedComplaint as Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'>;
 
   await invalidateComplaintReadCaches(finalizedComplaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   if (reassignedDeadline) {
     await scheduleComplaintEscalation(finalizedComplaint.id, reassignedDeadline);
   } else {
@@ -2041,3 +2047,4 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
 export async function resolveComplaintForOfficer(user: User, complaintId: string, note?: string) {
   return completeComplaintByL1(user, complaintId, note);
 }
+

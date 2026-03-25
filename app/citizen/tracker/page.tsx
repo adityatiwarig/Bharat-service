@@ -538,7 +538,7 @@ function DetailSkeletonBlock({ title }: { title: string }) {
 export default function TrackerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const complaintId = searchParams.get('id')?.trim() || '';
+  const complaintId = searchParams?.get('id')?.trim() || '';
   const [complaint, setComplaint] = useState<Complaint | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);

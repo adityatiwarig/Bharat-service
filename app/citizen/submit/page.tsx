@@ -910,6 +910,7 @@ export default function SubmitComplaintPage() {
         onOpenChange={setVoiceAssistantOpen}
         mapping={mapping}
         userWardId={session?.ward_id}
+        speechLanguage={language === 'hi' ? 'hi-IN' : 'en-IN'}
         autoSubmitContext={{
           photoReady: evidenceItems.length > 0,
           applicantReady: Boolean(form.applicant_name && form.applicant_mobile && form.applicant_address),

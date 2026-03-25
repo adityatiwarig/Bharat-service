@@ -23,6 +23,8 @@ export function ComplaintCard({
   badgeExtras,
   footer,
 }: ComplaintCardProps) {
+  const formatFallbackLabel = (value?: string | null) => value?.replace(/_/g, ' ') || 'Not available'
+
   const categoryColors = {
     pothole: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
     streetlight: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -60,6 +62,11 @@ export function ComplaintCard({
         minute: '2-digit',
       }).format(new Date(complaint.deadline))
     : null
+  const displayCategory = complaint.category_name?.trim() || formatFallbackLabel(complaint.category)
+  const displayDepartment = complaint.department_name?.trim() || formatFallbackLabel(complaint.department)
+  const shouldUseDepartmentAsPrimaryBadge = /dead animal/i.test(displayCategory)
+  const primaryServiceLabel = shouldUseDepartmentAsPrimaryBadge ? displayDepartment : displayCategory
+  const secondaryServiceLabel = shouldUseDepartmentAsPrimaryBadge ? null : displayDepartment
 
   if (compact) {
     return (
@@ -72,7 +79,7 @@ export function ComplaintCard({
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className={cn('rounded-md px-2.5 py-1 text-xs font-medium capitalize', categoryColors[complaint.category])}>
-                  {complaint.category}
+                  {primaryServiceLabel}
                 </span>
                 <StatusBadge status={complaint.status} />
                 {badgeExtras}
@@ -130,11 +137,13 @@ export function ComplaintCard({
 
         <div className="flex flex-wrap gap-2">
           <span className={cn('rounded-md px-3 py-1 text-xs font-medium capitalize', categoryColors[complaint.category])}>
-            {complaint.category}
+            {primaryServiceLabel}
           </span>
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs capitalize text-slate-600">
-            {complaint.department.replace('_', ' ')}
-          </span>
+          {secondaryServiceLabel ? (
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs capitalize text-slate-600">
+              {secondaryServiceLabel}
+            </span>
+          ) : null}
           <StatusBadge status={complaint.status} />
           {badgeExtras}
           <PriorityBadge priority={complaint.priority} />
