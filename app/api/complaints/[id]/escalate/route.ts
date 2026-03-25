@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server';
 
-import { AuthError, requireApiForwardingOfficer } from '@/lib/server/auth';
+import { AuthError, requireApiL1Officer } from '@/lib/server/auth';
+import { forwardComplaintToNextOfficer } from '@/lib/server/officer-routing';
+
+export const runtime = 'nodejs';
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireApiForwardingOfficer(request);
-    void context;
-    return NextResponse.json(
-      { error: 'Manual forward workflow has been removed. Complaints now remain with L1 for field work while L2 and L3 operate through monitoring and review.' },
-      { status: 410 },
-    );
+    const user = await requireApiL1Officer(request);
+    const { id } = await context.params;
+    const escalation = await forwardComplaintToNextOfficer(user, id);
+    return NextResponse.json({ success: true, escalation });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

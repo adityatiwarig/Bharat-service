@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   completeComplaintByL1,
   closeComplaintByReviewDesk,
+  forwardComplaintToNextLevel,
   markComplaintOnSiteByL1,
   markComplaintViewedByL1,
   markComplaintWorkStartedByL1,
@@ -84,6 +85,13 @@ function canDirectlyCloseRework(complaint: Complaint) {
   const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
 
   return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
+}
+
+function isComplaintForwardedToL2ByL1(complaint: Complaint) {
+  return (
+    complaint.current_level === 'L2' &&
+    `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2')
+  );
 }
 
 function normalizeDashboardLevel(level?: ComplaintLevel | null) {
@@ -472,6 +480,23 @@ export function OfficerDashboard({
     }
   }
 
+  async function handleForwardToL2(complaint: Complaint) {
+    setL3ActionId(complaint.id);
+
+    try {
+      await forwardComplaintToNextLevel(complaint.id);
+      setDashboardSummary((current) => patchSummaryAfterQueueChange(current, complaint, level));
+      toast.success('Complaint forwarded to L2. L1 execution access is removed now.');
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to forward complaint to L2.');
+    } finally {
+      setL3ActionId(null);
+    }
+  }
+
   async function handleCloseByReviewDesk(complaint: Complaint) {
     const note = resolutionNotes[complaint.id]?.trim() || undefined;
     setL3ActionId(complaint.id);
@@ -479,6 +504,7 @@ export function OfficerDashboard({
     try {
       await closeComplaintByReviewDesk(complaint.id, note);
       const reviewDesk = getReviewDeskLabel(level);
+      const directL2ForwardClose = level === 'L2' && isComplaintForwardedToL2ByL1(complaint) && complaint.status !== 'resolved';
       setDashboardSummary((current) =>
         patchComplaintInSummary(
           current,
@@ -487,12 +513,14 @@ export function OfficerDashboard({
             status: 'closed',
             progress: 'resolved',
             resolution_notes: note ?? complaint.resolution_notes ?? null,
-            department_message: `Complaint closed by ${reviewDesk} after citizen feedback review.`,
+            department_message: directL2ForwardClose
+              ? 'Complaint closed by Level 2 after direct takeover from Level 1.'
+              : `Complaint closed by ${reviewDesk} after citizen feedback review.`,
           },
           level,
         ),
       );
-      toast.success(`Complaint closed by ${reviewDesk}.`);
+      toast.success(directL2ForwardClose ? 'Forwarded complaint closed by L2.' : `Complaint closed by ${reviewDesk}.`);
       startTransition(() => {
         router.refresh();
       });
@@ -780,14 +808,22 @@ export function OfficerDashboard({
                 const proofFile = proofFiles[complaint.id];
                 const reviewDeskLabel = getReviewDeskLabel(level);
                 const directCloseAfterRework = canDirectlyCloseRework(complaint);
+                const forwardedToL2ByL1 = isComplaintForwardedToL2ByL1(complaint);
                 const canReviewAtDesk =
                   operationalLevel === level &&
                   complaint.status === 'resolved' &&
                   feedbackRecorded &&
                   !((level === 'L1' && l1DeadlineMissed) || (level === 'L2' && l2DeadlineMissed));
+                const canDirectlyCloseForwardedAtL2 =
+                  level === 'L2' &&
+                  forwardedToL2ByL1 &&
+                  complaint.status !== 'resolved' &&
+                  !isTerminalComplaint(complaint) &&
+                  !l2DeadlineMissed;
                 const canMonitorMissedL1 =
                   level === 'L2' &&
                   complaint.current_level === 'L2' &&
+                  !forwardedToL2ByL1 &&
                   !isTerminalComplaint(complaint) &&
                   complaint.status !== 'resolved';
                 const canMonitorMissedL2 =
@@ -822,6 +858,11 @@ export function OfficerDashboard({
                   !isL1Completed(complaint) &&
                   workStatus === 'Proof Uploaded' &&
                   hasProof;
+                const canForwardToL2 =
+                  canExecuteAtL1 &&
+                  operationalLevel === 'L1' &&
+                  !l1DeadlineMissed &&
+                  !isL1Completed(complaint);
                 const renderL1ActionDesk = () => {
                   if (canReviewAtDesk) {
                     return (
@@ -1004,6 +1045,18 @@ export function OfficerDashboard({
                             }}
                           >
                             {isL1Completed(complaint) ? 'Completed' : isBusy && canCompleteAtL1 ? 'Completing...' : 'Complete Work'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-full"
+                            disabled={!canForwardToL2 || isBusy || isPending}
+                            onClick={() => {
+                              void handleForwardToL2(complaint);
+                            }}
+                          >
+                            {isBusy && canForwardToL2 ? 'Forwarding...' : 'Forward To L2'}
                           </Button>
                         </div>
                       </div>
@@ -1240,6 +1293,52 @@ export function OfficerDashboard({
                             </div>
                           </div>
                         </div>
+                      ) : canDirectlyCloseForwardedAtL2 ? (
+                        <div
+                          className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-3"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-700">
+                            <span>
+                              This complaint was forwarded by L1 for direct handling. L2 now owns the complaint and can close it directly after completing the required coordination.
+                            </span>
+                            <span>{deadlineCountdown}</span>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-slate-600" htmlFor={`l2-direct-close-note-${complaint.id}`}>
+                              Closure Note
+                            </label>
+                            <Textarea
+                              id={`l2-direct-close-note-${complaint.id}`}
+                              value={resolutionNote}
+                              placeholder="Add the Level 2 closure note..."
+                              disabled={isBusy || isPending}
+                              onChange={(event) => {
+                                setResolutionNotes((current) => ({ ...current, [complaint.id]: event.target.value }));
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="text-xs text-slate-500">
+                              L1 no longer has completion access on this complaint. Close it from the L2 desk once the matter has been handled.
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
+                              disabled={isBusy || isPending}
+                              onClick={() => {
+                                void handleCloseByReviewDesk(complaint);
+                              }}
+                            >
+                              {isBusy ? 'Closing...' : 'Close Complaint'}
+                            </Button>
+                          </div>
+                        </div>
                       ) : canMonitorMissedL1 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-3"
@@ -1352,6 +1451,18 @@ export function OfficerDashboard({
                               }}
                             >
                               {isL1Completed(complaint) ? 'Completed' : isBusy && canCompleteAtL1 ? 'Completing...' : 'Complete Work'}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-full"
+                              variant="outline"
+                              disabled={!canForwardToL2 || isBusy || isPending}
+                              onClick={() => {
+                                void handleForwardToL2(complaint);
+                              }}
+                            >
+                              {isBusy && canForwardToL2 ? 'Forwarding...' : 'Forward To L2'}
                             </Button>
                           </div>
 
