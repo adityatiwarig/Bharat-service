@@ -79,6 +79,13 @@ export function normalizeCitizenFacingNote(note?: string | null) {
   }
 
   if (
+    lower.includes('forwarded the complaint to level 2 for supervision while level 1 continues field work') ||
+    lower.includes('forwarded by the assigned level 1 officer to level 2 supervision')
+  ) {
+    return 'The complaint has been manually moved under Level 2 supervision. Level 1 continues field work with an extended timeline, and Level 2 will take the final close or reopen decision after citizen feedback.';
+  }
+
+  if (
     lower.includes('complaint forwarded from l2 to l3') ||
     lower.includes('auto-escalated into l3') ||
     lower.includes('pending at l3 under the final 1-day review window') ||
@@ -306,6 +313,10 @@ function isUnderSupervisoryMonitoring(complaint: Complaint) {
   return complaint.status === 'l1_deadline_missed' || complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
 }
 
+function isManualL1ForwardToL2(complaint: Complaint) {
+  return `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision');
+}
+
 function pushUniquePhaseHighlight(
   phaseHighlights: Record<ComplaintTrackerStep['key'], string[]>,
   phase: ComplaintTrackerStep['key'],
@@ -457,6 +468,14 @@ function buildAssignmentSummary(input: {
       assignmentLabel: 'Field Action Desk',
       assignmentDescription: 'The complaint has been reopened for fresh field action after citizen review.',
       assignmentStatusLabel: 'Reopened for rework',
+    };
+  }
+
+  if (isManualL1ForwardToL2(complaint)) {
+    return {
+      assignmentLabel: 'Level 2 Supervision Desk',
+      assignmentDescription: 'Level 2 supervision is active after a manual L1 forward. Level 1 continues field work under the extended service timeline.',
+      assignmentStatusLabel: 'L2 supervision active',
     };
   }
 
@@ -635,6 +654,13 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     phaseHighlights,
     'received',
     `Complaint registered in the ${departmentLabel} workflow with ${priorityLabel.toLowerCase()} priority.`,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    isManualL1ForwardToL2(complaint)
+      ? 'The complaint was manually forwarded to Level 2 supervision while Level 1 continues field work under an extended timeline.'
+      : null,
   );
   pushUniquePhaseHighlight(
     phaseHighlights,
@@ -923,6 +949,11 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     headline = 'Ground work is active for this complaint.';
     supportLine = 'Field action has started and further proof updates will appear automatically.';
     liveMessage = departmentMessage || 'The assigned team is actively working on the complaint.';
+  } else if (isManualL1ForwardToL2(complaint)) {
+    humanStatus = 'Level 2 Supervision Active';
+    headline = 'This complaint is under Level 2 supervision with an extended action timeline.';
+    supportLine = 'Level 1 continues the field work, and Level 2 will make the final close or reopen decision after citizen feedback is recorded.';
+    liveMessage = departmentMessage || 'The complaint is under Level 2 supervision while field action continues.';
   } else if (isUnderSeniorMonitoring(complaint) || isUnderSupervisoryMonitoring(complaint)) {
     humanStatus = 'Under Supervisory Review';
     headline = 'The complaint is under supervisory review or escalation handling.';
