@@ -10,8 +10,9 @@ import { LoadingSummary, StatListSkeleton } from '@/components/loading-skeletons
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchUsers } from '@/lib/client/complaints';
-import type { ComplaintDepartment } from '@/lib/types';
+import { buildAdminZoneOptions, findAdminZoneLabel } from '@/app/admin/_lib/zone-options';
+import { fetchUsers, fetchWards } from '@/lib/client/complaints';
+import type { ComplaintDepartment, Ward } from '@/lib/types';
 
 type AdminUser = {
   id: string;
@@ -82,12 +83,6 @@ const TEAM_FILTER_OPTIONS: Array<{ key: TeamFilter; label: string }> = [
   { key: 'L3', label: 'L3' },
 ];
 
-const ZONE_OPTIONS = [
-  { value: 'all', label: 'All zones' },
-  { value: '1', label: 'Rohini' },
-  { value: '2', label: 'Karol Bagh' },
-] as const;
-
 function countDistinctOfficers(users: AdminUser[], role: 'L1' | 'L2' | 'L3', includeZoneInKey: boolean) {
   return new Set(
     users
@@ -109,15 +104,23 @@ export default function AdminUsersPage() {
   const { activateFocusMode } = useAdminWorkspace();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [wards, setWards] = useState<Ward[]>([]);
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
-  const [zoneFilter, setZoneFilter] = useState<'all' | '1' | '2'>('all');
+  const [zoneFilter, setZoneFilter] = useState('all');
 
   useEffect(() => {
-    fetchUsers()
-      .then((result) => setUsers(result as AdminUser[]))
+    Promise.all([
+      fetchUsers(),
+      fetchWards(),
+    ])
+      .then(([userResult, wardResult]) => {
+        setUsers(userResult as AdminUser[]);
+        setWards(wardResult);
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  const zoneOptions = useMemo(() => buildAdminZoneOptions(wards), [wards]);
   const officerTeam = users.filter((user) => user.officer_role === 'L1' || user.officer_role === 'L2' || user.officer_role === 'L3');
   const zoneScopedOfficerTeam = zoneFilter === 'all'
     ? officerTeam
@@ -133,38 +136,29 @@ export default function AdminUsersPage() {
   const l1Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L1', zoneFilter !== 'all');
   const l2Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L2', zoneFilter !== 'all');
   const l3Count = countDistinctOfficers(zoneScopedOfficerTeam, 'L3', zoneFilter !== 'all');
-  const rohiniCount = countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 1), 'L1', true)
-    + countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 1), 'L2', true)
-    + countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 1), 'L3', true);
-  const karolBaghCount = countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 2), 'L1', true)
-    + countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 2), 'L2', true)
-    + countDistinctOfficers(officerTeam.filter((user) => user.officer_zone_id === 2), 'L3', true);
   const activeFilterLabel =
-    `${ZONE_OPTIONS.find((item) => item.value === zoneFilter)?.label || 'All zones'} | ${teamFilter === 'all' ? 'All officers' : `${teamFilter} officers only`}`;
+    `${findAdminZoneLabel(zoneOptions, zoneFilter)} | ${teamFilter === 'all' ? 'All officers' : `${teamFilter} officers only`}`;
   const chartDomainMax = Math.max(l1Count, l2Count, l3Count, 1) + 4;
   const teamChartData = [
     { role: 'L1', count: l1Count, fill: '#12385b', filter: 'L1' as const },
     { role: 'L2', count: l2Count, fill: '#ff9933', filter: 'L2' as const },
     { role: 'L3', count: l3Count, fill: '#138808', filter: 'L3' as const },
   ];
-  const zoneCards = [
-    {
-      key: 'rohini',
-      title: 'Rohini Officers',
-      value: countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L1', true)
-        + countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L2', true)
-        + countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L3', true),
-      detail: `${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L1', true)} L1 | ${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L2', true)} L2 | ${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 1), 'L3', true)} L3`,
-    },
-    {
-      key: 'karol-bagh',
-      title: 'Karol Bagh Officers',
-      value: countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L1', true)
-        + countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L2', true)
-        + countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L3', true),
-      detail: `${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L1', true)} L1 | ${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L2', true)} L2 | ${countDistinctOfficers(zoneScopedOfficerTeam.filter((user) => user.officer_zone_id === 2), 'L3', true)} L3`,
-    },
-  ];
+  const zoneCards = zoneOptions
+    .filter((zone) => zone.value !== 'all')
+    .map((zone) => {
+      const scopedUsers = officerTeam.filter((user) => String(user.officer_zone_id || '') === zone.value);
+      const l1ZoneCount = countDistinctOfficers(scopedUsers, 'L1', true);
+      const l2ZoneCount = countDistinctOfficers(scopedUsers, 'L2', true);
+      const l3ZoneCount = countDistinctOfficers(scopedUsers, 'L3', true);
+
+      return {
+        key: zone.value,
+        title: `${zone.label} Officers`,
+        value: l1ZoneCount + l2ZoneCount + l3ZoneCount,
+        detail: `${l1ZoneCount} L1 | ${l2ZoneCount} L2 | ${l3ZoneCount} L3`,
+      };
+    });
   const roleCards = [
     {
       key: 'L1' as const,
@@ -200,33 +194,61 @@ export default function AdminUsersPage() {
       <div className="space-y-6">
         {loading ? <LoadingSummary label="Loading officer teams" description="Fetching L1, L2, and L3 officer records." /> : null}
 
-        <section className="gov-admin-card overflow-hidden rounded-md">
-          <div className="px-5 py-5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a3412]">Operations</div>
-            <h2 className="mt-2 text-[1.55rem] font-semibold tracking-tight text-[#12385b]">Officer Operations Roster</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d7287]">
-              Live administrative view of L1, L2, and L3 officers across Rohini and Karol Bagh.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+        <section className="overflow-hidden rounded-[28px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(236,244,255,0.88)_48%,_rgba(224,236,248,0.92)_100%)] shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
+          <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.1fr_0.9fr] lg:px-6 lg:py-6">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e4f0] bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9a3412]">
+                <span className="h-2 w-2 rounded-full bg-[#ff9933]" />
+                Operations
+              </div>
+              <h2 className="mt-3 text-[1.7rem] font-semibold tracking-tight text-[#12385b]">Officer Operations Roster</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d7287]">
+                Live administrative view of L1, L2, and L3 officers across the zones currently available in the database.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Visible Zones</div>
+                <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{Math.max(zoneOptions.length - 1, 0)}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">Loaded from live ward mapping</div>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">L1 + L2 + L3</div>
+                <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{l1Count + l2Count + l3Count}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">Distinct officers in current scope</div>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">Current Scope</div>
+                <div className="mt-2 text-lg font-semibold tracking-tight text-[#12385b]">{findAdminZoneLabel(zoneOptions, zoneFilter)}</div>
+                <div className="mt-1 text-xs text-[#6d8093]">{teamFilter === 'all' ? 'All officers' : `${teamFilter} officers only`}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/70 bg-white/55 px-5 py-4 backdrop-blur lg:px-6">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="text-sm text-[#5d7287]">Zone scope</div>
-              <Select value={zoneFilter} onValueChange={(value) => setZoneFilter(value as 'all' | '1' | '2')}>
-                <SelectTrigger className="h-10 w-full max-w-[220px] border-[#c8d4e0] bg-white text-[#12385b]">
+              <Select value={zoneFilter} onValueChange={setZoneFilter}>
+                <SelectTrigger className="h-10 w-full max-w-[220px] rounded-xl border-[#c8d4e0] bg-white text-[#12385b]">
                   <SelectValue placeholder="All zones" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ZONE_OPTIONS.map((zone) => (
+                  {zoneOptions.map((zone) => (
                     <SelectItem key={zone.value} value={zone.value}>
                       {zone.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-[#6d8093]">Rohini {rohiniCount} | Karol Bagh {karolBaghCount}</div>
+              <div className="text-xs text-[#6d8093]">
+                {zoneCards.length ? zoneCards.map((zone) => `${zone.title.replace(' Officers', '')} ${zone.value}`).join(' | ') : 'No zones available'}
+              </div>
             </div>
           </div>
         </section>
 
-        <Card className="gov-admin-card rounded-md border-[#d1dae4] shadow-none">
+        <Card className="rounded-[28px] border-white/70 bg-white/92 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
           <CardHeader>
             <CardTitle className="text-[#12385b]">Team Availability Overview</CardTitle>
           </CardHeader>
@@ -241,7 +263,7 @@ export default function AdminUsersPage() {
               </div>
             ) : (
               <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-                <div className="rounded-md border border-[#d7e0e8] bg-[#f8fafc] p-4">
+                <div className="rounded-[24px] border border-[#d7e0e8] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f7fb_100%)] p-4">
                   <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-sm font-medium text-[#5d7287]">Current available officers by level</div>
@@ -338,7 +360,7 @@ export default function AdminUsersPage() {
                         type="button"
                         key={card.key}
                         onClick={() => setTeamFilter(card.key)}
-                        className={`rounded-md border p-5 text-left transition-colors duration-200 hover:bg-[#fbfcfd] ${
+                        className={`rounded-[24px] border p-5 text-left transition-colors duration-200 hover:bg-[#fbfcfd] ${
                           card.cardClassName
                         } ${isActive ? 'ring-2 ring-[#12385b]/15' : ''}`}
                       >
@@ -369,7 +391,7 @@ export default function AdminUsersPage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           {zoneCards.map((zone) => (
-            <Card key={zone.key} className="gov-admin-card rounded-md border-[#d1dae4] shadow-none">
+            <Card key={zone.key} className="rounded-[24px] border-white/70 bg-white/92 shadow-[0_18px_50px_rgba(18,56,91,0.08)]">
               <CardContent className="p-5">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6d8093]">{zone.title}</div>
                 <div className="mt-2 text-3xl font-semibold tracking-tight text-[#12385b]">{zone.value}</div>
@@ -379,7 +401,7 @@ export default function AdminUsersPage() {
           ))}
         </div>
 
-        <Card className="gov-admin-card rounded-md border-[#d1dae4] shadow-none">
+        <Card className="rounded-[28px] border-white/70 bg-white/92 shadow-[0_24px_80px_rgba(18,56,91,0.08)]">
           <CardHeader>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-[#12385b]">Officer Team</CardTitle>

@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useRef } from 'react';
 
+import { useLandingLanguage } from '@/components/landing-language';
 import { fetchJson } from '@/lib/client/api';
 import { DELHI_WARDS } from '@/lib/constants';
 import type { WardHeatmapPoint, WardHeatmapResponse } from '@/lib/types';
@@ -315,41 +316,46 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#39;');
 }
 
-function createWardTooltipMarkup(ward: WardMarkerRow) {
+function createWardTooltipMarkup(ward: WardMarkerRow, complaintsLabel: string) {
   return `
     <div class="ward-heatmap-tooltip-card">
       <div class="ward-heatmap-tooltip-title">${escapeHtml(ward.ward)}</div>
-      <div class="ward-heatmap-tooltip-count">Complaints: ${ward.count}</div>
+      <div class="ward-heatmap-tooltip-count">${escapeHtml(complaintsLabel)}: ${ward.count}</div>
     </div>
   `;
 }
 
-function createWardPopupMarkup(ward: WardMarkerRow) {
+function createWardPopupMarkup(ward: WardMarkerRow, complaintsLabel: string, zoneLabel: string, delhiLabel: string) {
   return `
     <div class="ward-heatmap-popup-card">
       <div class="ward-heatmap-popup-title">${escapeHtml(ward.ward)}</div>
       <div class="ward-heatmap-popup-row">
-        <span>Complaints</span>
+        <span>${escapeHtml(complaintsLabel)}</span>
         <strong>${ward.count}</strong>
       </div>
       <div class="ward-heatmap-popup-row">
-        <span>Zone</span>
-        <strong>${escapeHtml(ward.zone_name || 'Delhi')}</strong>
+        <span>${escapeHtml(zoneLabel)}</span>
+        <strong>${escapeHtml(ward.zone_name || delhiLabel)}</strong>
       </div>
     </div>
   `;
 }
 
-function createClusterTooltipMarkup(cluster: Extract<WardCluster, { kind: 'cluster' }>) {
+function createClusterTooltipMarkup(cluster: Extract<WardCluster, { kind: 'cluster' }>, wardsLabel: string, complaintsLabel: string) {
   return `
     <div class="ward-heatmap-tooltip-card">
-      <div class="ward-heatmap-tooltip-title">${cluster.wards.length} wards</div>
-      <div class="ward-heatmap-tooltip-count">Complaints: ${cluster.count}</div>
+      <div class="ward-heatmap-tooltip-title">${cluster.wards.length} ${escapeHtml(wardsLabel)}</div>
+      <div class="ward-heatmap-tooltip-count">${escapeHtml(complaintsLabel)}: ${cluster.count}</div>
     </div>
   `;
 }
 
-function createClusterPopupMarkup(cluster: Extract<WardCluster, { kind: 'cluster' }>) {
+function createClusterPopupMarkup(
+  cluster: Extract<WardCluster, { kind: 'cluster' }>,
+  wardClusterLabel: string,
+  wardsLabel: string,
+  totalComplaintsLabel: string,
+) {
   const items = [...cluster.wards]
     .sort((left, right) => right.count - left.count || left.ward.localeCompare(right.ward))
     .slice(0, 6)
@@ -365,13 +371,13 @@ function createClusterPopupMarkup(cluster: Extract<WardCluster, { kind: 'cluster
 
   return `
     <div class="ward-heatmap-popup-card">
-      <div class="ward-heatmap-popup-title">Ward cluster</div>
+      <div class="ward-heatmap-popup-title">${escapeHtml(wardClusterLabel)}</div>
       <div class="ward-heatmap-popup-row">
-        <span>Wards</span>
+        <span>${escapeHtml(wardsLabel)}</span>
         <strong>${cluster.wards.length}</strong>
       </div>
       <div class="ward-heatmap-popup-row">
-        <span>Total complaints</span>
+        <span>${escapeHtml(totalComplaintsLabel)}</span>
         <strong>${cluster.count}</strong>
       </div>
       <ul class="ward-heatmap-popup-list">${items}</ul>
@@ -562,6 +568,7 @@ function buildHeatmapRequestUrl(map: LeafletMapInstance) {
 }
 
 export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
+  const { t } = useLandingLanguage();
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMapInstance | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -820,14 +827,14 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
             }),
           });
 
-          clusterMarker.bindTooltip(createClusterTooltipMarkup(cluster), {
+          clusterMarker.bindTooltip(createClusterTooltipMarkup(cluster, t.map.wards, t.map.complaints), {
             direction: 'top',
             offset: [0, -16],
             opacity: 1,
             className: 'ward-heatmap-tooltip',
           });
 
-          clusterMarker.bindPopup(createClusterPopupMarkup(cluster), {
+          clusterMarker.bindPopup(createClusterPopupMarkup(cluster, t.map.wardCluster, t.map.wards, t.map.totalComplaints), {
             className: 'ward-heatmap-popup',
             closeButton: false,
             autoPanPadding: [24, 24],
@@ -878,14 +885,14 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
           fillOpacity: palette.fillOpacity,
         });
 
-        marker.bindTooltip(createWardTooltipMarkup(ward), {
+        marker.bindTooltip(createWardTooltipMarkup(ward, t.map.complaints), {
           direction: 'top',
           offset: [0, -14],
           opacity: 1,
           className: 'ward-heatmap-tooltip',
         });
 
-        marker.bindPopup(createWardPopupMarkup(ward), {
+        marker.bindPopup(createWardPopupMarkup(ward, t.map.complaints, t.map.zone, t.map.delhi), {
           className: 'ward-heatmap-popup',
           closeButton: false,
           autoPanPadding: [24, 24],
@@ -1079,14 +1086,14 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
       labelLayerRef.current = null;
       leafletRef.current = null;
     };
-  }, []);
+  }, [t]);
 
   return (
     <div className="relative overflow-hidden rounded-[1rem] border border-[#cfd8e3] bg-white">
       <div className="pointer-events-none absolute left-3 top-3 z-[600] max-w-[13rem] rounded-[0.85rem] border border-[#cfd8e3] bg-white/95 px-3 py-2.5 sm:left-6 sm:top-6 sm:max-w-[16rem] sm:px-4 sm:py-3">
-        <div className="text-[11px] font-semibold tracking-[0.2em] text-[#0b3c5d] uppercase">Ward Complaint Map</div>
+        <div className="text-[11px] font-semibold tracking-[0.2em] text-[#0b3c5d] uppercase">{t.map.title}</div>
         <p className="mt-2 text-xs leading-5 text-slate-600 sm:text-sm sm:leading-6">
-          Zoomed out view shows vapor-style density. Zoom in to split wards apart and reveal counts.
+          {t.map.description}
         </p>
         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px] text-slate-600 sm:text-[11px]">
           <div className="flex items-center gap-2">
@@ -1111,7 +1118,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
       <div
         ref={mapElementRef}
         className="ward-heatmap-surface h-[24rem] w-full sm:h-[28rem] lg:h-[34rem]"
-        aria-label="Ward-wise complaint distribution map"
+        aria-label={t.map.ariaLabel}
       />
     </div>
   );

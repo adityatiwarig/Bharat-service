@@ -4,20 +4,18 @@ import { memo, startTransition, useEffect, useEffectEvent, useRef, useState, typ
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { Button } from '@/components/ui/button'
 
 const slides = [
   {
     image: '/images/banner1.webp',
-    alt: 'Citizens using a digital governance service interface',
   },
   {
     image: '/images/banner2.webp',
-    alt: 'Municipal public service staff supporting grievance resolution',
   },
   {
     image: '/images/banner3.webp',
-    alt: 'Public infrastructure and governance support services',
   },
 ] as const
 
@@ -28,6 +26,7 @@ type MidPageBannerCarouselProps = {
 
 export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBannerCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
+  const { t } = useLandingLanguage()
   const currentIndexRef = useRef(0)
   const isPausedRef = useRef(false)
   const isAnimatingRef = useRef(false)
@@ -133,7 +132,7 @@ export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBanne
                 <img
                   ref={imageRef}
                   src={activeSlide.image}
-                  alt={activeSlide.alt}
+                  alt={t.banner.slides[currentIndex]}
                   className="absolute inset-0 h-full w-full object-cover brightness-[0.9] contrast-[1.05]"
                   style={{
                     opacity: 1,
@@ -148,7 +147,7 @@ export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBanne
                     type="button"
                     onClick={() => shiftSlide(-1)}
                     className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(0,0,0,0.4)] text-white transition duration-200 ease-in-out hover:scale-[1.05] hover:bg-[#ff5722] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                    aria-label="Show previous banner"
+                    aria-label={t.banner.previousBanner}
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
@@ -156,7 +155,7 @@ export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBanne
                     type="button"
                     onClick={() => shiftSlide(1)}
                     className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(0,0,0,0.4)] text-white transition duration-200 ease-in-out hover:scale-[1.05] hover:bg-[#ff5722] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                    aria-label="Show next banner"
+                    aria-label={t.banner.nextBanner}
                   >
                     <ChevronRight className="h-5 w-5" />
                   </button>
@@ -182,7 +181,7 @@ export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBanne
                 className={`h-2.5 rounded-full transition-all duration-300 ease-in-out ${
                   isActive ? 'w-8 bg-[#ff5722]' : 'w-2.5 bg-[#cbd5e1] hover:bg-[#94a3b8]'
                 }`}
-                aria-label={`Go to banner ${slideIndex + 1}`}
+                aria-label={`${t.banner.goToBanner} ${slideIndex + 1}`}
                 aria-current={isActive}
               />
             )
@@ -194,16 +193,18 @@ export function MidPageBannerCarousel({ primaryHref, trackerHref }: MidPageBanne
 }
 
 const CarouselContent = memo(function CarouselContent({ primaryHref, trackerHref }: MidPageBannerCarouselProps) {
+  const { t } = useLandingLanguage()
+
   return (
     <div className="gov-banner-copy w-full text-center lg:text-left">
       <div className="text-sm font-semibold tracking-[0.2em] text-[#0b3c5d] uppercase">
-        Digital Public Services
+        {t.banner.tag}
       </div>
       <h3 className="mt-4 text-3xl font-bold tracking-tight text-[#0f172a] sm:text-[2.15rem]">
-        Empowering Citizens Through Digital Governance
+        {t.banner.title}
       </h3>
       <p className="mt-4 max-w-xl text-base leading-7 text-[#475569] lg:max-w-md">
-        Register complaints, track progress, and ensure accountability.
+        {t.banner.subtitle}
       </p>
 
       <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -211,14 +212,14 @@ const CarouselContent = memo(function CarouselContent({ primaryHref, trackerHref
           asChild
           className="h-11 rounded-full bg-[#ff5722] px-5 text-white shadow-[0_12px_24px_rgba(255,87,34,0.2)] transition duration-200 ease-in-out hover:scale-[1.05] hover:bg-[#ff5722] hover:shadow-[0_0_0_1px_rgba(255,87,34,0.18),0_0_24px_rgba(255,87,34,0.24)]"
         >
-          <Link href={primaryHref}>Lodge Complaint</Link>
+          <Link href={primaryHref}>{t.banner.lodgeComplaint}</Link>
         </Button>
         <Button
           asChild
           variant="outline"
           className="h-11 rounded-full border-[#0f172a] bg-transparent px-5 text-[#0f172a] shadow-none transition duration-200 ease-in-out hover:scale-[1.05] hover:border-[#0f172a] hover:bg-[#0f172a] hover:text-white"
         >
-          <Link href={trackerHref}>Track Status</Link>
+          <Link href={trackerHref}>{t.banner.trackStatus}</Link>
         </Button>
       </div>
     </div>
