@@ -578,33 +578,40 @@ export default function SubmitComplaintPage() {
     }
 
     let cancelled = false;
-    setDetectingIssue(true);
+    const detectionTimer = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
 
-    detectIssueGroup({
-      wardId: Number(form.ward_id),
-      categoryId: Number(form.category_id),
-    })
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
+      setDetectingIssue(true);
 
-        setDetectedIssue(result.issue);
+      detectIssueGroup({
+        wardId: Number(form.ward_id),
+        categoryId: Number(form.category_id),
       })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error('Failed to detect issue group', error);
-          setDetectedIssue(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setDetectingIssue(false);
-        }
-      });
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+
+          setDetectedIssue(result.issue);
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            console.error('Failed to detect issue group', error);
+            setDetectedIssue(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setDetectingIssue(false);
+          }
+        });
+    }, 250);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(detectionTimer);
     };
   }, [form.category_id, form.ward_id]);
 
