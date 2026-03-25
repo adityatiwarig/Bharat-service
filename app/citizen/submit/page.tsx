@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
+import { useLandingLanguage } from '@/components/landing-language';
 import { LoadingSummary } from '@/components/loading-skeletons';
 import { useSession } from '@/components/session-provider';
 import { VoiceAssistantButton } from '@/components/VoiceAssistantButton';
@@ -37,8 +38,6 @@ import { buildMapPreviewDataUrl, createGeoEvidenceDraft, type GeoEvidenceDraft }
 import { emitComplaintFeedChanged } from '@/lib/client/live-updates';
 import { cn } from '@/lib/utils';
 import type { GeoVerificationStatus, GrievanceMappingResponse } from '@/lib/types';
-
-type Language = 'en' | 'hi';
 
 const GENDER_VALUES = ['male', 'female', 'other'] as const;
 const MAX_FILES = 6;
@@ -435,6 +434,7 @@ function ComplaintSubmissionSuccessOverlay({
 export default function SubmitComplaintPage() {
   const router = useRouter();
   const session = useSession();
+  const { language, setLanguage } = useLandingLanguage();
   const formRef = useRef<HTMLFormElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -442,7 +442,6 @@ export default function SubmitComplaintPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const pendingAutoSubmitRef = useRef(false);
 
-  const [language, setLanguage] = useState<Language>('en');
   const [mapping, setMapping] = useState<GrievanceMappingResponse | null>(null);
   const [loadingMapping, setLoadingMapping] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -957,14 +956,14 @@ export default function SubmitComplaintPage() {
                     <button
                       type="button"
                       onClick={() => setLanguage('en')}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'en' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
+                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'en' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
                     >
                       {text.english}
                     </button>
                     <button
                       type="button"
                       onClick={() => setLanguage('hi')}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'hi' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
+                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'hi' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
                     >
                       {text.hindi}
                     </button>

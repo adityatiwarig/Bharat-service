@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 
 export type LandingLanguage = 'en' | 'hi'
 
@@ -436,12 +436,16 @@ export function LandingLanguageProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    document.documentElement.lang = language
+    window.localStorage.setItem(STORAGE_KEY, language)
+  }, [language])
+
   const value = useMemo<LandingLanguageContextValue>(
     () => ({
       language,
       setLanguage: (nextLanguage) => {
         setLanguage(nextLanguage)
-        window.localStorage.setItem(STORAGE_KEY, nextLanguage)
       },
       t: landingTranslations[language],
     }),

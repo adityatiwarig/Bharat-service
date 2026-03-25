@@ -1,4 +1,3 @@
-import { LandingLanguageProvider } from '@/components/landing-language'
 import { LandingPageContent } from '@/components/landing-page-content'
 import { PublicNavbar } from '@/components/public-navbar'
 import { getCurrentUser } from '@/lib/server/auth'
@@ -21,15 +20,13 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] text-slate-950">
-      <LandingLanguageProvider>
-        <PublicNavbar isLoggedIn={isCitizenLoggedIn} primaryHref={primaryHref} trackerHref={trackerHref} />
-        <LandingPageContent
-          primaryHref={primaryHref}
-          secondaryHref={secondaryHref}
-          trackerHref={trackerHref}
-          lastUpdated={lastUpdated}
-        />
-      </LandingLanguageProvider>
+      <PublicNavbar isLoggedIn={isCitizenLoggedIn} primaryHref={primaryHref} trackerHref={trackerHref} />
+      <LandingPageContent
+        primaryHref={primaryHref}
+        secondaryHref={secondaryHref}
+        trackerHref={trackerHref}
+        lastUpdated={lastUpdated}
+      />
     </div>
   )
 }
