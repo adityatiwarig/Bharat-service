@@ -195,6 +195,7 @@ export default function L2UpdatesPage() {
   const forwardedToL2ByL1 = complaint ? isComplaintForwardedToL2ByL1(complaint) : false;
   const l2DeadlineMissed = complaint ? isL2DeadlineMissed(complaint) : false;
   const isBusy = complaint ? actionId === complaint.id : false;
+  const isLockedComplaint = Boolean(complaint && isTerminalComplaint(complaint));
   const canReviewAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L2' &&
@@ -386,7 +387,11 @@ export default function L2UpdatesPage() {
                     </div>
                   </div>
 
-                  {canReviewAtDesk ? (
+                  {isLockedComplaint ? (
+                    <section className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
+                      This complaint has already been finalized in the official record. The L2 action console is now locked, and no reminder, review, or reopen action can be taken from this desk.
+                    </section>
+                  ) : canReviewAtDesk ? (
                     <section className="space-y-4 rounded-[1.35rem] border border-emerald-200 bg-emerald-50/70 p-5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
                         <ClipboardCheck className="h-4 w-4" />

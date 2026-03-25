@@ -464,6 +464,10 @@ export default function L1UpdatesPage() {
   const l1DeadlineMissed = complaint ? isL1DeadlineMissed(complaint) : false;
   const directCloseAfterRework = complaint ? canDirectlyCloseRework(complaint) : false;
   const isBusy = complaint ? actionId === complaint.id : false;
+  const isLockedComplaint = Boolean(
+    complaint &&
+    ['closed', 'expired', 'rejected'].includes(complaint.status),
+  );
   const canReviewAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L1' &&
@@ -627,7 +631,11 @@ export default function L1UpdatesPage() {
                     </div>
                   </div>
 
-                  {canReviewAtDesk ? (
+                  {isLockedComplaint ? (
+                    <section className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
+                      This complaint has already been finalized in the official record. The L1 update panel is now locked, and no further field updates, review actions, or forwarding can be done from this desk.
+                    </section>
+                  ) : canReviewAtDesk ? (
                     <section className="space-y-4 rounded-[1.35rem] border border-emerald-200 bg-emerald-50/70 p-5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
                         <ClipboardCheck className="h-4 w-4" />

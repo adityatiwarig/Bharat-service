@@ -60,6 +60,14 @@ function hasResolutionProof(complaint: Complaint) {
 }
 
 function getWorkStatus(complaint: Complaint) {
+  if (complaint.status === 'closed') {
+    return 'Completed';
+  }
+
+  if (complaint.status === 'resolved') {
+    return complaint.rating ? 'Citizen Review Received' : 'Awaiting Citizen Feedback';
+  }
+
   return complaint.work_status || 'Pending';
 }
 
@@ -209,6 +217,7 @@ function formatCountdown(deadline?: string | null, now = Date.now()) {
 
 function getRepresentativeComplaintForIssueGroup(items: Complaint[]) {
   const primaryComplaint =
+    items.find((item) => hasCitizenFeedback(item)) ||
     items.find((item) => item.is_primary) ||
     [...items].sort((left, right) => {
       const supporterDiff = (Number(right.issue_supporter_count || 0) - Number(left.issue_supporter_count || 0));
@@ -1011,6 +1020,9 @@ export function OfficerDashboard({
                   operationalLevel === 'L1' &&
                   !l1DeadlineMissed &&
                   !isL1Completed(complaint);
+                const isL1UpdatePanelLocked =
+                  level === 'L1' &&
+                  ['resolved', 'closed', 'expired', 'rejected'].includes(complaint.status);
                 const renderL1ActionDesk = () => {
                   if (canReviewAtDesk) {
                     return (
@@ -1232,23 +1244,29 @@ export function OfficerDashboard({
                       event.stopPropagation();
                     }}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#60758a]">Action Desk</div>
-                        <div className="mt-1 text-sm font-semibold text-[#12385b]">Submit updates in a separate operations panel</div>
+                    {isL1UpdatePanelLocked ? (
+                      <div className="rounded-[1rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        This complaint has already moved out of the active L1 execution flow. Update panel access is closed, and only the final status history is shown here now.
                       </div>
-                      <Button
-                        type="button"
-                        className="rounded-full bg-[#0b3c5d] text-white hover:bg-[#082d46]"
-                        onClick={() => {
-                          startTransition(() => {
-                            router.push(`/l1/updates?id=${encodeURIComponent(complaint.complaint_id)}`);
-                          });
-                        }}
-                      >
-                        Open Update Panel
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#60758a]">Action Desk</div>
+                          <div className="mt-1 text-sm font-semibold text-[#12385b]">Submit updates in a separate operations panel</div>
+                        </div>
+                        <Button
+                          type="button"
+                          className="rounded-full bg-[#0b3c5d] text-white hover:bg-[#082d46]"
+                          onClick={() => {
+                            startTransition(() => {
+                              router.push(`/l1/updates?id=${encodeURIComponent(complaint.complaint_id)}`);
+                            });
+                          }}
+                        >
+                          Open Update Panel
+                        </Button>
+                      </div>
+                    )}
 
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
