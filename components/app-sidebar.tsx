@@ -15,7 +15,7 @@ interface AppSidebarProps {
 }
 
 export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? '/'
   const { nav, active, roleMeta } = getPageMeta(pathname)
 
   return (

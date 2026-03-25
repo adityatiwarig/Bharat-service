@@ -80,9 +80,10 @@ export function Sidebar({
       badge: 'Review',
     },
   ]
-  const nav = userRole === 'worker' && pathname.startsWith('/l1')
+  const resolvedPathname = pathname ?? '/'
+  const nav = userRole === 'worker' && resolvedPathname.startsWith('/l1')
     ? l1Nav
-    : userRole === 'worker' && pathname.startsWith('/l2')
+    : userRole === 'worker' && resolvedPathname.startsWith('/l2')
       ? l2Nav
       : legacyNavigation[userRole]
   const meta = roleMeta[userRole]
@@ -96,13 +97,13 @@ export function Sidebar({
           label: 'Dashboard',
           href: '/admin',
           icon: LayoutDashboard,
-          active: pathname === '/admin',
+          active: resolvedPathname === '/admin',
         },
         {
           label: 'Complaint Queue',
           href: '/admin/complaints',
           icon: ClipboardList,
-          active: pathname.startsWith('/admin/complaints'),
+          active: resolvedPathname.startsWith('/admin/complaints'),
         },
       ],
     },
@@ -113,7 +114,7 @@ export function Sidebar({
           label: 'Officer Roster',
           href: '/admin/users',
           icon: Users2,
-          active: pathname.startsWith('/admin/users'),
+          active: resolvedPathname.startsWith('/admin/users'),
         },
       ],
     },
@@ -124,7 +125,7 @@ export function Sidebar({
           label: 'Reports',
           href: '/admin/analytics',
           icon: BarChart3,
-          active: pathname.startsWith('/admin/analytics'),
+          active: resolvedPathname.startsWith('/admin/analytics'),
         },
       ],
     },
@@ -380,8 +381,8 @@ export function Sidebar({
                 const Icon = item.icon
                 const isDashboardRoot = item.href === '/citizen'
                 const isActive = isDashboardRoot
-                  ? pathname === item.href
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  ? resolvedPathname === item.href
+                  : resolvedPathname === item.href || resolvedPathname.startsWith(`${item.href}/`)
 
                 return (
                   <Link

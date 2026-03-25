@@ -38,6 +38,23 @@ import {
   saveProofImage,
   saveProofImages,
 } from '@/lib/server/uploads';
+
+function safeRevalidateTag(tag: string) {
+  try {
+    revalidateTag(tag, 'max');
+  } catch (error) {
+    if (error instanceof Error && /static generation store missing/i.test(error.message)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function revalidateComplaintData() {
+  safeRevalidateTag('complaints');
+  safeRevalidateTag('dashboard');
+}
 import type {
   Complaint,
   ComplaintAttachment,
@@ -2383,8 +2400,7 @@ export async function createComplaintForUser(
     return createdComplaint;
   }, { timeout_ms: 30000, max_wait_ms: 10000 });
 
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   if (complaint.deadline && complaint.current_level && complaint.current_level !== 'L2_ESCALATED') {
     await scheduleComplaintEscalation(complaint.id, complaint.deadline);
   }
@@ -2700,8 +2716,7 @@ export async function updateComplaintStatusForUser(
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return getComplaintByIdForUser(user, complaint.id);
 }
@@ -2832,8 +2847,7 @@ export async function addComplaintRatingForUser(
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
   const finalizedReviewRouting = reviewRouting as { assigned_officer_id: string; current_level: 'L1' | 'L2' | 'L3'; deadline: string | null; review_level: 'L1' | 'L2' | 'L3' } | null;
   if (finalizedReviewRouting?.deadline) {
     await scheduleComplaintEscalation(complaint.id, finalizedReviewRouting.deadline);
@@ -2903,8 +2917,7 @@ export async function closeComplaintByDeptHead(
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return getComplaintByIdForUser(user, complaint.id);
 }
@@ -2975,8 +2988,7 @@ export async function reopenComplaintByDeptHead(
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return getComplaintCoreByIdForUser(user, complaint.id);
 }
@@ -3029,8 +3041,7 @@ export async function markComplaintViewedByDeptHead(user: User, complaintId: str
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return getComplaintCoreByIdForUser(user, complaint.id);
 }
@@ -3180,8 +3191,7 @@ export async function assignComplaintToWorkerByDeptHead(
   });
 
   await invalidateComplaintReadCaches(complaint);
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 
   return getComplaintCoreByIdForUser(user, complaint.id);
 }
@@ -3373,9 +3383,9 @@ async function processComplaintPipeline(complaintId: string) {
     complaint_id: complaint.complaint_id,
     tracking_code: complaint.tracking_code,
   });
-  revalidateTag('complaints', 'max');
-  revalidateTag('dashboard', 'max');
+  revalidateComplaintData();
 }
+
 
 
 

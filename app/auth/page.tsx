@@ -90,6 +90,7 @@ function formatCitizenPhone(phone: string) {
 function CitizenAuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const resolvedSearchParams = searchParams ?? new URLSearchParams();
   const [mode, setMode] = useState<'login' | 'signup'>('signup');
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -106,12 +107,12 @@ function CitizenAuthContent() {
   const remainingWardCount = Math.max(wards.length - visibleWards.length, 0);
 
   useEffect(() => {
-    const requestedMode = searchParams.get('mode');
+    const requestedMode = resolvedSearchParams.get('mode');
     setMode(requestedMode === 'login' ? 'login' : 'signup');
-  }, [searchParams]);
+  }, [resolvedSearchParams]);
 
   useEffect(() => {
-    const nextPath = getSafeNextPath(searchParams.get('next'), '/citizen');
+    const nextPath = getSafeNextPath(resolvedSearchParams.get('next'), '/citizen');
 
     fetch('/api/session/me', { cache: 'no-store' })
       .then(async (response) => {
@@ -131,7 +132,7 @@ function CitizenAuthContent() {
         }
       })
       .finally(() => setCheckingSession(false));
-  }, [searchParams]);
+  }, [resolvedSearchParams]);
 
   useEffect(() => {
     fetchWards()
@@ -140,7 +141,7 @@ function CitizenAuthContent() {
   }, []);
 
   function switchMode(nextMode: 'login' | 'signup') {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(resolvedSearchParams.toString());
     params.set('mode', nextMode);
     router.replace(`/auth?${params.toString()}`, { scroll: false });
   }
@@ -167,7 +168,7 @@ function CitizenAuthContent() {
       }
 
       const nextPath = getSafeNextPath(
-        searchParams.get('next'),
+        resolvedSearchParams.get('next'),
         data.redirect_to || data.user.redirect_to || getHomeByRole(data.user.role),
       );
       toast.success(mode === 'login' ? 'Signed in successfully.' : 'Citizen account created successfully.');

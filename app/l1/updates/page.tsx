@@ -151,7 +151,7 @@ function canDirectlyCloseRework(complaint: Complaint) {
 export default function L1UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const preferredComplaintCode = searchParams.get('id')?.trim() || '';
+  const preferredComplaintCode = searchParams?.get('id')?.trim() || '';
   const [isPending, startTransition] = useTransition();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

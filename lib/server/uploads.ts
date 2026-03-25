@@ -5,11 +5,41 @@ import { randomUUID } from 'node:crypto';
 import type { ComplaintAttachment, GeoEvidenceMetadata } from '@/lib/types';
 import { query } from '@/lib/server/db';
 
+let fileUploadsTablePromise: Promise<boolean> | null = null;
+
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9.\-_]/g, '-').replace(/-+/g, '-');
 }
 
+async function fileUploadsTableExists() {
+  if (!fileUploadsTablePromise) {
+    fileUploadsTablePromise = query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = 'file_uploads'
+        ) AS exists
+      `,
+    )
+      .then((result) => Boolean(result.rows[0]?.exists))
+      .catch((error) => {
+        fileUploadsTablePromise = null;
+        throw error;
+      });
+  }
+
+  return fileUploadsTablePromise;
+}
+
 async function persistUpload(file: File, prefix: string) {
+  const hasFileUploadsTable = await fileUploadsTableExists();
+
+  if (!hasFileUploadsTable) {
+    throw new Error('Attachment storage is not initialized. Run the latest database setup for file_uploads.');
+  }
+
   const attachmentId = randomUUID();
   const storedName = `${prefix}-${attachmentId}-${sanitizeFilename(file.name || 'attachment.bin')}`;
   const buffer = Buffer.from(await file.arrayBuffer());

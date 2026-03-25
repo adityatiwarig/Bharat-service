@@ -128,8 +128,9 @@ export function GuidedCitizenAssistant() {
     EMPTY_ASSISTANT_MEMORY,
   )
 
-  const shouldRender = pathname === '/' || pathname.startsWith('/citizen')
-  const isCitizenArea = pathname.startsWith('/citizen')
+  const resolvedPathname = pathname ?? '/'
+  const shouldRender = resolvedPathname === '/' || resolvedPathname.startsWith('/citizen')
+  const isCitizenArea = resolvedPathname.startsWith('/citizen')
 
   React.useEffect(() => {
     setReady(true)
