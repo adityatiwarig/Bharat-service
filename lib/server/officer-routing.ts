@@ -99,6 +99,15 @@ function isTerminalComplaintStatus(status: string) {
   return ['resolved', 'closed', 'rejected', 'expired'].includes(status);
 }
 
+function isComplaintUnderManualL2Supervision(
+  complaint: Pick<ComplaintRoutingRow, 'current_level' | 'department_message'>,
+) {
+  return (
+    complaint.current_level === 'L2' &&
+    String(complaint.department_message || '').toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision')
+  );
+}
+
 function mapOfficer(row: OfficerRow): Officer {
   return {
     id: row.id,
@@ -1414,9 +1423,14 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
       complaint.current_level !== 'L2' ||
       complaint.assigned_officer_id !== officer.id ||
       !complaint.deadline ||
-      new Date(complaint.deadline).getTime() > Date.now() ||
       isTerminalComplaintStatus(complaint.status)
     ) {
+      throw new AuthError('This complaint is not currently in your L2 monitoring queue.', 400);
+    }
+
+    const isManualSupervision = isComplaintUnderManualL2Supervision(complaint);
+
+    if (!isManualSupervision && new Date(complaint.deadline).getTime() > Date.now()) {
       throw new AuthError('This complaint is not currently in your L2 monitoring queue.', 400);
     }
 
@@ -1452,17 +1466,21 @@ export async function remindL1OfficerFromL2(user: User, complaintId: string, not
       complaint_id: complaint.id,
       title: 'L2 Reminder',
       message: note?.trim()
-        ? `${complaint.title} is overdue under L2 supervision. L2 note: ${note.trim()}`
-        : `${complaint.title} is overdue under L2 supervision. Complete the field work, upload proof, and send it for citizen feedback immediately.`,
+        ? `${complaint.title} is ${isManualSupervision ? 'under Level 2 supervision' : 'overdue under L2 supervision'}. L2 note: ${note.trim()}`
+        : isManualSupervision
+          ? `${complaint.title} is under Level 2 supervision. Complete the field work within the extended timeline, upload proof, and send it for citizen feedback.`
+          : `${complaint.title} is overdue under L2 supervision. Complete the field work, upload proof, and send it for citizen feedback immediately.`,
       href: `/l1/updates?id=${complaint.complaint_id}`,
     });
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
-      status: 'l1_deadline_missed',
+      status: isManualSupervision ? (complaint.status as Complaint['status']) : 'l1_deadline_missed',
       note: note?.trim()
-        ? `L2 reminder sent to L1. ${note.trim()}`
-        : 'L2 reminder sent to L1 after SLA miss.',
+        ? `L2 reminder sent to L1${isManualSupervision ? ' during manual Level 2 supervision' : ''}. ${note.trim()}`
+        : isManualSupervision
+          ? 'L2 reminder sent to L1 during manual Level 2 supervision.'
+          : 'L2 reminder sent to L1 after SLA miss.',
       updated_by_user_id: user.id,
     });
 
