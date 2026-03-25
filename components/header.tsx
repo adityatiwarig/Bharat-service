@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Landmark, Menu, ShieldCheck, Sparkles } from 'lucide-react'
 
-import type { UserRole } from '@/lib/types'
-import { roleMeta } from '@/lib/navigation'
+import { useLandingLanguage } from '@/components/landing-language'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SiteLanguageToggle } from '@/components/site-language-toggle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { getPageMeta } from '@/lib/navigation'
+import type { UserRole } from '@/lib/types'
 
 interface HeaderProps {
   title: string
@@ -35,14 +37,13 @@ export function Header({
   userRole,
   userName,
   onMenuClick,
-  sidebarCollapsed = false,
-  onToggleSidebarCollapse,
   compactCitizenHeader = false,
-  adminSidebarVisible = false,
 }: HeaderProps) {
-  const meta = roleMeta[userRole]
-  const isAdmin = userRole === 'admin'
+  const pathname = usePathname()
   const router = useRouter()
+  const { language } = useLandingLanguage()
+  const { roleMeta } = getPageMeta(pathname, language)
+  const isAdmin = userRole === 'admin'
   const [notifications, setNotifications] = useState<
     Array<{
       id: string
@@ -64,6 +65,49 @@ export function Header({
       minute: '2-digit',
     }),
   )
+
+  const ui = {
+    en: {
+      viewNotifications: 'View notifications',
+      notifications: 'Notifications',
+      markAllRead: 'Mark all read',
+      loadingNotifications: 'Loading notifications...',
+      noRecentNotifications: 'No recent notifications.',
+      systemStatus: 'System Status',
+      liveMonitoring: 'Live Monitoring Active',
+      lastUpdated: 'Last Updated',
+      loggedInRole: 'Logged-in Role',
+      admin: 'Admin',
+      centralMonitoring: 'Central Monitoring System - Government of India',
+      officer: 'Officer',
+      publicSite: 'Public site',
+      logout: 'Logout',
+      toggleSidebar: 'Toggle sidebar',
+      toggleMenu: 'Toggle menu',
+      clearRoleNavigation: 'Clear, role-based navigation',
+      mobileWorkspace: 'Mobile-ready workspace shell',
+    },
+    hi: {
+      viewNotifications: 'सूचनाएं देखें',
+      notifications: 'सूचनाएं',
+      markAllRead: 'सभी पढ़ा चिह्नित करें',
+      loadingNotifications: 'सूचनाएं लोड हो रही हैं...',
+      noRecentNotifications: 'हाल की कोई सूचना नहीं है।',
+      systemStatus: 'सिस्टम स्थिति',
+      liveMonitoring: 'लाइव मॉनिटरिंग सक्रिय',
+      lastUpdated: 'अंतिम अपडेट',
+      loggedInRole: 'लॉग-इन भूमिका',
+      admin: 'प्रशासक',
+      centralMonitoring: 'केंद्रीय मॉनिटरिंग सिस्टम - भारत सरकार',
+      officer: 'अधिकारी',
+      publicSite: 'सार्वजनिक साइट',
+      logout: 'लॉगआउट',
+      toggleSidebar: 'साइडबार टॉगल करें',
+      toggleMenu: 'मेनू टॉगल करें',
+      clearRoleNavigation: 'स्पष्ट भूमिका-आधारित नेविगेशन',
+      mobileWorkspace: 'मोबाइल-तैयार कार्यक्षेत्र शेल',
+    },
+  }[language]
 
   async function loadNotifications() {
     if (loadingNotifications) {
@@ -207,7 +251,7 @@ export function Header({
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           ) : null}
-          <span className="sr-only">View notifications</span>
+          <span className="sr-only">{ui.viewNotifications}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -215,7 +259,7 @@ export function Header({
         className={isAdmin ? 'w-80 rounded-[4px] border-[#c4d0dc] bg-white p-2' : 'w-80 rounded-2xl border-slate-200 p-2'}
       >
         <DropdownMenuLabel className="flex items-center justify-between px-3 py-2">
-          <span>Notifications</span>
+          <span>{ui.notifications}</span>
           {unreadCount ? (
             <button
               type="button"
@@ -224,13 +268,13 @@ export function Header({
               }}
               className={isAdmin ? 'text-xs font-medium text-[#9a5a06]' : 'text-xs font-medium text-sky-700'}
             >
-              Mark all read
+              {ui.markAllRead}
             </button>
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {loadingNotifications ? (
-          <div className="px-3 py-4 text-sm text-slate-500">Loading notifications...</div>
+          <div className="px-3 py-4 text-sm text-slate-500">{ui.loadingNotifications}</div>
         ) : notifications.length ? (
           notifications.map((notification) => (
             <DropdownMenuItem
@@ -257,7 +301,7 @@ export function Header({
             </DropdownMenuItem>
           ))
         ) : (
-          <div className="px-3 py-4 text-sm text-slate-500">No recent notifications.</div>
+          <div className="px-3 py-4 text-sm text-slate-500">{ui.noRecentNotifications}</div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -265,9 +309,9 @@ export function Header({
 
   if (isAdmin) {
     const commandItems = [
-      { label: 'System Status', value: 'Live Monitoring Active', tone: 'status' },
-      { label: 'Last Updated', value: lastUpdated, tone: 'neutral' },
-      { label: 'Logged-in Role', value: 'Admin', tone: 'role' },
+      { label: ui.systemStatus, value: ui.liveMonitoring, tone: 'status' },
+      { label: ui.lastUpdated, value: lastUpdated, tone: 'neutral' },
+      { label: ui.loggedInRole, value: ui.admin, tone: 'role' },
     ] as const
 
     return (
@@ -282,7 +326,7 @@ export function Header({
                 className="mt-0.5 h-10 w-10 rounded-[4px] border-white/20 bg-white/10 text-white transition-colors duration-150 hover:bg-white/14 md:hidden"
               >
                 <Menu className="h-4.5 w-4.5" />
-                <span className="sr-only">Toggle sidebar</span>
+                <span className="sr-only">{ui.toggleSidebar}</span>
               </Button>
 
               <div className="flex h-10 w-10 items-center justify-center rounded-[4px] border border-white/20 bg-white/10 text-white">
@@ -291,7 +335,7 @@ export function Header({
 
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#dbe7ff]">
-                  Central Monitoring System - Government of India
+                  {ui.centralMonitoring}
                 </div>
                 <h1 className="mt-1 text-[clamp(1.15rem,1.35vw,1.6rem)] font-semibold tracking-tight text-white">
                   {title}
@@ -315,14 +359,15 @@ export function Header({
             <div className="flex flex-wrap items-center justify-end gap-2.5">
               <div className="hidden border border-white/16 bg-white/8 px-3 py-2 text-right lg:block">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#dbe7ff]">
-                  Officer
+                  {ui.officer}
                 </div>
                 <div className="mt-1 text-sm font-semibold text-white">{userName}</div>
               </div>
               {notificationsMenu}
+              <SiteLanguageToggle />
               <Link href="/">
                 <Button className="h-10 rounded-[4px] border border-[#FF9933] bg-[#FF9933] px-3.5 text-[#1f2937] transition-colors duration-150 hover:bg-[#e58822]">
-                  Public site
+                  {ui.publicSite}
                 </Button>
               </Link>
               <Button
@@ -330,7 +375,7 @@ export function Header({
                 className="h-10 rounded-[4px] border-white/24 bg-white px-3.5 text-[#0B3D91] transition-colors duration-150 hover:bg-[#f3f6fb]"
                 onClick={handleLogout}
               >
-                Logout
+                {ui.logout}
               </Button>
             </div>
           </div>
@@ -351,20 +396,21 @@ export function Header({
               className="rounded-md border-slate-300 md:hidden"
             >
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle menu</span>
+              <span className="sr-only">{ui.toggleMenu}</span>
             </Button>
           </div>
 
           <div className="flex items-center gap-3">
+            <SiteLanguageToggle className="border-slate-300 bg-white text-slate-700" />
             <div className="hidden items-center gap-3 lg:flex">
               {notificationsMenu}
               <Link href="/">
                 <Button className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
-                  Public site
+                  {ui.publicSite}
                 </Button>
               </Link>
               <Button variant="outline" className="rounded-md border-slate-300" onClick={handleLogout}>
-                Logout
+                {ui.logout}
               </Button>
             </div>
 
@@ -374,7 +420,7 @@ export function Header({
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-medium text-slate-950">{userName}</div>
-                <div className="text-xs text-slate-500">{meta.workspace}</div>
+                <div className="text-xs text-slate-500">{roleMeta.workspace}</div>
               </div>
               <Avatar className="h-9 w-9 border border-slate-200">
                 <AvatarFallback className="bg-slate-950 text-xs font-semibold text-white">
@@ -405,43 +451,46 @@ export function Header({
               className="rounded-md border-slate-300 md:hidden"
             >
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle menu</span>
+              <span className="sr-only">{ui.toggleMenu}</span>
             </Button>
 
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="rounded-md border-slate-300 bg-slate-50 text-slate-600">
-                  {meta.label}
+                  {roleMeta.label}
                 </Badge>
                 <span className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-                  {meta.signal}
+                  {roleMeta.signal}
                 </span>
               </div>
               <h1 className="mt-2 text-[1.85rem] font-semibold tracking-tight text-slate-900">{title}</h1>
-              <p className="mt-1 text-sm text-slate-500">{meta.summary}</p>
+              <p className="mt-1 text-sm text-slate-500">{roleMeta.summary}</p>
             </div>
           </div>
 
-          <div className="hidden items-center gap-3 lg:flex">
-            {notificationsMenu}
-            <Link href="/">
-              <Button className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
-                Public site
+          <div className="flex items-center gap-3">
+            <SiteLanguageToggle className="border-slate-300 bg-white text-slate-700" />
+            <div className="hidden items-center gap-3 lg:flex">
+              {notificationsMenu}
+              <Link href="/">
+                <Button className="rounded-md bg-[#1d4f91] text-white hover:bg-[#17457f]">
+                  {ui.publicSite}
+                </Button>
+              </Link>
+              <Button variant="outline" className="rounded-md border-slate-300" onClick={handleLogout}>
+                {ui.logout}
               </Button>
-            </Link>
-            <Button variant="outline" className="rounded-md border-slate-300" onClick={handleLogout}>
-              Logout
-            </Button>
+            </div>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
-              Clear, role-based navigation
+              {ui.clearRoleNavigation}
             </div>
             <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-700">
-              Mobile-ready workspace shell
+              {ui.mobileWorkspace}
             </div>
           </div>
 
@@ -451,7 +500,7 @@ export function Header({
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium text-slate-950">{userName}</div>
-              <div className="text-xs text-slate-500">{meta.workspace}</div>
+              <div className="text-xs text-slate-500">{roleMeta.workspace}</div>
             </div>
             <Avatar className="h-9 w-9 border border-slate-200">
               <AvatarFallback className="bg-slate-950 text-xs font-semibold text-white">
@@ -469,6 +518,3 @@ export function Header({
     </header>
   )
 }
-
-
-

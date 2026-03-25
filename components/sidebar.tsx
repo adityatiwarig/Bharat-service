@@ -18,8 +18,9 @@ import {
   Wrench,
 } from 'lucide-react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import type { UserRole } from '@/lib/types'
-import { legacyNavigation, roleMeta } from '@/lib/navigation'
+import { getLegacyNavigation, getRoleMeta } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,36 +49,37 @@ export function Sidebar({
   onHoverEnd,
 }: SidebarProps) {
   const pathname = usePathname()
+  const { language } = useLandingLanguage()
   const l1Nav = [
     {
       href: '/l1',
-      label: 'Dashboard',
-      description: 'Review fresh complaints and priority-wise queue status.',
+      label: language === 'hi' ? 'डैशबोर्ड' : 'Dashboard',
+      description: language === 'hi' ? 'नई शिकायतों और प्राथमिकता-आधारित कतार स्थिति की समीक्षा करें।' : 'Review fresh complaints and priority-wise queue status.',
       icon: LayoutDashboard,
       badge: 'L1',
     },
     {
       href: '/l1/updates',
-      label: 'Update Desk',
-      description: 'Submit proof, work progress, and final field actions.',
+      label: language === 'hi' ? 'अपडेट डेस्क' : 'Update Desk',
+      description: language === 'hi' ? 'प्रमाण, कार्य प्रगति और अंतिम फील्ड कार्रवाई जमा करें।' : 'Submit proof, work progress, and final field actions.',
       icon: Wrench,
-      badge: 'Action',
+      badge: language === 'hi' ? 'कार्रवाई' : 'Action',
     },
   ]
   const l2Nav = [
     {
       href: '/l2',
-      label: 'Dashboard',
-      description: 'Review supervised complaints and current L2 queue status.',
+      label: language === 'hi' ? 'डैशबोर्ड' : 'Dashboard',
+      description: language === 'hi' ? 'पर्यवेक्षित शिकायतों और वर्तमान L2 कतार स्थिति की समीक्षा करें।' : 'Review supervised complaints and current L2 queue status.',
       icon: LayoutDashboard,
       badge: 'L2',
     },
     {
       href: '/l2/updates',
-      label: 'Update Desk',
-      description: 'Send reminders, track citizen feedback, and take final L2 review actions.',
+      label: language === 'hi' ? 'अपडेट डेस्क' : 'Update Desk',
+      description: language === 'hi' ? 'रिमाइंडर भेजें, नागरिक फीडबैक ट्रैक करें और अंतिम L2 समीक्षा कार्रवाई करें।' : 'Send reminders, track citizen feedback, and take final L2 review actions.',
       icon: Wrench,
-      badge: 'Review',
+      badge: language === 'hi' ? 'समीक्षा' : 'Review',
     },
   ]
   const resolvedPathname = pathname ?? '/'
@@ -85,25 +87,25 @@ export function Sidebar({
     ? l1Nav
     : userRole === 'worker' && resolvedPathname.startsWith('/l2')
       ? l2Nav
-      : legacyNavigation[userRole]
-  const meta = roleMeta[userRole]
+      : getLegacyNavigation(language)[userRole]
+  const meta = getRoleMeta(language)[userRole]
   const isAdmin = userRole === 'admin'
 
   const adminSections = [
     {
-      label: 'MAIN CONTROL',
+      label: language === 'hi' ? 'मुख्य नियंत्रण' : 'MAIN CONTROL',
       items: [
         {
           label: 'Dashboard',
           href: '/admin',
           icon: LayoutDashboard,
-          active: resolvedPathname === '/admin',
+          active: pathname === '/admin',
         },
         {
           label: 'Complaint Queue',
           href: '/admin/complaints',
           icon: ClipboardList,
-          active: resolvedPathname.startsWith('/admin/complaints'),
+          active: pathname.startsWith('/admin/complaints'),
         },
       ],
     },
@@ -114,7 +116,7 @@ export function Sidebar({
           label: 'Officer Roster',
           href: '/admin/users',
           icon: Users2,
-          active: resolvedPathname.startsWith('/admin/users'),
+          active: pathname.startsWith('/admin/users'),
         },
       ],
     },
@@ -125,7 +127,7 @@ export function Sidebar({
           label: 'Reports',
           href: '/admin/analytics',
           icon: BarChart3,
-          active: resolvedPathname.startsWith('/admin/analytics'),
+          active: pathname.startsWith('/admin/analytics'),
         },
       ],
     },
@@ -150,10 +152,10 @@ export function Sidebar({
                 </div>
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/60">
-                    Government Console
+                    {language === 'hi' ? 'सरकारी कंसोल' : 'Government Console'}
                   </div>
                   <div className="mt-1 text-sm font-semibold text-white">
-                    Municipal Admin
+                    {language === 'hi' ? 'नगर निगम प्रशासक' : 'Municipal Admin'}
                   </div>
                 </div>
               </Link>
@@ -166,7 +168,7 @@ export function Sidebar({
                 className="hidden h-9 w-9 rounded-[4px] border-white/18 bg-white/8 text-white transition-colors duration-150 hover:bg-white/12 md:inline-flex"
               >
                 <PanelLeftClose className="h-4.5 w-4.5" />
-                <span className="sr-only">Collapse sidebar</span>
+                <span className="sr-only">{language === 'hi' ? 'साइडबार समेटें' : 'Collapse sidebar'}</span>
               </Button>
             </div>
           </div>
@@ -235,14 +237,14 @@ export function Sidebar({
           className="hidden h-10 w-10 rounded-[4px] border-white/18 bg-white/8 text-white transition-colors duration-150 hover:bg-white/12 md:inline-flex"
         >
           <PanelLeftOpen className="h-4.5 w-4.5" />
-          <span className="sr-only">Expand sidebar</span>
+          <span className="sr-only">{language === 'hi' ? 'साइडबार फैलाएं' : 'Expand sidebar'}</span>
         </Button>
 
         <Link
           href="/"
           className="mt-3 flex h-10 w-10 items-center justify-center rounded-[4px] border border-white/18 bg-white/8 text-white"
-          title="Municipal Admin"
-          aria-label="Municipal Admin"
+          title={language === 'hi' ? 'नगर निगम प्रशासक' : 'Municipal Admin'}
+          aria-label={language === 'hi' ? 'नगर निगम प्रशासक' : 'Municipal Admin'}
         >
           <Landmark className="h-5 w-5" />
         </Link>
@@ -357,10 +359,10 @@ export function Sidebar({
                 size="icon"
                 onClick={onToggleCollapse}
                 className="hidden rounded-md border-slate-300 bg-white text-slate-700 hover:bg-slate-50 md:inline-flex"
-                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={collapsed ? (language === 'hi' ? 'साइडबार फैलाएं' : 'Expand sidebar') : (language === 'hi' ? 'साइडबार समेटें' : 'Collapse sidebar')}
               >
                 {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                <span className="sr-only">{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
+                <span className="sr-only">{collapsed ? (language === 'hi' ? 'साइडबार फैलाएं' : 'Expand sidebar') : (language === 'hi' ? 'साइडबार समेटें' : 'Collapse sidebar')}</span>
               </Button>
             </div>
 
@@ -374,15 +376,15 @@ export function Sidebar({
 
           <div className="flex-1 px-4 py-5">
             <div className={cn('px-2 text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase', collapsed ? 'md:hidden' : '')}>
-              Citizen Services
+              {language === 'hi' ? 'नागरिक सेवाएं' : 'Citizen Services'}
             </div>
             <nav className="mt-4 space-y-2">
               {nav.map((item) => {
                 const Icon = item.icon
                 const isDashboardRoot = item.href === '/citizen'
                 const isActive = isDashboardRoot
-                  ? resolvedPathname === item.href
-                  : resolvedPathname === item.href || resolvedPathname.startsWith(`${item.href}/`)
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
                 return (
                   <Link
@@ -434,9 +436,9 @@ export function Sidebar({
                   <ShieldCheck className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-950">Service confidence</div>
+                  <div className="text-sm font-semibold text-slate-950">{language === 'hi' ? 'सेवा विश्वसनीयता' : 'Service confidence'}</div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Consistent navigation, clearer hierarchy, and better scanability for daily work.
+                    {language === 'hi' ? 'निरंतर नेविगेशन, स्पष्ट पदानुक्रम और दैनिक कार्य के लिए बेहतर दृश्य पठनीयता।' : 'Consistent navigation, clearer hierarchy, and better scanability for daily work.'}
                   </p>
                 </div>
               </div>
@@ -445,7 +447,7 @@ export function Sidebar({
                   variant="ghost"
                   className="w-full justify-between rounded-md px-3 text-slate-700 hover:bg-slate-50"
                 >
-                  Return to overview
+                  {language === 'hi' ? 'अवलोकन पर लौटें' : 'Return to overview'}
                   <ArrowUpRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -453,7 +455,7 @@ export function Sidebar({
                 variant="ghost"
                 className="mt-2 w-full justify-between rounded-md px-3 text-slate-700 hover:bg-slate-50"
               >
-                Support guide
+                {language === 'hi' ? 'सहायता मार्गदर्शिका' : 'Support guide'}
                 <LifeBuoy className="h-4 w-4" />
               </Button>
             </div>

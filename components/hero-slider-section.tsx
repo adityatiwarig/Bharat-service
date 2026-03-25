@@ -70,7 +70,9 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
         >
           <span
             className={`rounded-full px-2.5 py-1 transition ${
-              language === 'en' ? 'bg-white text-[#0b3c5d]' : 'text-white/75'
+              language === 'en'
+                ? 'bg-[#ff9933] font-bold text-[#0b3c5d] shadow-sm ring-1 ring-[#ffcc8a]'
+                : 'font-medium text-white/65'
             }`}
           >
             {t.language.en}
@@ -78,7 +80,9 @@ export function HeroSliderSection({ primaryHref, trackerHref }: HeroSliderSectio
           <span className="text-white/40">|</span>
           <span
             className={`rounded-full px-2.5 py-1 transition ${
-              language === 'hi' ? 'bg-white text-[#0b3c5d]' : 'text-white/75'
+              language === 'hi'
+                ? 'bg-[#ff9933] font-bold text-[#0b3c5d] shadow-sm ring-1 ring-[#ffcc8a]'
+                : 'font-medium text-white/65'
             }`}
           >
             {t.language.hi}
