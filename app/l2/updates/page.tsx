@@ -117,7 +117,7 @@ function formatFeedbackLabel(complaint: Complaint) {
 export default function L2UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const preferredComplaintCode = searchParams.get('id')?.trim() || '';
+  const preferredComplaintCode = searchParams?.get('id')?.trim() || '';
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<OfficerDashboardSummary | null>(null);
