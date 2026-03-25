@@ -27,6 +27,7 @@ export type ComplaintDepartment =
   | 'streetlight';
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+export type IssueGroupPriority = 'low' | 'medium' | 'high';
 export type ComplaintLevel = 'L1' | 'L2' | 'L3' | 'L2_ESCALATED';
 export type OfficerLevel = 'L1' | 'L2' | 'L3';
 export type OfficerRole = OfficerLevel | 'ADMIN';
@@ -319,6 +320,14 @@ export interface Complaint {
   complaint_id: string;
   tracking_code: string;
   user_id: string;
+  issue_group_id?: string | null;
+  issue_primary_complaint_id?: string | null;
+  parent_complaint_id?: string | null;
+  is_primary?: boolean;
+  joined_issue?: boolean;
+  shared_issue_access?: boolean;
+  issue_supporter_count?: number | null;
+  issue_priority?: IssueGroupPriority | null;
   citizen_id?: string;
   applicant_name?: string | null;
   applicant_mobile?: string | null;

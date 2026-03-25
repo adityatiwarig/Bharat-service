@@ -356,7 +356,16 @@ export default function MyComplaintsPage() {
                           onClick={() => router.push(`/citizen/tracker?id=${encodeURIComponent(getComplaintTrackerIdentifier(complaint))}`)}
                         >
                           <td className="px-4 py-3 text-sm text-slate-700">{getComplaintTrackerIdentifier(complaint)}</td>
-                          <td className="px-4 py-3 text-sm text-slate-900">{complaint.title || 'Untitled complaint'}</td>
+                          <td className="px-4 py-3 text-sm text-slate-900">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{complaint.title || 'Untitled complaint'}</span>
+                              {complaint.joined_issue ? (
+                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                                  Joined Issue
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
                           <td className="px-4 py-3 text-sm text-slate-700">{formatDepartment(complaint.department)}</td>
                           <td className={`px-4 py-3 text-sm font-medium ${getStatusClassName(complaint.status)}`}>
                             {formatStatusLabel(complaint.status)}

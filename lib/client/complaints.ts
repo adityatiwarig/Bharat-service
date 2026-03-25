@@ -26,6 +26,23 @@ type ComplaintFetchOptions = {
   force?: boolean;
 };
 
+export type DetectedIssueGroup = {
+  issue_group_id: string | null;
+  primary_complaint_id: string | null;
+  primary_tracking_code: string | null;
+  primary_complaint_reference: string | null;
+  supporter_count: number;
+  priority: 'low' | 'medium' | 'high';
+  ward_id: number;
+  category_id: number;
+  title: string | null;
+  created_at: string;
+  already_joined: boolean;
+  joined_complaint_id: string | null;
+  joined_tracking_code: string | null;
+  source?: 'group' | 'recent_complaint';
+};
+
 const complaintCache = new Map<string, Complaint>();
 const complaintTimelineCache = new Map<string, ComplaintTimelineData>();
 const complaintProofCache = new Map<string, ComplaintProofData>();
@@ -203,6 +220,38 @@ export async function fetchGrievanceMapping(options: { zoneId?: number; departme
     zoneId: options.zoneId,
     departmentId: options.departmentId,
   }));
+}
+
+export async function detectIssueGroup(input: { wardId: number; categoryId: number }) {
+  return fetchJson<{ issue: DetectedIssueGroup | null }>(withSearchParams('/api/issues/detect', {
+    wardId: input.wardId,
+    categoryId: input.categoryId,
+  }));
+}
+
+export async function joinDetectedIssue(input: {
+  issue_group_id?: string;
+  primary_complaint_id?: string;
+  applicant_name: string;
+  applicant_mobile: string;
+  applicant_email?: string;
+  applicant_address: string;
+  applicant_gender?: string;
+  zone_id: number;
+  ward_id: number;
+  department_id: number;
+  category_id: number;
+  title?: string;
+  text?: string;
+  street_address?: string;
+  latitude?: number;
+  longitude?: number;
+}) {
+  return fetchJson<{ complaintId: string; trackingCode: string; complaint: Complaint }>('/api/issues/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
 }
 
 export async function fetchAdminDashboard(options: { zoneId?: number } = {}) {

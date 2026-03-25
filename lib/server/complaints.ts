@@ -45,12 +45,14 @@ import type {
   ComplaintDepartment,
   ComplaintLevel,
   ComplaintListFilters,
+  ComplaintPriority,
   ComplaintProofRecord,
   ComplaintProofData,
   ComplaintSatisfaction,
   ComplaintStatus,
   ComplaintTimelineData,
   GeoEvidenceMetadata,
+  IssueGroupPriority,
   PaginatedResult,
   PublicComplaintLookupResult,
   PublicComplaintSummary,
@@ -63,6 +65,12 @@ export type ComplaintRow = {
   complaint_id: string;
   tracking_code: string;
   user_id: string;
+  issue_group_id?: string | null;
+  issue_primary_complaint_id?: string | null;
+  parent_complaint_id?: string | null;
+  is_primary?: boolean | null;
+  issue_supporter_count?: number | string | null;
+  issue_priority?: string | null;
   applicant_name?: string | null;
   applicant_mobile?: string | null;
   applicant_email?: string | null;
@@ -313,11 +321,117 @@ const COMPLAINT_STRUCTURED_MAPPING_COLUMNS = [
   'deadline',
   'assigned_officer_id',
 ] as const;
+const COMPLAINT_ISSUE_GROUPING_COLUMNS = [
+  'issue_group_id',
+  'parent_complaint_id',
+  'is_primary',
+] as const;
 
 let complaintApplicantColumnsPromise: Promise<boolean> | null = null;
 let complaintStructuredMappingColumnsPromise: Promise<boolean> | null = null;
+let complaintIssueGroupingColumnsPromise: Promise<boolean> | null = null;
 let complaintProofImagesColumnPromise: Promise<boolean> | null = null;
 let complaintProofsTablePromise: Promise<boolean> | null = null;
+let issueGroupsTablePromise: Promise<boolean> | null = null;
+
+type IssueGroupDetectionResult = {
+  issue_group_id: string | null;
+  primary_complaint_id: string | null;
+  primary_tracking_code: string | null;
+  primary_complaint_reference: string | null;
+  supporter_count: number;
+  priority: IssueGroupPriority;
+  ward_id: number;
+  category_id: number;
+  title: string | null;
+  created_at: string;
+  already_joined: boolean;
+  joined_complaint_id: string | null;
+  joined_tracking_code: string | null;
+  source?: 'group' | 'recent_complaint';
+};
+
+const INACTIVE_ISSUE_STATUSES: ComplaintStatus[] = ['resolved', 'closed', 'rejected', 'expired'];
+
+function isInactiveIssueStatus(status?: string | null) {
+  return INACTIVE_ISSUE_STATUSES.includes(normalizeStatus(status || 'submitted') as ComplaintStatus);
+}
+
+function deriveIssueGroupPriority(supporterCount: number): IssueGroupPriority {
+  if (supporterCount > 10) {
+    return 'high';
+  }
+
+  if (supporterCount > 5) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function compareComplaintPriority(left: ComplaintPriority, right: ComplaintPriority) {
+  const rank: Record<ComplaintPriority, number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+    critical: 3,
+    urgent: 4,
+  };
+
+  return rank[left] - rank[right];
+}
+
+function elevateComplaintPriority(
+  basePriority: ComplaintPriority,
+  issuePriority: IssueGroupPriority,
+): ComplaintPriority {
+  return compareComplaintPriority(basePriority, issuePriority) >= 0 ? basePriority : issuePriority;
+}
+
+function getIssueGroupSelectColumns(issueGroupingEnabled: boolean) {
+  if (!issueGroupingEnabled) {
+    return `
+      NULL::uuid AS issue_group_id,
+      NULL::uuid AS issue_primary_complaint_id,
+      NULL::uuid AS parent_complaint_id,
+      TRUE AS is_primary,
+      NULL::int AS issue_supporter_count,
+      NULL::text AS issue_priority,
+    `;
+  }
+
+  return `
+      c.issue_group_id,
+      ig.primary_complaint_id AS issue_primary_complaint_id,
+      c.parent_complaint_id,
+      c.is_primary,
+      ig.supporter_count AS issue_supporter_count,
+      ig.priority::text AS issue_priority,
+    `;
+}
+
+function getIssueGroupJoinClause(issueGroupingEnabled: boolean) {
+  return issueGroupingEnabled
+    ? 'LEFT JOIN issue_groups ig ON ig.id = c.issue_group_id'
+    : '';
+}
+
+async function sanitizeComplaintForUserAccess(user: User, complaint: Complaint) {
+  if (user.role === 'citizen' && complaint.user_id !== user.id && complaint.issue_group_id) {
+    const joinedComplaint = await findUserComplaintInIssueGroup(user.id, complaint.issue_group_id);
+
+    if (joinedComplaint) {
+      complaint.shared_issue_access = true;
+      complaint.applicant_name = null;
+      complaint.applicant_mobile = null;
+      complaint.applicant_email = null;
+      complaint.applicant_address = null;
+      complaint.citizen_name = 'Citizen';
+    }
+  }
+
+  return complaint;
+}
 
 function normalizeStatus(status: string) {
   return status;
@@ -436,6 +550,26 @@ async function complaintsTableHasStructuredMappingColumns() {
   return complaintStructuredMappingColumnsPromise;
 }
 
+async function complaintsTableHasIssueGroupingColumns() {
+  complaintIssueGroupingColumnsPromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'complaints'
+        AND column_name = ANY($1::text[])
+    `,
+    [COMPLAINT_ISSUE_GROUPING_COLUMNS],
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) === COMPLAINT_ISSUE_GROUPING_COLUMNS.length)
+    .catch((error) => {
+      complaintIssueGroupingColumnsPromise = null;
+      throw error;
+    });
+
+  return complaintIssueGroupingColumnsPromise;
+}
+
 async function complaintsTableHasProofImagesColumn() {
   complaintProofImagesColumnPromise ??= query<{ count: string }>(
     `
@@ -473,6 +607,33 @@ async function complaintProofsTableExists() {
   return complaintProofsTablePromise;
 }
 
+async function issueGroupsTableExists() {
+  issueGroupsTablePromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'issue_groups'
+    `,
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) > 0)
+    .catch((error) => {
+      issueGroupsTablePromise = null;
+      throw error;
+    });
+
+  return issueGroupsTablePromise;
+}
+
+async function issueGroupingFeatureAvailable() {
+  const [hasColumns, hasTable] = await Promise.all([
+    complaintsTableHasIssueGroupingColumns(),
+    issueGroupsTableExists(),
+  ]);
+
+  return hasColumns && hasTable;
+}
+
 function normalizeProofImages(
   proofImage: ComplaintAttachment | null | undefined,
   proofImages: ComplaintAttachment[] | null | undefined,
@@ -492,6 +653,14 @@ export function mapComplaintRow(row: ComplaintRow): Complaint {
     complaint_id: row.complaint_id,
     tracking_code: row.tracking_code,
     user_id: row.user_id,
+    issue_group_id: row.issue_group_id ?? null,
+    issue_primary_complaint_id: row.issue_primary_complaint_id ?? null,
+    parent_complaint_id: row.parent_complaint_id ?? null,
+    is_primary: row.is_primary ?? true,
+    joined_issue: row.is_primary === false,
+    shared_issue_access: false,
+    issue_supporter_count: row.issue_supporter_count === null || row.issue_supporter_count === undefined ? null : Number(row.issue_supporter_count),
+    issue_priority: (row.issue_priority as IssueGroupPriority | null) ?? null,
     citizen_id: row.user_id,
     applicant_name: row.applicant_name ?? null,
     applicant_mobile: row.applicant_mobile ?? null,
@@ -746,9 +915,13 @@ async function listComplaintProofRecords(complaintId: string): Promise<Complaint
 async function assertComplaintAccess(user: User, complaint: Complaint) {
   const worker = user.role === 'worker' ? await getComplaintWorkerRow(user.id) : null;
   const hasOfficerAssignment = Boolean(user.officer_id);
+  const citizenSharedAccess = user.role === 'citizen'
+    && complaint.user_id !== user.id
+    && Boolean(complaint.issue_group_id)
+    && Boolean(await findUserComplaintInIssueGroup(user.id, complaint.issue_group_id!));
 
   if (
-    (user.role === 'citizen' && complaint.user_id !== user.id) ||
+    (user.role === 'citizen' && complaint.user_id !== user.id && !citizenSharedAccess) ||
     (
       user.role === 'worker' &&
       (
@@ -855,11 +1028,366 @@ async function invalidateComplaintReadCaches(complaint: Pick<Complaint, 'id' | '
   await invalidateComplaintCache(complaint.complaint_id, [complaint.id, complaint.tracking_code]);
 }
 
+async function findUserComplaintInIssueGroup(
+  userId: string,
+  issueGroupId: string,
+) {
+  if (!(await issueGroupingFeatureAvailable())) {
+    return null;
+  }
+
+  const result = await query<{
+    id: string;
+    complaint_id: string;
+    tracking_code: string;
+    status: string;
+  }>(
+    `
+      SELECT id, complaint_id, tracking_code, status
+      FROM complaints
+      WHERE user_id = $1
+        AND issue_group_id = $2::uuid
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [userId, issueGroupId],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function findRecentIssueGroupForUser(
+  userId: string,
+  input: { wardId: number; categoryId: number },
+): Promise<IssueGroupDetectionResult | null> {
+  if (!(await issueGroupingFeatureAvailable())) {
+    return null;
+  }
+
+  const result = await query<{
+    issue_group_id: string;
+    primary_complaint_id: string | null;
+    primary_tracking_code: string | null;
+    primary_complaint_reference: string | null;
+    supporter_count: string;
+    priority: string;
+    ward_id: number;
+    category_id: number;
+    title: string | null;
+    created_at: string;
+    joined_complaint_id: string | null;
+    joined_tracking_code: string | null;
+    joined_status: string | null;
+  }>(
+    `
+      SELECT
+        ig.id AS issue_group_id,
+        ig.primary_complaint_id,
+        primary_complaint.tracking_code AS primary_tracking_code,
+        primary_complaint.complaint_id AS primary_complaint_reference,
+        ig.supporter_count::text AS supporter_count,
+        ig.priority::text AS priority,
+        ig.ward_id,
+        ig.category_id,
+        primary_complaint.title,
+        ig.created_at,
+        joined_complaint.id AS joined_complaint_id,
+        joined_complaint.tracking_code AS joined_tracking_code,
+        joined_complaint.status::text AS joined_status
+      FROM issue_groups ig
+      INNER JOIN complaints primary_complaint ON primary_complaint.id = ig.primary_complaint_id
+      LEFT JOIN LATERAL (
+        SELECT c.id, c.tracking_code, c.status
+        FROM complaints c
+        WHERE c.user_id = $1
+          AND c.issue_group_id = ig.id
+        ORDER BY c.created_at DESC
+        LIMIT 1
+      ) joined_complaint ON TRUE
+      WHERE ig.ward_id = $2
+        AND ig.category_id = $3
+        AND ig.created_at >= NOW() - INTERVAL '7 days'
+        AND primary_complaint.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+      ORDER BY ig.created_at DESC
+      LIMIT 1
+    `,
+    [userId, input.wardId, input.categoryId],
+  );
+
+  const row = result.rows[0];
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    issue_group_id: row.issue_group_id,
+    primary_complaint_id: row.primary_complaint_id,
+    primary_tracking_code: row.primary_tracking_code,
+    primary_complaint_reference: row.primary_complaint_reference,
+    supporter_count: Number(row.supporter_count || 0),
+    priority: (row.priority as IssueGroupPriority) || 'low',
+    ward_id: row.ward_id,
+    category_id: row.category_id,
+    title: row.title,
+    created_at: row.created_at,
+    already_joined: Boolean(row.joined_complaint_id && !isInactiveIssueStatus(row.joined_status)),
+    joined_complaint_id: row.joined_complaint_id,
+    joined_tracking_code: row.joined_tracking_code,
+    source: 'group',
+  };
+}
+
+async function findRecentComplaintFallbackForUser(
+  userId: string,
+  input: { wardId: number; categoryId: number },
+): Promise<IssueGroupDetectionResult | null> {
+  const result = await query<{
+    primary_complaint_id: string;
+    primary_tracking_code: string;
+    primary_complaint_reference: string;
+    supporter_count: string;
+    ward_id: number;
+    category_id: number;
+    title: string | null;
+    created_at: string;
+    joined_complaint_id: string | null;
+    joined_tracking_code: string | null;
+    joined_status: string | null;
+  }>(
+    `
+      WITH latest_issue AS (
+        SELECT c.id, c.tracking_code, c.complaint_id, c.title, c.created_at, c.ward_id, c.category_id
+        FROM complaints c
+        WHERE c.ward_id = $2
+          AND c.category_id = $3
+          AND c.created_at >= NOW() - INTERVAL '7 days'
+          AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+        ORDER BY c.created_at DESC
+        LIMIT 1
+      ),
+      issue_count AS (
+        SELECT COUNT(*)::text AS supporter_count
+        FROM complaints c
+        WHERE c.ward_id = $2
+          AND c.category_id = $3
+          AND c.created_at >= NOW() - INTERVAL '7 days'
+          AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+      ),
+      joined_complaint AS (
+        SELECT c.id, c.tracking_code, c.status
+        FROM complaints c
+        WHERE c.user_id = $1
+          AND c.ward_id = $2
+          AND c.category_id = $3
+          AND c.created_at >= NOW() - INTERVAL '7 days'
+          AND c.status NOT IN ('resolved', 'closed', 'rejected', 'expired')
+        ORDER BY c.created_at DESC
+        LIMIT 1
+      )
+      SELECT
+        latest_issue.id AS primary_complaint_id,
+        latest_issue.tracking_code AS primary_tracking_code,
+        latest_issue.complaint_id AS primary_complaint_reference,
+        issue_count.supporter_count,
+        latest_issue.ward_id,
+        latest_issue.category_id,
+        latest_issue.title,
+        latest_issue.created_at,
+        joined_complaint.id AS joined_complaint_id,
+        joined_complaint.tracking_code AS joined_tracking_code,
+        joined_complaint.status::text AS joined_status
+      FROM latest_issue, issue_count
+      LEFT JOIN joined_complaint ON TRUE
+    `,
+    [userId, input.wardId, input.categoryId],
+  );
+
+  const row = result.rows[0];
+
+  if (!row || Number(row.supporter_count || 0) < 1) {
+    return null;
+  }
+
+  return {
+    issue_group_id: null,
+    primary_complaint_id: row.primary_complaint_id,
+    primary_tracking_code: row.primary_tracking_code,
+    primary_complaint_reference: row.primary_complaint_reference,
+    supporter_count: Number(row.supporter_count || 0),
+    priority: deriveIssueGroupPriority(Number(row.supporter_count || 0)),
+    ward_id: row.ward_id,
+    category_id: row.category_id,
+    title: row.title,
+    created_at: row.created_at,
+    already_joined: Boolean(row.joined_complaint_id && !isInactiveIssueStatus(row.joined_status)),
+    joined_complaint_id: row.joined_complaint_id,
+    joined_tracking_code: row.joined_tracking_code,
+    source: 'recent_complaint',
+  };
+}
+
+async function syncIssueGroupPriority(
+  client: DbTransactionClient,
+  issueGroupId: string,
+) {
+  if (!(await issueGroupingFeatureAvailable())) {
+    return {
+      supporter_count: 1,
+      priority: 'low' as IssueGroupPriority,
+    };
+  }
+
+  const groupResult = await client.query<{
+    supporter_count: string;
+  }>(
+    `
+      SELECT supporter_count::text AS supporter_count
+      FROM issue_groups
+      WHERE id = $1::uuid
+      LIMIT 1
+    `,
+    [issueGroupId],
+  );
+
+  const supporterCount = Number(groupResult.rows[0]?.supporter_count || 1);
+  const issuePriority = deriveIssueGroupPriority(supporterCount);
+
+  await client.query(
+    `
+      UPDATE issue_groups
+      SET priority = $2::complaint_priority
+      WHERE id = $1::uuid
+    `,
+    [issueGroupId, issuePriority],
+  );
+
+  const complaintsResult = await client.query<{
+    id: string;
+    priority: string;
+  }>(
+    `
+      SELECT id, priority::text AS priority
+      FROM complaints
+      WHERE issue_group_id = $1::uuid
+    `,
+    [issueGroupId],
+  );
+
+  for (const complaintRow of complaintsResult.rows) {
+    const nextPriority = elevateComplaintPriority(
+      normalizePriority(complaintRow.priority) as ComplaintPriority,
+      issuePriority,
+    );
+
+    await client.query(
+      `
+        UPDATE complaints
+        SET priority = $2::complaint_priority
+        WHERE id = $1::uuid
+      `,
+      [complaintRow.id, nextPriority],
+    );
+  }
+
+  return {
+    supporter_count: supporterCount,
+    priority: issuePriority,
+  };
+}
+
+async function ensureIssueGroupForPrimaryComplaint(
+  client: DbTransactionClient,
+  input: {
+    primaryComplaintId: string;
+    wardId: number;
+    categoryId: number;
+  },
+) {
+  const existingComplaint = await client.query<{
+    issue_group_id: string | null;
+  }>(
+    `
+      SELECT issue_group_id
+      FROM complaints
+      WHERE id = $1::uuid
+      LIMIT 1
+    `,
+    [input.primaryComplaintId],
+  );
+
+  const existingGroupId = existingComplaint.rows[0]?.issue_group_id || null;
+
+  if (existingGroupId) {
+    return existingGroupId;
+  }
+
+  const createdGroup = await client.query<{ id: string }>(
+    `
+      INSERT INTO issue_groups (
+        ward_id,
+        category_id,
+        primary_complaint_id,
+        supporter_count,
+        priority
+      )
+      VALUES ($1, $2, $3::uuid, 1, 'low')
+      RETURNING id
+    `,
+    [input.wardId, input.categoryId, input.primaryComplaintId],
+  );
+
+  const issueGroupId = createdGroup.rows[0]?.id;
+
+  if (!issueGroupId) {
+    throw new Error('Unable to initialize community issue group.');
+  }
+
+  await client.query(
+    `
+      UPDATE complaints
+      SET issue_group_id = $2::uuid,
+          parent_complaint_id = NULL,
+          is_primary = TRUE
+      WHERE id = $1::uuid
+    `,
+    [input.primaryComplaintId, issueGroupId],
+  );
+
+  return issueGroupId;
+}
+
+export async function detectRecentIssueGroupForUser(
+  user: User,
+  input: { wardId: number; categoryId: number },
+) {
+  if (user.role !== 'citizen') {
+    throw new AuthError('Only citizens can detect community issues.', 403);
+  }
+
+  if (!input.wardId || !input.categoryId) {
+    return null;
+  }
+
+  if (!(await issueGroupingFeatureAvailable())) {
+    return null;
+  }
+
+  const groupedIssue = await findRecentIssueGroupForUser(user.id, input);
+
+  if (groupedIssue) {
+    return groupedIssue;
+  }
+
+  return findRecentComplaintFallbackForUser(user.id, input);
+}
+
 export async function listComplaintsForUser(
   user: User,
   filters: ComplaintListFilters = {},
 ): Promise<PaginatedResult<Complaint>> {
   await maybeProcessDueComplaintEscalations();
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
 
   const page = Math.max(1, Number(filters.page || 1));
   const maxPageSize = user.role === 'leader' ? 100 : 20;
@@ -874,6 +1402,7 @@ export async function listComplaintsForUser(
     query<ComplaintRow>(
       `
         SELECT
+          ${getIssueGroupSelectColumns(issueGroupingEnabled)}
           c.id,
           c.complaint_id,
           c.tracking_code,
@@ -925,6 +1454,7 @@ export async function listComplaintsForUser(
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        ${getIssueGroupJoinClause(issueGroupingEnabled)}
         LEFT JOIN zones z ON z.id = c.zone_id
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN categories cat ON cat.id = c.category_id
@@ -945,9 +1475,13 @@ export async function listComplaintsForUser(
   ]);
 
   const total = Number(totalResult.rows[0]?.count || 0);
+  const complaints = rows.rows.map(mapComplaintRow);
+  const hydratedComplaints = user.role === 'citizen'
+    ? await Promise.all(complaints.map((complaint) => hydrateComplaintForSharedIssueTracking(user, complaint, { view: 'summary' })))
+    : complaints;
 
   return {
-    items: rows.rows.map(mapComplaintRow),
+    items: hydratedComplaints,
     page,
     page_size: pageSize,
     total,
@@ -962,13 +1496,17 @@ async function getComplaintCoreByIdForUser(
 ) {
   const identifier = complaintId.trim();
   const view = options.view || 'full';
-  const selectColumns = view === 'summary' ? COMPLAINT_SUMMARY_SELECT_COLUMNS : COMPLAINT_DETAIL_SELECT_COLUMNS;
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
+  const selectColumns = `${getIssueGroupSelectColumns(issueGroupingEnabled)}${
+    view === 'summary' ? COMPLAINT_SUMMARY_SELECT_COLUMNS : COMPLAINT_DETAIL_SELECT_COLUMNS
+  }`;
   const lookupQuery = isUuid(identifier)
     ? `
       SELECT
         ${selectColumns}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
+      ${getIssueGroupJoinClause(issueGroupingEnabled)}
       WHERE c.id = $1::uuid
       LIMIT 1
     `
@@ -977,6 +1515,7 @@ async function getComplaintCoreByIdForUser(
         ${selectColumns}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
+      ${getIssueGroupJoinClause(issueGroupingEnabled)}
       WHERE c.complaint_id = $1 OR c.tracking_code = $1
       ORDER BY CASE WHEN c.complaint_id = $1 THEN 0 ELSE 1 END
       LIMIT 1
@@ -1005,12 +1544,15 @@ async function getComplaintCoreByTrackingCode(trackingCode: string) {
     return null;
   }
 
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
   const result = await query<ComplaintRow>(
     `
       SELECT
+        ${getIssueGroupSelectColumns(issueGroupingEnabled)}
         ${COMPLAINT_SUMMARY_SELECT_COLUMNS}
       FROM complaints c
       INNER JOIN wards w ON w.id = c.ward_id
+      ${getIssueGroupJoinClause(issueGroupingEnabled)}
       WHERE c.tracking_code = $1
       LIMIT 1
     `,
@@ -1019,6 +1561,77 @@ async function getComplaintCoreByTrackingCode(trackingCode: string) {
 
   const row = result.rows[0];
   return row ? mapComplaintRow(row) : null;
+}
+
+async function getIssueSourceComplaintForUser(
+  user: User,
+  complaint: Complaint,
+  options: { view?: ComplaintDetailView } = {},
+) {
+  if (!complaint.joined_issue || !complaint.issue_primary_complaint_id) {
+    return null;
+  }
+
+  if (complaint.issue_primary_complaint_id === complaint.id) {
+    return null;
+  }
+
+  return getComplaintCoreByIdForUser(user, complaint.issue_primary_complaint_id, {
+    view: options.view || 'summary',
+  });
+}
+
+function mergeComplaintWithIssueSourceState(
+  complaint: Complaint,
+  issueSourceComplaint: Complaint,
+): Complaint {
+  const supporterCount = Math.max(
+    Number(complaint.issue_supporter_count || 0),
+    Number(issueSourceComplaint.issue_supporter_count || 0),
+  );
+
+  return {
+    ...complaint,
+    status: issueSourceComplaint.status,
+    progress: issueSourceComplaint.progress,
+    priority: issueSourceComplaint.priority,
+    assigned_officer_id: issueSourceComplaint.assigned_officer_id ?? null,
+    assigned_officer_name: issueSourceComplaint.assigned_officer_name ?? null,
+    assigned_worker_id: issueSourceComplaint.assigned_worker_id ?? null,
+    work_status: issueSourceComplaint.work_status ?? null,
+    department_message: issueSourceComplaint.department_message ?? complaint.department_message ?? undefined,
+    current_level: issueSourceComplaint.current_level ?? null,
+    deadline: issueSourceComplaint.deadline ?? null,
+    completed_at: issueSourceComplaint.completed_at ?? null,
+    resolved_at: issueSourceComplaint.resolved_at ?? null,
+    resolution_notes: issueSourceComplaint.resolution_notes ?? null,
+    proof_image: issueSourceComplaint.proof_image ?? null,
+    proof_images: issueSourceComplaint.proof_images ?? [],
+    proof_image_url: issueSourceComplaint.proof_image_url ?? null,
+    proof_text: issueSourceComplaint.proof_text ?? null,
+    updated_at: issueSourceComplaint.updated_at || complaint.updated_at,
+    issue_supporter_count: supporterCount > 0 ? supporterCount : null,
+  };
+}
+
+async function hydrateComplaintForSharedIssueTracking(
+  user: User,
+  complaint: Complaint,
+  options: { view?: ComplaintDetailView } = {},
+): Promise<Complaint> {
+  if (!complaint.joined_issue) {
+    return complaint;
+  }
+
+  const issueSourceComplaint = await getIssueSourceComplaintForUser(user, complaint, {
+    view: options.view || 'summary',
+  });
+
+  if (!issueSourceComplaint) {
+    return complaint;
+  }
+
+  return mergeComplaintWithIssueSourceState(complaint, issueSourceComplaint);
 }
 
 function mapPublicComplaintSummary(complaint: Complaint): PublicComplaintSummary {
@@ -1049,21 +1662,25 @@ export async function getComplaintSummaryForUser(
 
     if (cachedComplaint) {
       await assertComplaintAccess(user, cachedComplaint);
-      return cachedComplaint;
+      const hydratedComplaint = await hydrateComplaintForSharedIssueTracking(user, cachedComplaint, { view: 'summary' });
+      return sanitizeComplaintForUserAccess(user, hydratedComplaint);
     }
   }
 
   const complaint = await getComplaintCoreByIdForUser(user, identifier, { view: 'summary' });
+  const hydratedComplaint = complaint
+    ? await hydrateComplaintForSharedIssueTracking(user, complaint, { view: 'summary' })
+    : complaint;
 
-  if (complaint) {
+  if (hydratedComplaint) {
     try {
-      await cacheComplaintSummary(complaint, [identifier]);
+      await cacheComplaintSummary(hydratedComplaint, [identifier]);
     } catch (error) {
-      console.warn('Failed to cache complaint summary', { complaintId: complaint.complaint_id, identifier, error });
+      console.warn('Failed to cache complaint summary', { complaintId: hydratedComplaint.complaint_id, identifier, error });
     }
   }
 
-  return complaint;
+  return hydratedComplaint ? sanitizeComplaintForUserAccess(user, hydratedComplaint) : hydratedComplaint;
 }
 
 export async function getPublicComplaintByTrackingCode(
@@ -1086,6 +1703,18 @@ export async function getPublicComplaintByTrackingCode(
     };
   }
 
+  if (user?.role === 'citizen' && complaint.issue_group_id) {
+    const joinedComplaint = await findUserComplaintInIssueGroup(user.id, complaint.issue_group_id);
+
+    if (joinedComplaint && !isInactiveIssueStatus(joinedComplaint.status)) {
+      return {
+        access: 'owner',
+        complaint: summary,
+        redirect_to: `/citizen/tracker?id=${encodeURIComponent(joinedComplaint.complaint_id || joinedComplaint.tracking_code)}`,
+      };
+    }
+  }
+
   return {
     access: 'public',
     complaint: summary,
@@ -1100,6 +1729,19 @@ export async function getComplaintTimelineForUser(
 
   if (!complaint) {
     return null;
+  }
+
+  if (complaint.joined_issue) {
+    const issueSourceComplaint = await getIssueSourceComplaintForUser(user, complaint, { view: 'summary' });
+
+    if (issueSourceComplaint) {
+      const sourceTimeline = await getComplaintTimelineByComplaint(issueSourceComplaint);
+      return {
+        complaint_id: complaint.complaint_id,
+        updates: sourceTimeline.updates,
+        history: sourceTimeline.history,
+      };
+    }
   }
 
   const cachedTimeline = await getCachedComplaintTimeline(complaint.complaint_id);
@@ -1143,6 +1785,30 @@ export async function getComplaintProofForUser(
 
   if (!complaint) {
     return null;
+  }
+
+  if (complaint.joined_issue) {
+    const [issueSourceComplaint, rating] = await Promise.all([
+      getIssueSourceComplaintForUser(user, complaint, { view: 'summary' }),
+      getComplaintRating(complaint.id),
+    ]);
+
+    if (issueSourceComplaint) {
+      const sourceProof = await getComplaintProofByComplaint(issueSourceComplaint);
+
+      return {
+        complaint_id: complaint.complaint_id,
+        proof_image: sourceProof.proof_image,
+        proof_images: sourceProof.proof_images,
+        proof_image_url: sourceProof.proof_image_url,
+        proof_text: sourceProof.proof_text,
+        completed_at: sourceProof.completed_at,
+        resolved_at: sourceProof.resolved_at,
+        resolution_notes: sourceProof.resolution_notes,
+        rating,
+        proofs: sourceProof.proofs,
+      };
+    }
   }
 
   const cachedProof = await getCachedComplaintProof(complaint.complaint_id);
@@ -1267,15 +1933,24 @@ export async function getComplaintByIdForUser(
     return null;
   }
 
+  complaint = await hydrateComplaintForSharedIssueTracking(user, complaint, {
+    view: requestedView,
+  });
+
   try {
     await cacheComplaintSummary(complaint, [identifier, cachedComplaintId || '']);
   } catch (error) {
     console.warn('Failed to cache full complaint summary', { complaintId: complaint.complaint_id, identifier, error });
   }
 
-  const [timelineResult, proofResult] = await Promise.allSettled([
-    getComplaintTimelineByComplaint(complaint),
-    getComplaintProofByComplaint(complaint),
+  const issueSourceComplaint = complaint.joined_issue
+    ? await getIssueSourceComplaintForUser(user, complaint, { view: 'summary' })
+    : null;
+  const timelineSourceComplaint = issueSourceComplaint || complaint;
+  const [timelineResult, proofResult, joinedRatingResult] = await Promise.allSettled([
+    getComplaintTimelineByComplaint(timelineSourceComplaint),
+    getComplaintProofByComplaint(timelineSourceComplaint),
+    complaint.joined_issue ? getComplaintRating(complaint.id) : Promise.resolve(null),
   ]);
 
   if (timelineResult.status === 'rejected') {
@@ -1286,8 +1961,13 @@ export async function getComplaintByIdForUser(
     console.warn('Failed to load complaint proof', { complaintId: complaint.complaint_id, error: proofResult.reason });
   }
 
+  if (joinedRatingResult.status === 'rejected') {
+    console.warn('Failed to load complaint rating', { complaintId: complaint.complaint_id, error: joinedRatingResult.reason });
+  }
+
   const timeline = timelineResult.status === 'fulfilled' ? timelineResult.value : null;
   const proof = proofResult.status === 'fulfilled' ? proofResult.value : null;
+  const joinedRating = joinedRatingResult.status === 'fulfilled' ? joinedRatingResult.value : null;
 
   complaint.updates = timeline?.updates || [];
   complaint.history = timeline?.history || [];
@@ -1298,13 +1978,13 @@ export async function getComplaintByIdForUser(
   complaint.completed_at = proof?.completed_at || complaint.completed_at || null;
   complaint.resolved_at = proof?.resolved_at || null;
   complaint.resolution_notes = proof?.resolution_notes || null;
-  complaint.rating = proof?.rating || null;
+  complaint.rating = complaint.joined_issue ? joinedRating : proof?.rating || null;
   complaint.history_card = buildComplaintHistoryCard({
     ...complaint,
     proofs: proof?.proofs || [],
   });
 
-  return complaint;
+  return sanitizeComplaintForUserAccess(user, complaint);
 }
 
 export async function createComplaintForUser(
@@ -1330,6 +2010,9 @@ export async function createComplaintForUser(
     longitude?: number;
     current_level?: ComplaintLevel;
     deadline?: string;
+    issue_group_id?: string;
+    parent_complaint_id?: string;
+    is_primary?: boolean;
   },
   files: File[],
   geoEvidence?: Array<{
@@ -1345,6 +2028,8 @@ export async function createComplaintForUser(
     : await saveAttachments(files, complaintId);
   const hasApplicantColumns = await complaintsTableHasApplicantColumns();
   const hasStructuredMappingColumns = await complaintsTableHasStructuredMappingColumns();
+  const hasIssueGroupingColumns = await complaintsTableHasIssueGroupingColumns();
+  const issueGroupingEnabled = hasIssueGroupingColumns && await issueGroupsTableExists();
   const resolvedDepartment = resolveComplaintDepartment({
     department: input.department,
     category: input.category,
@@ -1352,6 +2037,7 @@ export async function createComplaintForUser(
     text: input.text,
   });
   const normalizedCurrentLevel = input.current_level || 'L1';
+  const isPrimaryIssueComplaint = input.is_primary !== false;
 
   const complaint = await withTransaction(async (client) => {
     const repeatedResult = await client.query<{ count: string }>(
@@ -1391,7 +2077,20 @@ export async function createComplaintForUser(
       same_issue_count_last_24_hours: sameIssueCountLast24Hours,
       repeated_count: repeatedCount,
     });
-    const normalizedDeadline = input.deadline || computeL1ComplaintDeadline(analysis.priority).toISOString();
+    const initialIssuePriority = issueGroupingEnabled && input.issue_group_id ? await client.query<{ supporter_count: string }>(
+      `
+        SELECT supporter_count::text AS supporter_count
+        FROM issue_groups
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [input.issue_group_id],
+    ).then((result) => deriveIssueGroupPriority(Number(result.rows[0]?.supporter_count || 1) + 1)) : 'low';
+    const effectivePriority = elevateComplaintPriority(
+      analysis.priority as ComplaintPriority,
+      initialIssuePriority,
+    );
+    const normalizedDeadline = input.deadline || computeL1ComplaintDeadline(effectivePriority).toISOString();
 
     const insertColumns: string[] = [];
     const insertValues: string[] = [];
@@ -1403,6 +2102,15 @@ export async function createComplaintForUser(
 
     insertColumns.push('id', 'complaint_id', 'tracking_code', 'user_id');
     insertValues.push(bind(complaintId), bind(complaintReference), bind(complaintReference), bind(user.id));
+
+    if (issueGroupingEnabled) {
+      insertColumns.push('issue_group_id', 'parent_complaint_id', 'is_primary');
+      insertValues.push(
+        bind(input.issue_group_id || null),
+        bind(input.parent_complaint_id || null),
+        bind(isPrimaryIssueComplaint),
+      );
+    }
 
     if (hasApplicantColumns) {
       insertColumns.push(
@@ -1471,7 +2179,7 @@ export async function createComplaintForUser(
       `'pending'`,
       'FALSE',
       'FALSE',
-      bind(analysis.priority),
+      bind(effectivePriority),
       bind(analysis.risk_score),
       bind(analysis.sentiment_score),
       bind(analysis.frequency_score),
@@ -1485,8 +2193,10 @@ export async function createComplaintForUser(
       bind(
         analysis.is_spam
           ? 'Complaint submitted and flagged for officer verification before action.'
-          : analysis.priority === 'critical' || analysis.priority === 'high'
+          : effectivePriority === 'critical' || effectivePriority === 'high'
             ? 'Complaint submitted with elevated AI priority and routed for immediate officer action.'
+            : issueGroupingEnabled && input.issue_group_id
+              ? 'Complaint joined an active community issue and the supporter count has been updated.'
             : analysis.is_hotspot
               ? 'Complaint submitted and matched a ward hotspot, so the officer queue has been prioritised.'
               : 'Complaint submitted successfully and routed to the mapped officer queue.'
@@ -1508,6 +2218,12 @@ export async function createComplaintForUser(
         complaint_id,
         tracking_code,
         user_id,
+        ${issueGroupingEnabled ? 'issue_group_id,' : 'NULL::uuid AS issue_group_id,'}
+        NULL::uuid AS issue_primary_complaint_id,
+        ${issueGroupingEnabled ? 'parent_complaint_id,' : 'NULL::uuid AS parent_complaint_id,'}
+        ${issueGroupingEnabled ? 'is_primary,' : 'TRUE AS is_primary,'}
+        NULL::int AS issue_supporter_count,
+        NULL::text AS issue_priority,
         ${hasApplicantColumns ? 'applicant_name,' : 'NULL::text AS applicant_name,'}
         ${hasApplicantColumns ? 'applicant_mobile,' : 'NULL::text AS applicant_mobile,'}
         ${hasApplicantColumns ? 'applicant_email,' : 'NULL::text AS applicant_email,'}
@@ -1570,24 +2286,94 @@ export async function createComplaintForUser(
       ward_id: input.ward_id,
       department_id: input.department_id || null,
       category_id: input.category_id || null,
-      priority: analysis.priority,
+      priority: effectivePriority,
     });
+
+    let issueGroupId = issueGroupingEnabled ? (input.issue_group_id || null) : null;
+    let issueGroupPriority = initialIssuePriority;
+    let supporterCount = issueGroupId ? 2 : 1;
+
+    if (issueGroupingEnabled && issueGroupId) {
+      await client.query(
+        `
+          UPDATE issue_groups
+          SET supporter_count = supporter_count + 1
+          WHERE id = $1::uuid
+        `,
+        [issueGroupId],
+      );
+
+      const syncResult = await syncIssueGroupPriority(client, issueGroupId);
+      issueGroupPriority = syncResult.priority;
+      supporterCount = syncResult.supporter_count;
+
+      await client.query(
+        `
+          UPDATE complaints
+          SET priority = $2::complaint_priority
+          WHERE id = $1::uuid
+        `,
+        [complaintId, elevateComplaintPriority(effectivePriority, issueGroupPriority)],
+      );
+    } else if (issueGroupingEnabled && input.category_id) {
+      const issueGroupResult = await client.query<{
+        id: string;
+      }>(
+        `
+          INSERT INTO issue_groups (
+            ward_id,
+            category_id,
+            primary_complaint_id,
+            supporter_count,
+            priority
+          )
+          VALUES ($1, $2, $3::uuid, 1, 'low')
+          RETURNING id
+        `,
+        [input.ward_id, input.category_id, complaintId],
+      );
+
+      issueGroupId = issueGroupResult.rows[0]?.id || null;
+
+      if (issueGroupId) {
+        await client.query(
+          `
+            UPDATE complaints
+            SET issue_group_id = $2::uuid
+            WHERE id = $1::uuid
+          `,
+          [complaintId, issueGroupId],
+        );
+      }
+    }
 
     await createNotificationForUser(client, {
       user_id: user.id,
       complaint_id: complaintId,
-      title: 'Complaint submitted',
-      message: `${input.title.trim()} has been submitted successfully and assigned to the mapped Level 1 officer.`,
+      title: issueGroupingEnabled && input.issue_group_id ? 'Issue joined successfully' : 'Complaint submitted',
+      message: issueGroupingEnabled && input.issue_group_id
+        ? `${input.title.trim()} has been linked with the active community issue and assigned to the mapped Level 1 officer.`
+        : `${input.title.trim()} has been submitted successfully and assigned to the mapped Level 1 officer.`,
       href: `/citizen/tracker?id=${complaintReference}`,
     });
 
-    const createdComplaint = mapComplaintRow(result.rows[0]);
+    const createdComplaint = mapComplaintRow({
+      ...result.rows[0],
+      issue_group_id: issueGroupId,
+      issue_primary_complaint_id: input.parent_complaint_id || complaintId,
+      issue_supporter_count: supporterCount,
+      issue_priority: issueGroupPriority,
+      is_primary: isPrimaryIssueComplaint,
+    });
     createdComplaint.status = 'assigned';
     createdComplaint.current_level = routingAssignment.current_level;
     createdComplaint.deadline = routingAssignment.deadline;
     createdComplaint.work_status = 'Pending';
     createdComplaint.assigned_officer_id = routingAssignment.assigned_officer_id;
     createdComplaint.assigned_to = routingAssignment.assigned_officer_id;
+    createdComplaint.priority = issueGroupingEnabled && input.issue_group_id
+      ? elevateComplaintPriority(effectivePriority, issueGroupPriority)
+      : effectivePriority;
     return createdComplaint;
   }, { timeout_ms: 30000, max_wait_ms: 10000 });
 
@@ -1598,7 +2384,143 @@ export async function createComplaintForUser(
   }
   await invalidateComplaintAnalyticsCache();
   await cacheComplaintSummary(complaint);
-  return complaint;
+  return complaint ? sanitizeComplaintForUserAccess(user, complaint) : complaint;
+}
+
+export async function joinIssueGroupForUser(
+  user: User,
+  input: {
+    issue_group_id?: string;
+    primary_complaint_id?: string;
+    applicant_name: string;
+    applicant_mobile: string;
+    applicant_email?: string;
+    applicant_address: string;
+    applicant_gender?: string;
+    zone_id?: number;
+    ward_id: number;
+    department_id: number;
+    category_id: number;
+    title?: string;
+    text?: string;
+    street_address?: string;
+    location_address?: string;
+    latitude?: number;
+    longitude?: number;
+  },
+) {
+  if (user.role !== 'citizen') {
+    throw new AuthError('Only citizens can join a community issue.', 403);
+  }
+
+  if (!(await issueGroupingFeatureAvailable())) {
+    throw new AuthError('Community issue grouping is not available until the latest database migration is applied.', 503);
+  }
+
+  const detection = await detectRecentIssueGroupForUser(user, {
+    wardId: input.ward_id,
+    categoryId: input.category_id,
+  });
+
+  if (!detection) {
+    throw new AuthError('The selected community issue is no longer available. Please review the latest issue suggestion.', 409);
+  }
+
+  const requestMatchesDetection = (
+    (input.issue_group_id && detection.issue_group_id === input.issue_group_id)
+    || (!input.issue_group_id && input.primary_complaint_id && detection.primary_complaint_id === input.primary_complaint_id)
+  );
+
+  if (!requestMatchesDetection) {
+    throw new AuthError('The selected community issue is no longer available. Please review the latest issue suggestion.', 409);
+  }
+
+  if (detection.already_joined) {
+    throw new AuthError('You have already joined this community issue and can track it from My Complaints.', 409);
+  }
+
+  let issueGroupId = detection.issue_group_id || input.issue_group_id || null;
+
+  if (!issueGroupId && detection.primary_complaint_id) {
+    issueGroupId = await withTransaction(async (client) => ensureIssueGroupForPrimaryComplaint(client, {
+      primaryComplaintId: detection.primary_complaint_id!,
+      wardId: input.ward_id,
+      categoryId: input.category_id,
+    }));
+  }
+
+  if (!issueGroupId) {
+    throw new AuthError('Unable to prepare the community issue for joining right now.', 500);
+  }
+
+  const primaryComplaintResult = detection.primary_complaint_id
+    ? await query<{
+      department: ComplaintDepartment;
+      category: Complaint['category'];
+    }>(
+      `
+        SELECT department, category
+        FROM complaints
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [detection.primary_complaint_id],
+    )
+    : null;
+  const primaryComplaint = primaryComplaintResult?.rows[0] || null;
+  const fallbackTitle = detection.title?.trim()
+    || `Joined issue for ward ${input.ward_id}`;
+  const fallbackText = input.text?.trim()
+    || `Citizen joined the active community issue in ward ${input.ward_id} under category ${input.category_id}.`;
+
+  const joinedComplaint = await createComplaintForUser(
+    user,
+    {
+      applicant_name: input.applicant_name,
+      applicant_mobile: input.applicant_mobile,
+      applicant_email: input.applicant_email,
+      applicant_address: input.applicant_address,
+      applicant_gender: input.applicant_gender,
+      zone_id: input.zone_id,
+      ward_id: input.ward_id,
+      department_id: input.department_id,
+      category_id: input.category_id,
+      department: primaryComplaint?.department,
+      category: primaryComplaint?.category || 'other',
+      title: input.title?.trim() || fallbackTitle,
+      text: fallbackText,
+      street_address: input.street_address,
+      location_address: input.location_address,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      issue_group_id: issueGroupId,
+      parent_complaint_id: detection.primary_complaint_id || undefined,
+      is_primary: false,
+    },
+    [],
+  );
+
+  if (detection.primary_complaint_id) {
+    const primaryComplaintSummary = await query<{
+      id: string;
+      complaint_id: string;
+      tracking_code: string;
+    }>(
+      `
+        SELECT id, complaint_id, tracking_code
+        FROM complaints
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [detection.primary_complaint_id],
+    ).then((result) => result.rows[0] || null);
+
+    if (primaryComplaintSummary) {
+      await invalidateComplaintReadCaches(primaryComplaintSummary);
+    }
+  }
+
+  return joinedComplaint;
 }
 
 export async function updateComplaintStatusForUser(
@@ -1783,7 +2705,7 @@ export async function addComplaintRatingForUser(
   complaintId: string,
   input: { rating?: number; satisfaction?: ComplaintSatisfaction | null; feedback?: string },
 ) {
-  const complaint = await getComplaintByIdForUser(user, complaintId);
+  const complaint = await getComplaintSummaryForUser(user, complaintId);
 
   if (!complaint || complaint.user_id !== user.id) {
     throw new AuthError('Complaint not found.', 404);

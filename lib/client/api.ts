@@ -27,7 +27,9 @@ async function executeJsonRequest<T>(input: string, init?: RequestInit) {
 
 export async function fetchJson<T>(input: string, init?: RequestInit) {
   const method = getRequestMethod(init);
-  const canDeduplicate = method === 'GET' && !init?.body;
+  // Requests with AbortSignal must keep independent lifecycles. Reusing an
+  // in-flight promise here can leak an earlier abort into a newer caller.
+  const canDeduplicate = method === 'GET' && !init?.body && !init?.signal;
 
   if (!canDeduplicate) {
     return executeJsonRequest<T>(input, init);

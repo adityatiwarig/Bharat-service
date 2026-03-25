@@ -64,9 +64,27 @@ export function Sidebar({
       badge: 'Action',
     },
   ]
+  const l2Nav = [
+    {
+      href: '/l2',
+      label: 'Dashboard',
+      description: 'Review supervised complaints and current L2 queue status.',
+      icon: LayoutDashboard,
+      badge: 'L2',
+    },
+    {
+      href: '/l2/updates',
+      label: 'Update Desk',
+      description: 'Send reminders, track citizen feedback, and take final L2 review actions.',
+      icon: Wrench,
+      badge: 'Review',
+    },
+  ]
   const nav = userRole === 'worker' && pathname.startsWith('/l1')
     ? l1Nav
-    : legacyNavigation[userRole]
+    : userRole === 'worker' && pathname.startsWith('/l2')
+      ? l2Nav
+      : legacyNavigation[userRole]
   const meta = roleMeta[userRole]
   const isAdmin = userRole === 'admin'
 

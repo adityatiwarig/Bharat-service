@@ -683,6 +683,8 @@ export default function TrackerPage() {
     }
 
     setSavingRating(true);
+    const targetComplaintId = complaint.id;
+    const targetComplaintCode = complaint.complaint_id;
     const combinedFeedback = [
       selectedFeedbackTags.length ? `Tags: ${selectedFeedbackTags.join(', ')}` : '',
       feedback.trim(),
@@ -691,13 +693,25 @@ export default function TrackerPage() {
       .join('\n');
 
     try {
-      await rateComplaint(complaint.id, {
+      const submittedRating = await rateComplaint(targetComplaintId, {
         rating,
         feedback: combinedFeedback || undefined,
       });
 
+      setComplaint((current) => {
+        if (!current || current.id !== targetComplaintId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          rating: submittedRating,
+        };
+      });
+      setLastSyncedAt(new Date().toISOString());
+      setSelectedFeedbackTags([]);
       toast.success('Feedback submitted successfully.');
-      await loadComplaintSummary(complaint.complaint_id, true);
+      void loadComplaintSummary(targetComplaintCode, true);
     } catch (submitError) {
       toast.error(submitError instanceof Error ? submitError.message : 'Unable to submit feedback.');
     } finally {
@@ -842,10 +856,32 @@ function handleExportReport() {
                   <Badge className="rounded-none border border-[#cfe0ef] bg-[#eef6fb] px-3 py-1 text-sm font-semibold text-[#0b3c5d]">
                     {tracker.humanStatus}
                   </Badge>
+                  {complaint.joined_issue ? (
+                    <Badge className="rounded-none border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800">
+                      Joined Issue
+                    </Badge>
+                  ) : null}
                   <span className="text-sm text-slate-600">
                     Last Updated: {tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : 'Not yet updated'}
                   </span>
                 </div>
+
+                {complaint.shared_issue_access || (complaint.issue_supporter_count || 0) > 1 ? (
+                  <div className="border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                    <div className="font-semibold">
+                      {complaint.joined_issue
+                        ? 'You joined this community issue. Shared work progress is shown here.'
+                        : complaint.shared_issue_access
+                        ? 'You are viewing the shared issue status for a community complaint.'
+                        : 'This complaint is part of a community issue group.'}
+                    </div>
+                    <div className="mt-2 leading-6">
+                      {complaint.joined_issue
+                        ? `This joined complaint follows the shared issue timeline and work evidence from the main issue record. Your own feedback will still be saved separately on this complaint. ${(complaint.issue_supporter_count || 1)} citizens are currently linked to the issue.`
+                        : `${(complaint.issue_supporter_count || 1)} citizens are linked to this issue. Timeline and status remain visible here, while original complainant identity details stay hidden for joined users.`}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <SummaryField label="Complaint ID" value={complaint.complaint_id} />
@@ -860,6 +896,9 @@ function handleExportReport() {
                     label="Last Updated"
                     value={tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : 'Not yet updated'}
                   />
+                  {(complaint.issue_supporter_count || 0) > 1 ? (
+                    <SummaryField label="Affected Citizens" value={String(complaint.issue_supporter_count || 1)} />
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -996,16 +1035,16 @@ function handleExportReport() {
                       <LoadingSummary label="Fetching latest updates..." description="Evidence records are being loaded." className="rounded-none" />
                     ) : tracker.proofSubmitted ? (
                       <>
-                        <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
-                          <div className="text-sm font-semibold text-slate-950">Citizen Verification Status</div>
-                          <div className="mt-2 text-sm leading-6 text-slate-700">
-                            {complaint.rating
-                              ? 'Citizen verification has been submitted for the uploaded work evidence.'
-                              : tracker.waitingForFeedback
-                                ? 'The assigned officer has uploaded work completion evidence. Citizen feedback can now be submitted from this page.'
+                          <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
+                            <div className="text-sm font-semibold text-slate-950">Citizen Verification Status</div>
+                            <div className="mt-2 text-sm leading-6 text-slate-700">
+                              {complaint.rating
+                                ? 'Citizen verification has been submitted for the uploaded work evidence.'
+                                : tracker.waitingForFeedback
+                                ? tracker.feedbackDeskDescription || 'The assigned officer has uploaded work completion evidence. Citizen feedback can now be submitted from this page.'
                                 : tracker.feedbackDeskDescription || 'Uploaded work evidence remains available here for citizen review.'}
+                            </div>
                           </div>
-                        </div>
 
                         <div className="border border-slate-200 bg-slate-50">
                           <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
@@ -1131,7 +1170,7 @@ function handleExportReport() {
                           {canRateResolution ? (
                             <>
                               <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
-                                Review the uploaded work evidence and submit your rating. If the work is satisfactory, your feedback will move the complaint into its final closure review. If the work is not satisfactory, the complaint may be returned for fresh action.
+                                {tracker?.feedbackDeskDescription || 'Review the uploaded work evidence and submit your rating. If the work is satisfactory, your feedback will move the complaint into its final closure review. If the work is not satisfactory, the complaint may be returned for fresh action.'}
                               </div>
 
                               <div className="grid grid-cols-5 gap-2">
