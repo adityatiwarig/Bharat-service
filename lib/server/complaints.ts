@@ -1392,7 +1392,7 @@ export async function listComplaintsForUser(
   user: User,
   filters: ComplaintListFilters = {},
 ): Promise<PaginatedResult<Complaint>> {
-  await maybeProcessDueComplaintEscalations();
+  await maybeProcessDueComplaintEscalations({ minIntervalMs: 30000 });
   const issueGroupingEnabled = await issueGroupingFeatureAvailable();
 
   const page = Math.max(1, Number(filters.page || 1));
@@ -1656,7 +1656,7 @@ export async function getComplaintSummaryForUser(
   user: User,
   complaintId: string,
 ) {
-  await maybeProcessDueComplaintEscalations();
+  await maybeProcessDueComplaintEscalations({ minIntervalMs: 60000 });
 
   const identifier = complaintId.trim();
   const cachedComplaintId = isUuid(identifier)
@@ -1917,7 +1917,7 @@ export async function getComplaintByIdForUser(
   complaintId: string,
   options: { view?: ComplaintDetailView } = {},
 ) {
-  await maybeProcessDueComplaintEscalations();
+  await maybeProcessDueComplaintEscalations({ minIntervalMs: 60000 });
 
   const identifier = complaintId.trim();
   const requestedView = options.view || 'full';
