@@ -80,6 +80,7 @@ export function normalizeCitizenFacingNote(note?: string | null) {
 
   if (
     lower.includes('forwarded the complaint to level 2 for supervision while level 1 continues field work') ||
+    (lower.includes('forwarded the complaint to level 2') && lower.includes('continues field work')) ||
     lower.includes('forwarded by the assigned level 1 officer to level 2 supervision')
   ) {
     return 'The complaint has been manually moved under Level 2 supervision. Level 1 continues field work with an extended timeline, and Level 2 will take the final close or reopen decision after citizen feedback.';
@@ -119,7 +120,8 @@ export function normalizeCitizenFacingNote(note?: string | null) {
   if (
     lower.includes('complaint resolved by the level 3 officer') ||
     lower.includes('resolved at l3 with uploaded proof') ||
-    lower.includes('complaint completed by the assigned l1 officer and is awaiting citizen feedback')
+    lower.includes('complaint completed by the assigned l1 officer and is awaiting citizen feedback') ||
+    lower.includes('complaint completed by the assigned l1 officer under level 2 supervision and is awaiting citizen feedback before final level 2 review')
   ) {
     return 'Work completion has been recorded and citizen verification is pending.';
   }
@@ -314,7 +316,13 @@ function isUnderSupervisoryMonitoring(complaint: Complaint) {
 }
 
 function isManualL1ForwardToL2(complaint: Complaint) {
-  return `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision');
+  const message = `${complaint.department_message || ''}`.toLowerCase();
+
+  return (
+    message.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+    message.includes('under level 2 supervision') ||
+    message.includes('final level 2 review')
+  );
 }
 
 function pushUniquePhaseHighlight(
@@ -436,6 +444,7 @@ function buildAssignmentSummary(input: {
   isExpired: boolean;
 }) {
   const { complaint, awaitingClosureReview, waitingForFeedback, reopenedForRework, isClosed, isExpired } = input;
+  const manualL2Forward = isManualL1ForwardToL2(complaint);
 
   if (isClosed) {
     return {
@@ -455,11 +464,21 @@ function buildAssignmentSummary(input: {
 
   if (awaitingClosureReview) {
     return {
-      assignmentLabel: isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk',
+      assignmentLabel: isUnderSeniorMonitoring(complaint)
+        ? 'Senior Closure Review Desk'
+        : manualL2Forward
+          ? 'Level 2 Review Desk'
+          : 'Closure Review Desk',
       assignmentDescription: isUnderSeniorMonitoring(complaint)
         ? 'Citizen verification is complete, but the closure review crossed its timeline and is now under senior monitoring.'
-        : 'Citizen verification is complete and the complaint is awaiting formal closure review.',
-      assignmentStatusLabel: isUnderSeniorMonitoring(complaint) ? 'Senior closure monitoring' : 'Awaiting closure review',
+        : manualL2Forward
+          ? 'Citizen verification is complete and the complaint is waiting for the Level 2 review desk to close it or reopen it.'
+          : 'Citizen verification is complete and the complaint is awaiting formal closure review.',
+      assignmentStatusLabel: isUnderSeniorMonitoring(complaint)
+        ? 'Senior closure monitoring'
+        : manualL2Forward
+          ? 'Awaiting Level 2 review'
+          : 'Awaiting closure review',
     };
   }
 
@@ -471,7 +490,17 @@ function buildAssignmentSummary(input: {
     };
   }
 
-  if (isManualL1ForwardToL2(complaint)) {
+  if (waitingForFeedback) {
+    return {
+      assignmentLabel: 'Citizen Verification Desk',
+      assignmentDescription: manualL2Forward
+        ? 'Work completion evidence is ready. Citizen feedback is now open and will be routed to the Level 2 review desk for the final decision.'
+        : 'Work completion evidence is available and the complaint is waiting for citizen verification.',
+      assignmentStatusLabel: 'Waiting for citizen feedback',
+    };
+  }
+
+  if (manualL2Forward) {
     return {
       assignmentLabel: 'Level 2 Supervision Desk',
       assignmentDescription: 'Level 2 supervision is active after a manual L1 forward. Level 1 continues field work under the extended service timeline.',
@@ -500,14 +529,6 @@ function buildAssignmentSummary(input: {
       assignmentLabel: 'Field Action Desk',
       assignmentDescription: 'Ground work is active for this complaint and further progress will be updated here in real time.',
       assignmentStatusLabel: getWorkStatus(complaint) || 'Field action in progress',
-    };
-  }
-
-  if (waitingForFeedback) {
-    return {
-      assignmentLabel: 'Citizen Verification Desk',
-      assignmentDescription: 'Work completion evidence is available and the complaint is waiting for citizen verification.',
-      assignmentStatusLabel: 'Waiting for citizen feedback',
     };
   }
 
@@ -845,6 +866,7 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
 
   let feedbackDeskLabel: string | null = null;
   let feedbackDeskDescription: string | null = null;
+  const manualL2Forward = isManualL1ForwardToL2(complaint);
 
   if (isClosed) {
     feedbackDeskLabel = 'Closed In Official Record';
@@ -856,13 +878,21 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     feedbackDeskLabel = 'Returned For Rework';
     feedbackDeskDescription = 'Citizen feedback resulted in fresh field action, so the complaint is back in the execution cycle.';
   } else if (awaitingClosureReview) {
-    feedbackDeskLabel = isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk';
+    feedbackDeskLabel = isUnderSeniorMonitoring(complaint)
+      ? 'Senior Closure Review Desk'
+      : manualL2Forward
+        ? 'Level 2 Review Desk'
+        : 'Closure Review Desk';
     feedbackDeskDescription = isUnderSeniorMonitoring(complaint)
       ? 'Citizen feedback is recorded and the complaint is under senior monitoring before the final closure decision.'
-      : 'Citizen feedback is recorded and the complaint is waiting for the final close or reopen decision.';
+      : manualL2Forward
+        ? 'Citizen feedback has been recorded and sent to the Level 2 review desk for the final close or reopen decision.'
+        : 'Citizen feedback is recorded and the complaint is waiting for the final close or reopen decision.';
   } else if (waitingForFeedback) {
-    feedbackDeskLabel = 'Citizen Verification Pending';
-    feedbackDeskDescription = 'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.';
+    feedbackDeskLabel = manualL2Forward ? 'Citizen Feedback Pending' : 'Citizen Verification Pending';
+    feedbackDeskDescription = manualL2Forward
+      ? 'Work completion evidence is ready. Submit citizen feedback now and it will be routed to the Level 2 review desk.'
+      : 'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.';
   }
 
   let humanStatus = 'Complaint Received';
@@ -896,16 +926,24 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     supportLine = 'This complaint cannot continue further. Please create a new complaint if the issue still exists.';
     liveMessage = departmentMessage || 'The complaint expired and now requires a fresh complaint for any further action.';
   } else if (awaitingClosureReview && satisfaction === 'satisfied') {
-    humanStatus = 'Awaiting Formal Closure';
-    headline = 'The reported work has been accepted by the citizen.';
-    supportLine = 'Citizen verification is complete. The complaint now awaits formal closure in the official record.';
+    humanStatus = manualL2Forward ? 'Awaiting Level 2 Closure' : 'Awaiting Formal Closure';
+    headline = manualL2Forward
+      ? 'The reported work has been accepted by the citizen and is waiting for Level 2 closure.'
+      : 'The reported work has been accepted by the citizen.';
+    supportLine = manualL2Forward
+      ? 'Citizen verification is complete. The Level 2 review desk will now close the complaint in the official record.'
+      : 'Citizen verification is complete. The complaint now awaits formal closure in the official record.';
     liveMessage = complaint.rating?.feedback
       ? `Citizen feedback recorded: ${complaint.rating.feedback}`
       : 'Citizen satisfaction has been recorded in the official complaint file.';
   } else if (awaitingClosureReview && satisfaction === 'not_satisfied') {
-    humanStatus = 'Review Decision Pending';
-    headline = 'Citizen feedback has requested further action on this complaint.';
-    supportLine = 'The final review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.';
+    humanStatus = manualL2Forward ? 'Level 2 Review Decision Pending' : 'Review Decision Pending';
+    headline = manualL2Forward
+      ? 'Citizen feedback has reached Level 2 and further action is now under review.'
+      : 'Citizen feedback has requested further action on this complaint.';
+    supportLine = manualL2Forward
+      ? 'The Level 2 review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.'
+      : 'The final review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.';
     liveMessage = complaint.rating?.feedback
       ? `Citizen feedback recorded: ${complaint.rating.feedback}`
       : 'Citizen review requiring further action has been recorded in the official complaint file.';
@@ -921,9 +959,17 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     liveMessage = departmentMessage || 'Citizen feedback or review findings have returned the complaint for fresh action.';
   } else if (complaint.status === 'resolved' && !feedbackRecorded) {
     humanStatus = 'Waiting For Citizen Feedback';
-    headline = 'Proof has been uploaded and citizen verification is pending.';
-    supportLine = 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
-    liveMessage = departmentMessage || 'The complaint has been marked completed and is waiting for citizen feedback.';
+    headline = manualL2Forward
+      ? 'Proof has been uploaded under Level 2 supervision and citizen verification is pending.'
+      : 'Proof has been uploaded and citizen verification is pending.';
+    supportLine = manualL2Forward
+      ? 'Please review the uploaded evidence and submit feedback. Your feedback will go to the Level 2 review desk, and the complaint will not close before that review.'
+      : 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
+    liveMessage = departmentMessage || (
+      manualL2Forward
+        ? 'The complaint has been marked completed under Level 2 supervision and is waiting for citizen feedback before final Level 2 review.'
+        : 'The complaint has been marked completed and is waiting for citizen feedback.'
+    );
   } else if (proofSubmitted) {
     humanStatus = 'Completion Evidence Uploaded';
     headline = 'Work completion evidence has been uploaded for this complaint.';

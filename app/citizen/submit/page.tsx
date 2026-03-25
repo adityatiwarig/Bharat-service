@@ -23,6 +23,8 @@ import { toast } from 'sonner';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { LoadingSummary } from '@/components/loading-skeletons';
 import { useSession } from '@/components/session-provider';
+import { VoiceAssistantButton } from '@/components/VoiceAssistantButton';
+import { VoiceAssistantPanel, type VoiceAssistantFillPayload } from '@/components/VoiceAssistantPanel';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -30,7 +32,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { fetchGrievanceMapping } from '@/lib/client/complaints';
+import { detectIssueGroup, fetchGrievanceMapping, joinDetectedIssue, type DetectedIssueGroup } from '@/lib/client/complaints';
 import { buildMapPreviewDataUrl, createGeoEvidenceDraft, type GeoEvidenceDraft } from '@/lib/client/geo-evidence';
 import { emitComplaintFeedChanged } from '@/lib/client/live-updates';
 import { cn } from '@/lib/utils';
@@ -120,6 +122,16 @@ const TEXT = {
     cancel: 'Cancel',
     note: 'After submission, your complaint will be routed to the concerned department. You can track status in',
     myComplaints: 'My Complaints',
+    communityIssueTitle: 'Community Issue Match',
+    communityIssueHelp: 'We found a recent complaint in the same ward and category. Joining helps avoid duplicate spam and increases issue priority faster.',
+    communityIssueExists: 'people have already reported a similar issue in your area.',
+    communityIssueAlreadyJoined: 'You have already joined this community issue.',
+    joinIssue: 'Join this issue',
+    reportSeparately: 'Report separately',
+    openJoinedIssue: 'Open joined complaint',
+    issuePriority: 'Community priority',
+    affectedCitizens: 'Affected citizens',
+    joiningIssue: 'Joining issue...',
     submitted: 'Complaint submitted successfully',
     redirecting: 'Redirecting to your live tracker.',
     submit: 'Submit Complaint',
@@ -208,6 +220,16 @@ const TEXT = {
     cancel: 'रद्द करें',
     note: 'जमा करने के बाद आपकी शिकायत संबंधित विभाग को भेज दी जाएगी। स्थिति देखने के लिए',
     myComplaints: 'मेरी शिकायतें',
+    communityIssueTitle: 'सामुदायिक समस्या मैच',
+    communityIssueHelp: 'इसी वार्ड और श्रेणी में हाल की एक समान शिकायत मिली है। इसे जॉइन करने से डुप्लिकेट कम होंगे और प्राथमिकता तेजी से बढ़ेगी।',
+    communityIssueExists: 'लोग आपके क्षेत्र में इसी तरह की समस्या रिपोर्ट कर चुके हैं।',
+    communityIssueAlreadyJoined: 'आप पहले ही इस सामुदायिक समस्या से जुड़ चुके हैं।',
+    joinIssue: 'इस समस्या से जुड़ें',
+    reportSeparately: 'अलग रिपोर्ट करें',
+    openJoinedIssue: 'जुड़ी शिकायत खोलें',
+    issuePriority: 'सामुदायिक प्राथमिकता',
+    affectedCitizens: 'प्रभावित नागरिक',
+    joiningIssue: 'समस्या से जुड़ा जा रहा है...',
     submitted: 'शिकायत सफलतापूर्वक जमा हुई',
     redirecting: 'आपके लाइव ट्रैकर पर भेजा जा रहा है।',
     submit: 'शिकायत जमा करें',
@@ -413,10 +435,12 @@ function ComplaintSubmissionSuccessOverlay({
 export default function SubmitComplaintPage() {
   const router = useRouter();
   const session = useSession();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const pendingAutoSubmitRef = useRef(false);
 
   const [language, setLanguage] = useState<Language>('en');
   const [mapping, setMapping] = useState<GrievanceMappingResponse | null>(null);
@@ -433,6 +457,11 @@ export default function SubmitComplaintPage() {
   const [expandedImageUrl, setExpandedImageUrl] = useState('');
   const [processingEvidence, setProcessingEvidence] = useState(false);
   const [submissionSuccess, setSubmissionSuccess] = useState<{ complaintId: string; copied: boolean } | null>(null);
+  const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
+  const [detectedIssue, setDetectedIssue] = useState<DetectedIssueGroup | null>(null);
+  const [detectingIssue, setDetectingIssue] = useState(false);
+  const [joiningIssue, setJoiningIssue] = useState(false);
+  const [ignoredIssueKey, setIgnoredIssueKey] = useState<string | null>(null);
 
   const text = TEXT[language];
 
@@ -496,6 +525,15 @@ export default function SubmitComplaintPage() {
     return () => window.clearTimeout(redirectTimer);
   }, [router, submissionSuccess]);
 
+  useEffect(() => {
+    if (!pendingAutoSubmitRef.current || !formRef.current || !evidenceItems.length) {
+      return;
+    }
+
+    pendingAutoSubmitRef.current = false;
+    formRef.current.requestSubmit();
+  }, [evidenceItems.length, form]);
+
   const filteredWards = useMemo(() => {
     if (!mapping || !form.zone_id) return [];
     return mapping.wards.filter((ward) => String(ward.zone_id) === form.zone_id);
@@ -510,6 +548,15 @@ export default function SubmitComplaintPage() {
   const selectedWard = useMemo(() => mapping?.wards.find((ward) => String(ward.id) === form.ward_id) || null, [form.ward_id, mapping]);
   const selectedDepartment = useMemo(() => mapping?.departments.find((department) => String(department.id) === form.department_id) || null, [form.department_id, mapping]);
   const selectedCategory = useMemo(() => mapping?.categories.find((category) => String(category.id) === form.category_id) || null, [form.category_id, mapping]);
+  const activeDetectedIssue = useMemo(() => {
+    const issueKey = detectedIssue?.issue_group_id || (detectedIssue?.primary_complaint_id ? `primary:${detectedIssue.primary_complaint_id}` : null);
+
+    if (!detectedIssue || issueKey === ignoredIssueKey) {
+      return null;
+    }
+
+    return detectedIssue;
+  }, [detectedIssue, ignoredIssueKey]);
 
   const stepCompletion = useMemo(() => {
     const applicantComplete = Boolean(form.applicant_name && form.applicant_mobile && form.applicant_address);
@@ -522,6 +569,44 @@ export default function SubmitComplaintPage() {
 
   const completedSteps = stepCompletion.filter(Boolean).length;
   const genderOptions = GENDER_VALUES.map((value) => ({ value, label: text[value] }));
+
+  useEffect(() => {
+    if (!form.ward_id || !form.category_id) {
+      setDetectedIssue(null);
+      setDetectingIssue(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDetectingIssue(true);
+
+    detectIssueGroup({
+      wardId: Number(form.ward_id),
+      categoryId: Number(form.category_id),
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setDetectedIssue(result.issue);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Failed to detect issue group', error);
+          setDetectedIssue(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDetectingIssue(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.category_id, form.ward_id]);
 
   function stopCameraStream() {
     const stream = streamRef.current;
@@ -643,6 +728,8 @@ export default function SubmitComplaintPage() {
     setForm(createInitialForm(session || undefined));
     setEvidenceItems([]);
     setSubmitted(false);
+    setDetectedIssue(null);
+    setIgnoredIssueKey(null);
   }
 
   async function handleCaptureLocation() {
@@ -667,6 +754,93 @@ export default function SubmitComplaintPage() {
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
+  }
+
+  function handleVoiceAssistantApply(payload: VoiceAssistantFillPayload, options?: { submitAfterFill?: boolean }) {
+    pendingAutoSubmitRef.current = Boolean(options?.submitAfterFill && evidenceItems.length);
+    setForm((current) => {
+      const departmentChanged = Boolean(payload.department_id && payload.department_id !== current.department_id);
+      const zoneChanged = Boolean(payload.zone_id && payload.zone_id !== current.zone_id);
+
+      return {
+        ...current,
+        department_id: payload.department_id || current.department_id,
+        category_id: departmentChanged ? '' : (payload.category_id || current.category_id),
+        title: payload.title,
+        text: payload.text,
+        zone_id: payload.zone_id || current.zone_id,
+        ward_id: zoneChanged ? '' : (payload.ward_id || current.ward_id),
+        applicant_gender: payload.applicant_gender || current.applicant_gender,
+        street_address: payload.street_address || current.street_address,
+        latitude: payload.latitude || current.latitude,
+        longitude: payload.longitude || current.longitude,
+      };
+    });
+
+    window.requestAnimationFrame(() => {
+      setForm((current) => ({
+        ...current,
+        department_id: payload.department_id || current.department_id,
+        category_id: payload.category_id || current.category_id,
+        zone_id: payload.zone_id || current.zone_id,
+        ward_id: payload.ward_id || current.ward_id,
+      }));
+    });
+
+    if (options?.submitAfterFill && evidenceItems.length) {
+      toast.success('Voice assistant filled the complaint form and is submitting it with your uploaded photo.');
+      return;
+    }
+
+    toast.success('Voice assistant filled the complaint form. Please review the details before submitting.');
+  }
+
+  async function handleJoinDetectedIssue() {
+    if (!activeDetectedIssue) {
+      return;
+    }
+
+    if (!form.applicant_name || !form.applicant_mobile || !form.applicant_address) {
+      toast.error('Please complete applicant details before joining the community issue.');
+      return;
+    }
+
+    if (!form.zone_id || !form.ward_id || !form.department_id || !form.category_id) {
+      toast.error('Please complete zone, ward, department, and category before joining the community issue.');
+      return;
+    }
+
+    setJoiningIssue(true);
+
+    try {
+      const result = await joinDetectedIssue({
+        issue_group_id: activeDetectedIssue.issue_group_id || undefined,
+        primary_complaint_id: activeDetectedIssue.primary_complaint_id || undefined,
+        applicant_name: form.applicant_name,
+        applicant_mobile: form.applicant_mobile,
+        applicant_email: form.applicant_email || undefined,
+        applicant_address: form.applicant_address,
+        applicant_gender: form.applicant_gender || undefined,
+        zone_id: Number(form.zone_id),
+        ward_id: Number(form.ward_id),
+        department_id: Number(form.department_id),
+        category_id: Number(form.category_id),
+        title: form.title || undefined,
+        text: form.text || undefined,
+        street_address: form.street_address || undefined,
+        latitude: form.latitude ? Number(form.latitude) : undefined,
+        longitude: form.longitude ? Number(form.longitude) : undefined,
+      });
+      const complaintId = result.trackingCode || result.complaint.complaint_id || result.complaint.id;
+      const copied = await copyComplaintIdToClipboard(complaintId);
+      setSubmitted(true);
+      emitComplaintFeedChanged();
+      setSubmissionSuccess({ complaintId, copied });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to join the community issue.');
+    } finally {
+      setJoiningIssue(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -724,6 +898,19 @@ export default function SubmitComplaintPage() {
           }}
         />
       ) : null}
+      <VoiceAssistantPanel
+        open={voiceAssistantOpen}
+        onOpenChange={setVoiceAssistantOpen}
+        mapping={mapping}
+        userWardId={session?.ward_id}
+        autoSubmitContext={{
+          photoReady: evidenceItems.length > 0,
+          applicantReady: Boolean(form.applicant_name && form.applicant_mobile && form.applicant_address),
+          currentZoneId: form.zone_id,
+          currentWardId: form.ward_id,
+        }}
+        onApply={handleVoiceAssistantApply}
+      />
       <div className="min-h-screen bg-[#F8FAFC]">
         <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-8 px-4 py-6 md:px-6 lg:px-8">
           <div className="rounded-[28px] border border-[#E5E7EB] bg-white px-6 py-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
@@ -740,26 +927,40 @@ export default function SubmitComplaintPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] p-1.5 shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
-                <div className="mb-2 flex items-center gap-2 px-3 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  <Globe className="h-3.5 w-3.5" />
-                  {text.language}
+              <div className="flex w-full max-w-[360px] flex-col items-stretch gap-3 lg:items-end">
+                <div className="rounded-[24px] border border-[#C7D2FE] bg-[linear-gradient(180deg,#F8FBFF_0%,#EEF4FF_100%)] p-4 shadow-[0_12px_28px_rgba(30,58,138,0.08)]">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">Voice Assistant</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900">Speak complaint details and fill the form faster</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Detects category, zone, ward, optional gender hint, and can submit directly after photo upload.
+                  </p>
+                  <VoiceAssistantButton
+                    onClick={() => setVoiceAssistantOpen(true)}
+                    disabled={loadingMapping}
+                    className="mt-4 h-11 w-full justify-center rounded-xl px-4 lg:self-end"
+                  />
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setLanguage('en')}
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'en' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
-                  >
-                    {text.english}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLanguage('hi')}
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'hi' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
-                  >
-                    {text.hindi}
-                  </button>
+                <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] p-1.5 shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
+                  <div className="mb-2 flex items-center gap-2 px-3 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <Globe className="h-3.5 w-3.5" />
+                    {text.language}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setLanguage('en')}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'en' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
+                    >
+                      {text.english}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLanguage('hi')}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${language === 'hi' ? 'bg-[#1E3A8A] text-white' : 'text-slate-600 hover:bg-white'}`}
+                    >
+                      {text.hindi}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -794,7 +995,7 @@ export default function SubmitComplaintPage() {
                 />
               ) : null}
 
-              <form onSubmit={handleSubmit} className="space-y-8">
+              <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
                 <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
                   <SectionTitle step="Step 1" title={text.applicant} helper={text.applicantHelp} />
                   <div className="grid gap-6 md:grid-cols-2">
@@ -1070,6 +1271,74 @@ export default function SubmitComplaintPage() {
                   {text.note} <span className="font-semibold text-slate-800">{text.myComplaints}</span>.
                 </div>
 
+                {detectingIssue ? (
+                  <div className="rounded-2xl border border-[#DBEAFE] bg-[#F8FBFF] px-5 py-4 text-sm text-[#1E3A8A]">
+                    Checking for similar community issues in your ward...
+                  </div>
+                ) : activeDetectedIssue ? (
+                  <div className="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,#fffdf5_0%,#fff8e6_100%)] px-5 py-5 shadow-[0_8px_24px_rgba(217,119,6,0.08)]">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">{text.communityIssueTitle}</div>
+                        <div className="mt-2 text-base font-semibold text-slate-900">
+                          {activeDetectedIssue.supporter_count}{' '}
+                          {activeDetectedIssue.supporter_count === 1
+                            ? language === 'hi'
+                              ? 'नागरिक आपके क्षेत्र में इसी तरह की समस्या रिपोर्ट कर चुका है।'
+                              : 'person has already reported a similar issue in your area.'
+                            : text.communityIssueExists}
+                        </div>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{text.communityIssueHelp}</p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
+                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                            {text.issuePriority}: {activeDetectedIssue.priority.toUpperCase()}
+                          </span>
+                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                            {text.affectedCitizens}: {activeDetectedIssue.supporter_count}
+                          </span>
+                          {activeDetectedIssue.title ? (
+                            <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                              {activeDetectedIssue.title}
+                            </span>
+                          ) : null}
+                        </div>
+                        {activeDetectedIssue.already_joined ? (
+                          <div className="mt-3 text-sm font-medium text-emerald-700">{text.communityIssueAlreadyJoined}</div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex w-full flex-col gap-2 lg:max-w-[15rem]">
+                        {activeDetectedIssue.already_joined && activeDetectedIssue.joined_tracking_code ? (
+                          <Button
+                            type="button"
+                            className="h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                            onClick={() => router.push(`/citizen/tracker?id=${encodeURIComponent(activeDetectedIssue.joined_tracking_code || '')}`)}
+                          >
+                            {text.openJoinedIssue}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            className="h-11 rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+                            onClick={() => void handleJoinDetectedIssue()}
+                            disabled={joiningIssue}
+                          >
+                            {joiningIssue ? <Spinner label={text.joiningIssue} /> : text.joinIssue}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-11 rounded-xl border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
+                          onClick={() => setIgnoredIssueKey(activeDetectedIssue.issue_group_id || (activeDetectedIssue.primary_complaint_id ? `primary:${activeDetectedIssue.primary_complaint_id}` : 'ignore'))}
+                        >
+                          {text.reportSeparately}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {submitted ? (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
                     <div className="flex items-center gap-2 font-semibold">
@@ -1081,10 +1350,10 @@ export default function SubmitComplaintPage() {
                 ) : null}
 
                 <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" className="h-12 flex-1 rounded-xl bg-[#1E3A8A] text-white hover:bg-[#1A3478]" disabled={submitting || loadingMapping}>
+                <Button type="submit" className="h-12 flex-1 rounded-xl bg-[#1E3A8A] text-white hover:bg-[#1A3478]" disabled={submitting || joiningIssue || loadingMapping}>
                     {submitting ? <Spinner label={text.submitting} /> : (<><Send className="h-4 w-4" />{text.submit}</>)}
                   </Button>
-                  <Button type="button" variant="outline" className="h-12 rounded-xl border-[#CBD5E1] bg-white px-5 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={handleReset} disabled={submitting}>
+                  <Button type="button" variant="outline" className="h-12 rounded-xl border-[#CBD5E1] bg-white px-5 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={handleReset} disabled={submitting || joiningIssue}>
                     {text.reset}
                   </Button>
                 </div>

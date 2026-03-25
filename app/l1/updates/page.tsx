@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   closeComplaintByReviewDesk,
   completeComplaintByL1,
+  fetchComplaintById,
   fetchOfficerDashboard,
   forwardComplaintToNextLevel,
   markComplaintOnSiteByL1,
@@ -129,6 +130,19 @@ function canDirectlyCloseRework(complaint: Complaint) {
     return false;
   }
 
+  const supervisionMessage = `${complaint.department_message || ''}`.toLowerCase();
+
+  if (
+    complaint.current_level === 'L2' &&
+    (
+      supervisionMessage.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+      supervisionMessage.includes('under level 2 supervision') ||
+      supervisionMessage.includes('final level 2 review')
+    )
+  ) {
+    return false;
+  }
+
   const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
 
   return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
@@ -164,18 +178,39 @@ export default function L1UpdatesPage() {
 
     try {
       const data = await fetchOfficerDashboard();
-      const items = data.summary.items;
-      setSummary(data.summary);
+      let items = data.summary.items;
 
       const matchedComplaint = preferredId
         ? items.find((item) => item.id === preferredId)
         : preferredCode
           ? items.find((item) => item.complaint_id === preferredCode)
           : null;
+      let nextComplaint = matchedComplaint || null;
+
+      if (!nextComplaint && (preferredCode || preferredId)) {
+        try {
+          const fetchedComplaint = await fetchComplaintById(preferredCode || preferredId || '', {
+            view: 'full',
+            force: true,
+          });
+
+          if (fetchedComplaint) {
+            items = [fetchedComplaint, ...items.filter((item) => item.id !== fetchedComplaint.id)];
+            nextComplaint = fetchedComplaint;
+          }
+        } catch {
+          // Fall back to the officer queue if this complaint is not directly available.
+        }
+      }
+
       const fallbackComplaint = items[0] || null;
-      const nextComplaint = matchedComplaint || fallbackComplaint;
+      nextComplaint = nextComplaint || fallbackComplaint;
       const nextId = nextComplaint?.id || '';
 
+      setSummary({
+        ...data.summary,
+        items,
+      });
       setSelectedComplaintId(nextId);
 
       if (nextComplaint && nextComplaint.complaint_id !== preferredCode) {
@@ -433,7 +468,7 @@ export default function L1UpdatesPage() {
     complaint &&
     operationalLevel === 'L1' &&
     complaint.status === 'resolved' &&
-    feedbackSatisfied &&
+    feedbackRecorded &&
     !l1DeadlineMissed
   );
   const waitingForCitizenAtDesk = Boolean(
@@ -617,7 +652,7 @@ export default function L1UpdatesPage() {
                         <Button
                           type="button"
                           className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
-                          disabled={isBusy || isPending}
+                          disabled={isBusy || isPending || !feedbackSatisfied}
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await closeComplaintByReviewDesk(complaint.id, reviewNote.trim() || undefined);
@@ -632,7 +667,7 @@ export default function L1UpdatesPage() {
                           type="button"
                           variant="outline"
                           className="rounded-full"
-                          disabled={isBusy || isPending}
+                          disabled={isBusy || isPending || feedbackSatisfied}
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await reopenComplaintByReviewDesk(complaint.id, reviewNote.trim() || undefined);

@@ -17,6 +17,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   completeComplaintByL1,
   closeComplaintByReviewDesk,
+  fetchComplaintById,
+  fetchOfficerDashboard,
   forwardComplaintToNextLevel,
   markComplaintOnSiteByL1,
   markComplaintViewedByL1,
@@ -82,15 +84,25 @@ function canDirectlyCloseRework(complaint: Complaint) {
     return false;
   }
 
+  if (isComplaintForwardedToL2ByL1(complaint)) {
+    return false;
+  }
+
   const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
 
   return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
 }
 
 function isComplaintForwardedToL2ByL1(complaint: Complaint) {
+  const message = `${complaint.department_message || ''}`.toLowerCase();
+
   return (
     complaint.current_level === 'L2' &&
-    `${complaint.department_message || ''}`.toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision')
+    (
+      message.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+      message.includes('under level 2 supervision') ||
+      message.includes('final level 2 review')
+    )
   );
 }
 
@@ -195,6 +207,61 @@ function formatCountdown(deadline?: string | null, now = Date.now()) {
   return `${hours}h ${minutes}m ${seconds}s left`;
 }
 
+function getRepresentativeComplaintForIssueGroup(items: Complaint[]) {
+  const primaryComplaint =
+    items.find((item) => item.is_primary) ||
+    [...items].sort((left, right) => {
+      const supporterDiff = (Number(right.issue_supporter_count || 0) - Number(left.issue_supporter_count || 0));
+
+      if (supporterDiff !== 0) {
+        return supporterDiff;
+      }
+
+      return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
+    })[0];
+
+  if (!primaryComplaint) {
+    return null;
+  }
+
+  const supporterCount = Math.max(
+    Number(primaryComplaint.issue_supporter_count || 0),
+    items.length,
+  );
+
+  return {
+    ...primaryComplaint,
+    issue_supporter_count: supporterCount > 1 ? supporterCount : null,
+  } satisfies Complaint;
+}
+
+function groupComplaintsForL1Cards(items: Complaint[]) {
+  const grouped = new Map<string, Complaint[]>();
+  const orderedCards: Complaint[] = [];
+
+  for (const item of items) {
+    const key = item.issue_group_id || `complaint:${item.id}`;
+    const bucket = grouped.get(key) || [];
+    bucket.push(item);
+    grouped.set(key, bucket);
+  }
+
+  for (const [key, bucket] of grouped.entries()) {
+    if (key.startsWith('complaint:')) {
+      orderedCards.push(bucket[0]);
+      continue;
+    }
+
+    const representative = getRepresentativeComplaintForIssueGroup(bucket);
+
+    if (representative) {
+      orderedCards.push(representative);
+    }
+  }
+
+  return orderedCards;
+}
+
 function recomputeSummary(items: Complaint[], level: 'L1' | 'L2' | 'L3'): OfficerDashboardSummary {
   const visibleItems = items.filter((item) => {
     if (level === 'L1') {
@@ -274,19 +341,25 @@ export function OfficerDashboard({
     setDashboardSummary(summary);
   }, [summary]);
 
+  const l1CardItems = level === 'L1'
+    ? groupComplaintsForL1Cards(dashboardSummary.items)
+    : [];
+
   useEffect(() => {
     setSelectedComplaintId((current) => {
-      if (!dashboardSummary.items.length) {
+      const candidateItems = level === 'L1' ? l1CardItems : dashboardSummary.items;
+
+      if (!candidateItems.length) {
         return null;
       }
 
-      if (current && dashboardSummary.items.some((item) => item.id === current)) {
+      if (current && candidateItems.some((item) => item.id === current)) {
         return current;
       }
 
-      return dashboardSummary.items[0]?.id || null;
+      return candidateItems[0]?.id || null;
     });
-  }, [dashboardSummary.items]);
+  }, [dashboardSummary.items, l1CardItems, level]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -623,8 +696,13 @@ export function OfficerDashboard({
   }
 
   const selectedComplaint = level === 'L1'
-    ? dashboardSummary.items.find((item) => item.id === selectedComplaintId) ?? dashboardSummary.items[0] ?? null
+    ? l1CardItems.find((item) => item.id === selectedComplaintId) ?? l1CardItems[0] ?? null
     : null;
+  const selectedQueueComplaint =
+    (level === 'L1'
+      ? l1CardItems.find((item) => item.id === selectedComplaintId) ?? l1CardItems[0] ?? null
+      : dashboardSummary.items.find((item) => item.id === selectedComplaintId) ?? dashboardSummary.items[0] ?? null) ??
+    null;
   const l1PriorityRank: Record<Complaint['priority'], number> = {
     critical: 0,
     urgent: 0,
@@ -633,7 +711,7 @@ export function OfficerDashboard({
     low: 3,
   };
   const sortedL1Items = level === 'L1'
-    ? [...dashboardSummary.items].sort((left, right) => {
+    ? [...l1CardItems].sort((left, right) => {
         const priorityDiff = l1PriorityRank[left.priority] - l1PriorityRank[right.priority];
 
         if (priorityDiff !== 0) {
@@ -648,6 +726,55 @@ export function OfficerDashboard({
   const visibleComplaintItems = level === 'L1'
     ? (selectedComplaint ? [selectedComplaint] : [])
     : dashboardSummary.items;
+
+  useEffect(() => {
+    const refreshDashboard = async () => {
+      try {
+        const data = await fetchOfficerDashboard();
+        let items = data.summary.items;
+        const preferredComplaint = selectedQueueComplaint;
+        const preferredIdentifier = preferredComplaint?.complaint_id || preferredComplaint?.id || null;
+
+        if (preferredIdentifier) {
+          try {
+            const hydratedComplaint = await fetchComplaintById(preferredIdentifier, {
+              view: 'full',
+              force: true,
+            });
+
+            if (hydratedComplaint) {
+              items = [hydratedComplaint, ...items.filter((item) => item.id !== hydratedComplaint.id)];
+            }
+          } catch {
+            // Keep the dashboard queue result if direct hydration fails.
+          }
+        }
+
+        setDashboardSummary(recomputeSummary(items, level));
+      } catch {
+        // Keep the last rendered dashboard summary during silent refresh failures.
+      }
+    };
+
+    const intervalId = window.setInterval(refreshDashboard, 15000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshDashboard();
+      }
+    };
+    const handleFocus = () => {
+      void refreshDashboard();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [level, selectedQueueComplaint?.complaint_id, selectedQueueComplaint?.id]);
 
   return (
     <DashboardLayout title={title} userRole="worker" userName={userName}>
@@ -712,7 +839,7 @@ export function OfficerDashboard({
           />
         ) : null}
 
-        {level === 'L1' && dashboardSummary.items.length ? (
+        {level === 'L1' && l1CardItems.length ? (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <Card className="gov-fade-in overflow-hidden rounded-[1.8rem] border-[#d7e2eb]">
               <CardHeader className="border-b border-[#d7e2eb] bg-[linear-gradient(180deg,#f8fbff_0%,#eef5fb_100%)]">
@@ -747,6 +874,11 @@ export function OfficerDashboard({
                       <div className={`mt-3 text-sm ${active ? 'text-white/80' : 'text-[#53687d]'}`}>
                         {complaint.ward_name || `Ward ${complaint.ward_id}`} | {getWorkStatus(complaint)}
                       </div>
+                      {(complaint.issue_supporter_count || 0) > 1 ? (
+                        <div className={`mt-2 text-xs font-semibold ${active ? 'text-white/75' : 'text-[#8d5a13]'}`}>
+                          Affected Citizens: {complaint.issue_supporter_count}
+                        </div>
+                      ) : null}
                     </button>
                   );
                 }) : (
@@ -781,6 +913,11 @@ export function OfficerDashboard({
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-[#12385b]">{complaint.title}</div>
                           <div className="mt-1 text-xs text-[#60758a]">{complaint.complaint_id} | {complaint.ward_name || `Ward ${complaint.ward_id}`}</div>
+                          {(complaint.issue_supporter_count || 0) > 1 ? (
+                            <div className="mt-2 text-[11px] font-semibold text-[#8d5a13]">
+                              Affected Citizens: {complaint.issue_supporter_count}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="rounded-full border border-[#fed7aa] bg-[#fff7ed] px-3 py-1 text-[11px] font-semibold text-[#9a3412]">
                           {getWorkStatus(complaint)}
@@ -812,6 +949,7 @@ export function OfficerDashboard({
                 const l2DeadlineMissed = isL2DeadlineMissed(complaint, currentTime);
                 const hasProof = hasResolutionProof(complaint);
                 const feedbackRecorded = hasCitizenFeedback(complaint);
+                const feedbackSatisfied = hasSatisfiedCitizenFeedback(complaint);
                 const isBusy = l3ActionId === complaint.id;
                 const resolutionNote = resolutionNotes[complaint.id] ?? '';
                 const proofDescription = proofDescriptions[complaint.id] ?? '';
@@ -898,7 +1036,7 @@ export function OfficerDashboard({
                           <Button
                             type="button"
                             className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
-                            disabled={complaint.status === 'closed' || isBusy || isPending}
+                            disabled={complaint.status === 'closed' || isBusy || isPending || !feedbackSatisfied}
                             onClick={() => {
                               void handleCloseByReviewDesk(complaint);
                             }}
@@ -909,7 +1047,7 @@ export function OfficerDashboard({
                             type="button"
                             variant="outline"
                             className="rounded-full"
-                            disabled={complaint.status === 'closed' || isBusy || isPending}
+                            disabled={complaint.status === 'closed' || isBusy || isPending || feedbackSatisfied}
                             onClick={() => {
                               void handleReopenByReviewDesk(complaint);
                             }}
@@ -1126,8 +1264,58 @@ export function OfficerDashboard({
                         <div className="mt-2 text-sm font-semibold text-[#12385b]">{workStatus}</div>
                       </div>
                     </div>
+                    {(complaint.issue_supporter_count || 0) > 1 ? (
+                      <div className="rounded-[1rem] border border-[#f5d39b] bg-[#fffaf0] px-3 py-3 text-sm font-semibold text-[#8d5a13]">
+                        Affected Citizens: {complaint.issue_supporter_count}
+                      </div>
+                    ) : null}
                     <div className="rounded-[1rem] border border-dashed border-[#d7e2eb] bg-white px-3 py-3 text-xs leading-6 text-[#60758a]">
                       File selection, proof submission, and citizen-feedback-gated completion now run from the dedicated L1 update page.
+                    </div>
+                  </div>
+                );
+                const l2ActionFooter = (
+                  <div
+                    className="space-y-3 rounded-2xl border border-[#d7e2eb] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#60758a]">Supervision Desk</div>
+                        <div className="mt-1 text-sm font-semibold text-[#12385b]">Open the dedicated L2 workflow for reminders, feedback review, and final closure</div>
+                      </div>
+                      <Button
+                        type="button"
+                        className="rounded-full bg-[#0b3c5d] text-white hover:bg-[#082d46]"
+                        onClick={() => {
+                          startTransition(() => {
+                            router.push(`/l2/updates?id=${encodeURIComponent(complaint.complaint_id)}`);
+                          });
+                        }}
+                      >
+                        Open L2 Update Panel
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Queue Level</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{complaint.current_level === 'L2_ESCALATED' ? 'L2 Escalated' : complaint.current_level || 'L2'}</div>
+                      </div>
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Current Status</div>
+                        <div className="mt-2"><StatusBadge status={complaint.status} /></div>
+                      </div>
+                      <div className="rounded-[1rem] border border-[#d7e2eb] bg-white px-3 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#60758a]">Citizen Feedback</div>
+                        <div className="mt-2 text-sm font-semibold text-[#12385b]">{feedbackRecorded ? getCitizenFeedbackLabel(complaint) : 'Pending citizen feedback'}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1rem] border border-dashed border-[#d7e2eb] bg-white px-3 py-3 text-xs leading-6 text-[#60758a]">
+                      L2 does not perform field work. This desk is only for supervision, reminders to L1, and the final close or reopen decision after citizen feedback is recorded.
                     </div>
                   </div>
                 );
@@ -1169,7 +1357,9 @@ export function OfficerDashboard({
                     }
                     footer={
                       level === 'L1' ? l1ActionFooter : (
-                      canReviewAtDesk ? (
+                        <div className="space-y-3">
+                          {level === 'L2' ? l2ActionFooter : null}
+                          {canReviewAtDesk ? (
                         <div
                           className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
                           onClick={(event) => {
@@ -1204,7 +1394,7 @@ export function OfficerDashboard({
                               size="sm"
                               className="rounded-full"
                               variant={complaint.status === 'closed' ? 'outline' : 'default'}
-                              disabled={complaint.status === 'closed' || isBusy || isPending}
+                              disabled={complaint.status === 'closed' || isBusy || isPending || !feedbackSatisfied}
                               onClick={() => {
                                 void handleCloseByReviewDesk(complaint);
                               }}
@@ -1216,7 +1406,7 @@ export function OfficerDashboard({
                               size="sm"
                               className="rounded-full"
                               variant="outline"
-                              disabled={complaint.status === 'closed' || isBusy || isPending}
+                              disabled={complaint.status === 'closed' || isBusy || isPending || feedbackSatisfied}
                               onClick={() => {
                                 void handleReopenByReviewDesk(complaint);
                               }}
@@ -1225,7 +1415,7 @@ export function OfficerDashboard({
                             </Button>
                           </div>
                         </div>
-                      ) : waitingForCitizenAtDesk ? (
+                          ) : waitingForCitizenAtDesk ? (
                         <div
                           className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-3"
                           onClick={(event) => {
@@ -1243,7 +1433,7 @@ export function OfficerDashboard({
                             Keep monitoring this complaint. Uploaded proof is already visible on the citizen tracker, and closure authority will unlock here as soon as feedback is submitted.
                           </div>
                         </div>
-                      ) : canMonitorMissedL2 ? (
+                          ) : canMonitorMissedL2 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-3"
                           onClick={(event) => {
@@ -1303,7 +1493,7 @@ export function OfficerDashboard({
                             </div>
                           </div>
                         </div>
-                      ) : canMonitorForwardedAtL2 ? (
+                          ) : canMonitorForwardedAtL2 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-3"
                           onClick={(event) => {
@@ -1349,7 +1539,7 @@ export function OfficerDashboard({
                             </Button>
                           </div>
                         </div>
-                      ) : canMonitorMissedL1 ? (
+                          ) : canMonitorMissedL1 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-3"
                           onClick={(event) => {
@@ -1395,7 +1585,7 @@ export function OfficerDashboard({
                             </Button>
                           </div>
                         </div>
-                      ) : canExecuteAtL1 ? (
+                          ) : canExecuteAtL1 ? (
                         <div
                           className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
                           onClick={(event) => {
@@ -1554,7 +1744,7 @@ export function OfficerDashboard({
                             </Button>
                           </div>
                         </div>
-                      ) : complaint.status === 'closed' || complaint.status === 'expired' ? (
+                          ) : complaint.status === 'closed' || complaint.status === 'expired' ? (
                         <div
                           className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
                           onClick={(event) => {
@@ -1568,7 +1758,7 @@ export function OfficerDashboard({
                             {complaint.department_message || 'This complaint is now locked for citizen tracking and official record purposes.'}
                           </div>
                         </div>
-                      ) : (
+                          ) : (
                         <div
                           className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
                           onClick={(event) => {
@@ -1582,7 +1772,9 @@ export function OfficerDashboard({
                             {complaint.department_message || 'This complaint is progressing under the current workflow. No direct action is available from this desk right now.'}
                           </div>
                         </div>
-                      ))
+                          )}
+                        </div>
+                      )
                     }
                   />
                 );
@@ -1599,4 +1791,16 @@ export function OfficerDashboard({
       </div>
     </DashboardLayout>
   );
+}
+
+function hasSatisfiedCitizenFeedback(complaint: Complaint) {
+  if (!complaint.rating) {
+    return false;
+  }
+
+  if (complaint.rating.satisfaction) {
+    return complaint.rating.satisfaction === 'satisfied';
+  }
+
+  return typeof complaint.rating.rating === 'number' && complaint.rating.rating >= 4;
 }
