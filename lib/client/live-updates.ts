@@ -1,4 +1,6 @@
 const COMPLAINT_FEED_EVENT = 'govcrm:complaints-updated';
+let complaintFeedWriteTimer: number | null = null;
+let lastComplaintFeedTimestamp = '';
 
 export function emitComplaintFeedChanged() {
   if (typeof window === 'undefined') {
@@ -6,8 +8,23 @@ export function emitComplaintFeedChanged() {
   }
 
   const timestamp = String(Date.now());
-  window.localStorage.setItem(COMPLAINT_FEED_EVENT, timestamp);
-  window.dispatchEvent(new CustomEvent(COMPLAINT_FEED_EVENT, { detail: timestamp }));
+  lastComplaintFeedTimestamp = timestamp;
+
+  if (complaintFeedWriteTimer !== null) {
+    return;
+  }
+
+  complaintFeedWriteTimer = window.setTimeout(() => {
+    complaintFeedWriteTimer = null;
+
+    try {
+      window.localStorage.setItem(COMPLAINT_FEED_EVENT, lastComplaintFeedTimestamp);
+    } catch {
+      // Ignore client storage persistence failures and still notify the current tab.
+    }
+
+    window.dispatchEvent(new CustomEvent(COMPLAINT_FEED_EVENT, { detail: lastComplaintFeedTimestamp }));
+  }, 120);
 }
 
 export function subscribeComplaintFeedChanged(callback: () => void) {

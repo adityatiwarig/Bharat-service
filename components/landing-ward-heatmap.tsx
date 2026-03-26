@@ -590,6 +590,7 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
 
   useEffect(() => {
     let cancelled = false;
+    let invalidateSizeTimer: number | null = null;
     
     async function refreshHeatmapData() {
       const map = mapRef.current;
@@ -685,6 +686,15 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
         renderFrameRef.current = null;
         renderWardMarkers();
       });
+    }
+
+    function invalidateMapSize(targetMap: LeafletMapInstance | null = mapRef.current) {
+      if (!targetMap || cancelled || mapRef.current !== targetMap || !mapElementRef.current?.isConnected) {
+        return false;
+      }
+
+      targetMap.invalidateSize();
+      return true;
     }
 
     function clearRenderedLayers() {
@@ -1021,9 +1031,10 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
         scheduleHeatmapRefresh();
       });
 
-      window.setTimeout(() => {
-        map.invalidateSize();
-        scheduleRender(true);
+      invalidateSizeTimer = window.setTimeout(() => {
+        if (invalidateMapSize(map)) {
+          scheduleRender(true);
+        }
       }, 0);
     }
 
@@ -1044,8 +1055,9 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
 
     const resizeObserver = typeof ResizeObserver !== 'undefined' && mapElementRef.current
       ? new ResizeObserver(() => {
-          mapRef.current?.invalidateSize();
-          scheduleRender(true);
+          if (invalidateMapSize()) {
+            scheduleRender(true);
+          }
         })
       : null;
 
@@ -1067,6 +1079,10 @@ export const LandingWardHeatmap = memo(function LandingWardHeatmap() {
       if (renderFrameRef.current !== null) {
         window.cancelAnimationFrame(renderFrameRef.current);
         renderFrameRef.current = null;
+      }
+      if (invalidateSizeTimer !== null) {
+        window.clearTimeout(invalidateSizeTimer);
+        invalidateSizeTimer = null;
       }
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
