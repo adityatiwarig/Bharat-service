@@ -39,7 +39,7 @@ export function Header({
   onMenuClick,
   compactCitizenHeader = false,
 }: HeaderProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
   const router = useRouter()
   const { language } = useLandingLanguage()
   const { roleMeta } = getPageMeta(pathname, language)

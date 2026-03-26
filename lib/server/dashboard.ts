@@ -598,7 +598,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
     }>(
       `
         SELECT
-          COUNT(*)::text AS assigned_total,
+          COUNT(*) FILTER (WHERE c.status NOT IN ('closed', 'rejected', 'expired'))::text AS assigned_total,
           COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed', 'rejected', 'expired'))::text AS assigned_open,
           COUNT(*) FILTER (
             WHERE (
@@ -623,7 +623,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         WHERE (
              $2 = 'L1'
              AND om.l1_officer_id = $1
-             AND c.status NOT IN ('rejected', 'expired')
+             AND c.status <> 'rejected'
            )
            OR (
              $2 = 'L2'
@@ -714,7 +714,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         WHERE (
              $2 = 'L1'
              AND om.l1_officer_id = $1
-             AND c.status NOT IN ('closed', 'rejected', 'expired')
+             AND c.status <> 'rejected'
            )
            OR (
              $2 = 'L2'
@@ -734,6 +734,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
               AND c.deadline < NOW()
               AND c.status NOT IN ('closed', 'rejected', 'expired') THEN 0
             WHEN c.status = 'closed' THEN 2
+            WHEN c.status = 'expired' THEN 3
             ELSE 1
           END,
           CASE c.priority
@@ -744,7 +745,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
           END,
           c.deadline ASC NULLS LAST,
           c.updated_at DESC
-        LIMIT 8
+        LIMIT 18
       `,
       [user.officer_id, user.officer_level],
     ),

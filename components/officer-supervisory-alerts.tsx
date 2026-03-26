@@ -111,6 +111,8 @@ export function OfficerSupervisoryAlerts({
         }
 
         setAlerts(data.notifications.filter((item) => isSupervisoryAlert(item, role)));
+      } catch {
+        // Keep the last rendered alert state during transient API failures.
       } finally {
         if (!cancelled) {
           setLoading(false);

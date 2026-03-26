@@ -119,9 +119,15 @@ function isTerminalComplaintStatus(status: string) {
 function isComplaintUnderManualL2Supervision(
   complaint: Pick<ComplaintRoutingRow, 'current_level' | 'department_message'>,
 ) {
+  const message = String(complaint.department_message || '').toLowerCase();
+
   return (
     complaint.current_level === 'L2' &&
-    String(complaint.department_message || '').toLowerCase().includes('forwarded by the assigned level 1 officer to level 2 supervision')
+    (
+      message.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+      message.includes('under level 2 supervision') ||
+      message.includes('final level 2 review')
+    )
   );
 }
 
@@ -135,6 +141,17 @@ function isComplaintUnderEscalatedL2Supervision(
     complaint.status === 'l1_deadline_missed' ||
     message.includes('l1 missed the complaint deadline') ||
     message.includes('under l2 supervision for reminders and final review authority')
+  );
+}
+
+function isComplaintUnderAnyL2Supervision(
+  complaint: Pick<ComplaintRoutingRow, 'current_level' | 'status' | 'department_message'>,
+) {
+  return (
+    complaint.current_level === 'L2' ||
+    complaint.current_level === 'L2_ESCALATED' ||
+    isComplaintUnderManualL2Supervision(complaint) ||
+    isComplaintUnderEscalatedL2Supervision(complaint)
   );
 }
 
@@ -267,8 +284,6 @@ async function resolveFeedbackReviewLevel(
   const latestReopenReviewLevel = await getLatestReopenReviewLevel(client, complaint.id);
   const deadlineMissed =
     Boolean(complaint.deadline) && new Date(complaint.deadline as string).getTime() <= Date.now();
-  const underManualL2Supervision = isComplaintUnderManualL2Supervision(complaint);
-  const underEscalatedSupervision = isComplaintUnderEscalatedL2Supervision(complaint);
 
   if (latestReopenReviewLevel && complaint.current_level === 'L1') {
     return latestReopenReviewLevel;
@@ -279,14 +294,6 @@ async function resolveFeedbackReviewLevel(
   }
 
   if (complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED') {
-    if (!underManualL2Supervision && !underEscalatedSupervision && !deadlineMissed) {
-      return 'L1' as const;
-    }
-
-    if (deadlineMissed) {
-      return 'L3' as const;
-    }
-
     return 'L2' as const;
   }
 
@@ -997,6 +1004,10 @@ export async function markComplaintViewedByL1(user: User, complaintId: string) {
       throw new AuthError('Closed complaints cannot be updated.', 400);
     }
 
+    if (complaint.status === 'reopened' && (!complaint.work_status || complaint.work_status === EXECUTION_WORK_STATUS.pending)) {
+      throw new AuthError('Reopened complaints skip the viewed step. Start work directly for the fresh rework cycle.', 400);
+    }
+
     if (complaint.work_status && complaint.work_status !== EXECUTION_WORK_STATUS.pending) {
       throw new AuthError('This complaint has already moved beyond the viewed step.', 400);
     }
@@ -1063,6 +1074,10 @@ export async function markComplaintOnSiteByL1(user: User, complaintId: string) {
 
     if (isTerminalComplaintStatus(complaint.status)) {
       throw new AuthError('Closed complaints cannot be updated.', 400);
+    }
+
+    if (complaint.status === 'reopened' && (!complaint.work_status || complaint.work_status === EXECUTION_WORK_STATUS.pending)) {
+      throw new AuthError('Reopened complaints skip the on-site step. Start work directly for the fresh rework cycle.', 400);
     }
 
     if (complaint.work_status !== EXECUTION_WORK_STATUS.viewed) {
@@ -1136,7 +1151,9 @@ export async function markComplaintWorkStartedByL1(user: User, complaintId: stri
       throw new AuthError('Closed complaints cannot be updated.', 400);
     }
 
-    if (complaint.work_status !== EXECUTION_WORK_STATUS.onSite) {
+    const directReworkStart = complaint.status === 'reopened' && (!complaint.work_status || complaint.work_status === EXECUTION_WORK_STATUS.pending);
+
+    if (!directReworkStart && complaint.work_status !== EXECUTION_WORK_STATUS.onSite) {
       throw new AuthError('Mark the complaint as on site before starting work.', 400);
     }
 
@@ -1148,24 +1165,34 @@ export async function markComplaintWorkStartedByL1(user: User, complaintId: stri
           progress = 'in_progress',
           work_status = $2,
           updated_at = NOW(),
-          department_message = 'Assigned L1 officer has started work on the complaint. Worker team is currently working on site.'
+          department_message = $3
         WHERE id = $1
       `,
-      [complaint.id, EXECUTION_WORK_STATUS.workStarted],
+      [
+        complaint.id,
+        EXECUTION_WORK_STATUS.workStarted,
+        directReworkStart
+          ? 'Assigned L1 officer has restarted work on the reopened complaint. Fresh proof upload is required for the new rework cycle.'
+          : 'Assigned L1 officer has started work on the complaint. Worker team is currently working on site.',
+      ],
     );
 
     await appendComplaintUpdate(client, {
       complaint_id: complaint.id,
       status: 'in_progress',
-      note: 'Assigned L1 officer started work on the complaint. Worker team is currently working on site.',
+      note: directReworkStart
+        ? 'Assigned L1 officer restarted work on the reopened complaint. Fresh proof upload is required for the new rework cycle.'
+        : 'Assigned L1 officer started work on the complaint. Worker team is currently working on site.',
       updated_by_user_id: user.id,
     });
 
     await createNotificationForUser(client, {
       user_id: complaint.user_id,
       complaint_id: complaint.id,
-      title: 'L1 work started',
-      message: `${complaint.title} is now under active work by the assigned L1 officer.`,
+      title: directReworkStart ? 'L1 rework started' : 'L1 work started',
+      message: directReworkStart
+        ? `${complaint.title} has re-entered active work after reopen. Fresh rework is now under way.`
+        : `${complaint.title} is now under active work by the assigned L1 officer.`,
       href: `/citizen/tracker?id=${complaint.complaint_id}`,
     });
 
@@ -1231,24 +1258,24 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
     const latestReopenReviewLevel = complaintWasReopened
       ? await getLatestReopenReviewLevel(client, complaint.id)
       : null;
-    const underManualL2Supervision = isComplaintUnderManualL2Supervision(complaint);
+    const underL2Supervision = isComplaintUnderAnyL2Supervision(complaint);
     const closingReopenedComplaintDirectly =
       complaintWasReopened &&
       !latestReopenReviewLevel &&
-      !underManualL2Supervision;
+      !underL2Supervision;
     const completionMessage = closingReopenedComplaintDirectly
       ? 'Complaint rework completed by the assigned L1 officer after reopen and closed in the official record.'
-      : underManualL2Supervision
+      : underL2Supervision
         ? 'Complaint work completed by the assigned L1 officer under Level 2 supervision and is awaiting citizen feedback before final Level 2 review.'
         : 'Complaint work completed by the assigned L1 officer and is awaiting citizen feedback.';
     const completionNote = closingReopenedComplaintDirectly
       ? trimmedNote || 'Complaint rework completed by the assigned L1 officer after reopen and closed in the official record.'
-      : underManualL2Supervision
+      : underL2Supervision
         ? trimmedNote || 'Complaint completed by the assigned L1 officer under Level 2 supervision and is awaiting citizen feedback before final Level 2 review.'
         : trimmedNote || 'Complaint completed by the assigned L1 officer and is awaiting citizen feedback.';
     const citizenNotificationMessage = closingReopenedComplaintDirectly
       ? `${complaint.title} has been completed after rework by the assigned L1 officer and closed in the official record.`
-      : underManualL2Supervision
+      : underL2Supervision
         ? `${complaint.title} has been completed by the assigned L1 officer under Level 2 supervision and is awaiting your feedback before final Level 2 review.`
         : `${complaint.title} has been completed by the assigned L1 officer and is awaiting your feedback.`;
 
@@ -1271,7 +1298,7 @@ export async function completeComplaintByL1(user: User, complaintId: string, not
         complaint.id,
         closingReopenedComplaintDirectly ? 'closed' : 'resolved',
         closingReopenedComplaintDirectly ? EXECUTION_WORK_STATUS.proofUploaded : EXECUTION_WORK_STATUS.awaitingFeedback,
-        underManualL2Supervision ? null : complaint.deadline,
+        underL2Supervision ? null : complaint.deadline,
         trimmedNote,
         completionMessage,
       ],
@@ -1865,6 +1892,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
 
   let updatedComplaint: Pick<ComplaintRoutingRow, 'id' | 'complaint_id' | 'tracking_code'> | null = null;
   let reassignedDeadline: string | null = null;
+  let reassignedOfficerId: string | null = null;
   const trimmedNote = note?.trim() || null;
   const hasProofImagesColumn = await complaintsTableHasProofImagesColumn();
   const hasComplaintProofsTable = await complaintProofsTableExists();
@@ -1933,6 +1961,7 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
 
     const deadline = computeL1ComplaintDeadline(complaint.priority);
     reassignedDeadline = deadline.toISOString();
+    reassignedOfficerId = toOfficerId;
     const targetOfficerName = await getOfficerName(client, toOfficerId);
 
     if (hasComplaintProofsTable) {
@@ -2041,6 +2070,9 @@ export async function reopenComplaintFromL2Review(user: User, complaintId: strin
     complaint_id: finalizedComplaint.id,
     status: 'reopened' as const,
     current_level: 'L1' as const,
+    assigned_officer_id: reassignedOfficerId,
+    deadline: reassignedDeadline,
+    work_status: EXECUTION_WORK_STATUS.pending,
   };
 }
 

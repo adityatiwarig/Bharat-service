@@ -367,12 +367,12 @@ function CitizenAuthContent() {
   };
 
   useEffect(() => {
-    const requestedMode = searchParams.get('mode');
+    const requestedMode = searchParams?.get('mode');
     setMode(requestedMode === 'login' ? 'login' : 'signup');
   }, [searchParams]);
 
   useEffect(() => {
-    const nextPath = getSafeNextPath(searchParams.get('next'), '/citizen');
+    const nextPath = getSafeNextPath(searchParams?.get('next') ?? null, '/citizen');
 
     fetch('/api/session/me', { cache: 'no-store' })
       .then(async (response) => {
@@ -401,7 +401,7 @@ function CitizenAuthContent() {
   }, []);
 
   function switchMode(nextMode: 'login' | 'signup') {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('mode', nextMode);
     router.replace(`/auth?${params.toString()}`, { scroll: false });
   }
@@ -430,7 +430,7 @@ function CitizenAuthContent() {
       }
 
       const nextPath = getSafeNextPath(
-        searchParams.get('next'),
+        searchParams?.get('next') ?? null,
         data.redirect_to || data.user.redirect_to || getHomeByRole(data.user.role),
       );
       toast.success(mode === 'login' ? text.toast.loginSuccess : text.toast.signupSuccess);

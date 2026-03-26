@@ -48,7 +48,7 @@ export function Sidebar({
   onHoverStart,
   onHoverEnd,
 }: SidebarProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
   const { language } = useLandingLanguage()
   const l1Nav = [
     {

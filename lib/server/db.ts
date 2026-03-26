@@ -26,6 +26,8 @@ type TransactionOptions = {
   max_wait_ms?: number;
 };
 
+const READ_QUERY_RETRY_DELAYS_MS = [250, 750] as const;
+
 function isReturningQuery(text: string) {
   const normalized = text.trim().toLowerCase();
 
@@ -36,14 +38,75 @@ function isReturningQuery(text: string) {
   );
 }
 
+function isReadOnlyQuery(text: string) {
+  const normalized = text.trim().toLowerCase();
+
+  if (!normalized.startsWith('select') && !normalized.startsWith('with')) {
+    return false;
+  }
+
+  return !/\b(insert|update|delete|merge|upsert|create|alter|drop|truncate)\b/.test(normalized);
+}
+
+function isTransientDatabaseError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const prismaError = error as Error & {
+    code?: string;
+    meta?: {
+      driverAdapterError?: {
+        cause?: {
+          code?: string;
+        };
+      };
+    };
+  };
+
+  const haystack = `${prismaError.name} ${prismaError.message}`.toLowerCase();
+  const driverCauseCode = prismaError.meta?.driverAdapterError?.cause?.code;
+
+  return (
+    prismaError.code === 'ETIMEDOUT' ||
+    prismaError.code === 'P2010' ||
+    driverCauseCode === 'ETIMEDOUT' ||
+    haystack.includes('database server') ||
+    haystack.includes("can't reach database server") ||
+    haystack.includes('databasenotreachable') ||
+    haystack.includes('timed out') ||
+    haystack.includes('timeout') ||
+    haystack.includes('econnreset') ||
+    haystack.includes('connection terminated')
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runQuery<T extends QueryResultRow>(
   client: PrismaLikeClient,
   text: string,
   params: unknown[] = [],
 ): Promise<QueryResult<T>> {
   if (isReturningQuery(text)) {
-    const rows = await client.$queryRawUnsafe<T[]>(text, ...params);
-    return { rows };
+    const allowRetry = isReadOnlyQuery(text);
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const rows = await client.$queryRawUnsafe<T[]>(text, ...params);
+        return { rows };
+      } catch (error) {
+        const retryDelay = READ_QUERY_RETRY_DELAYS_MS[attempt];
+
+        if (!allowRetry || retryDelay === undefined || !isTransientDatabaseError(error)) {
+          throw error;
+        }
+
+        await sleep(retryDelay);
+      }
+    }
   }
 
   await client.$executeRawUnsafe(text, ...params);

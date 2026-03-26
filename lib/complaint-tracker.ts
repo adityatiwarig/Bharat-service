@@ -451,6 +451,10 @@ function hasAssignmentActivity(complaint: Complaint) {
   );
 }
 
+function isDirectReworkStartPending(complaint: Complaint) {
+  return complaint.status === 'reopened' && (!complaint.work_status || complaint.work_status === 'Pending');
+}
+
 function isUnderSeniorMonitoring(complaint: Complaint) {
   return complaint.status === 'l2_deadline_missed' || complaint.status === 'l3_failed_back_to_l2' || complaint.current_level === 'L3';
 }
@@ -629,7 +633,9 @@ function buildAssignmentSummary(input: {
   if (reopenedForRework) {
     return {
       assignmentLabel: 'Field Action Desk',
-      assignmentDescription: 'The complaint has been reopened for fresh field action after citizen review.',
+      assignmentDescription: isDirectReworkStartPending(complaint)
+        ? 'The complaint has been reopened for fresh field action after citizen review. The new rework cycle can restart directly from work start.'
+        : 'The complaint has been reopened for fresh field action after citizen review.',
       assignmentStatusLabel: 'Reopened for rework',
     };
   }
@@ -774,7 +780,9 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint, language: Tr
 
   const fieldActionDescription =
     reopenedForRework
-      ? 'Fresh field action is required because the complaint was reopened after citizen review.'
+      ? isDirectReworkStartPending(complaint)
+        ? 'Fresh field action is required because the complaint was reopened after citizen review, and the team can restart directly from work start in this new cycle.'
+        : 'Fresh field action is required because the complaint was reopened after citizen review.'
       : proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed'
         ? 'Field action was carried out and completion proof is now part of the official record.'
         : complaint.work_status === 'On Site'
@@ -1099,8 +1107,14 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint, language: Tr
   } else if (reopenedForRework) {
     humanStatus = 'Reopened For Rework';
     headline = 'This complaint has been reopened for fresh field action.';
-    supportLine = 'New field work and fresh proof submission are required before the complaint can move again.';
-    liveMessage = departmentMessage || 'Citizen feedback or review findings have returned the complaint for fresh action.';
+    supportLine = isDirectReworkStartPending(complaint)
+      ? 'New field work and fresh proof submission are required before the complaint can move again. The reopened cycle now resumes directly from work start.'
+      : 'New field work and fresh proof submission are required before the complaint can move again.';
+    liveMessage = departmentMessage || (
+      isDirectReworkStartPending(complaint)
+        ? 'Citizen feedback or review findings returned the complaint for fresh action, and the field team can restart work directly.'
+        : 'Citizen feedback or review findings have returned the complaint for fresh action.'
+    );
   } else if (complaint.status === 'resolved' && !feedbackRecorded) {
     humanStatus = 'Waiting For Citizen Feedback';
     headline = manualL2Forward

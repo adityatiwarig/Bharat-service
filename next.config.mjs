@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   compress: true,
-  typescript: {
-    ignoreBuildErrors: true,
+  experimental: {
+    workerThreads: true,
   },
   images: {
     unoptimized: true,

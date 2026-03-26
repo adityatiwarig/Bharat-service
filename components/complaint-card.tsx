@@ -1,5 +1,5 @@
 import { AlertCircle, Clock, MapPin } from 'lucide-react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 
 import { useLandingLanguage } from '@/components/landing-language'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 interface ComplaintCardProps {
   complaint: Complaint
   ward?: Ward
-  onViewDetails?: () => void
+  onViewDetails?: (event: ReactMouseEvent<HTMLDivElement>) => void
   compact?: boolean
   badgeExtras?: ReactNode
   footer?: ReactNode
