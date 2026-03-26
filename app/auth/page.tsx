@@ -5,18 +5,14 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
   Landmark,
   LockKeyhole,
-  MapPinned,
   SearchCheck,
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLandingLanguage } from '@/components/landing-language';
@@ -294,6 +290,81 @@ function CitizenAuthContent() {
   const visibleWards = wards.slice(0, 6);
   const remainingWardCount = Math.max(wards.length - visibleWards.length, 0);
   const text = AUTH_TEXT[language];
+  const isHindi = language === 'hi';
+  const uiCopy = {
+    topHeaderTitle: isHindi
+      ? 'आधिकारिक नागरिक शिकायत पोर्टल'
+      : 'Official Municipal Citizen Grievance Portal',
+    topHeaderHelpdesk: isHindi
+      ? 'नागरिक हेल्पडेस्क: 1800-100-2024'
+      : 'Citizen Helpdesk: 1800-100-2024',
+    toggleLogin: isHindi ? 'साइन इन' : 'Sign In',
+    toggleSignup: isHindi ? 'रजिस्टर' : 'Register',
+    label: mode === 'login'
+      ? isHindi
+        ? 'नागरिक सेवा प्रवेश'
+        : 'CITIZEN SERVICE ACCESS'
+      : isHindi
+        ? 'नागरिक पंजीकरण'
+        : 'CITIZEN REGISTRATION',
+    heading: mode === 'login'
+      ? isHindi
+        ? 'नागरिक साइन इन'
+        : 'Citizen Sign In'
+      : isHindi
+        ? 'नागरिक खाता बनाएं'
+        : 'Create Citizen Account',
+    subtext: mode === 'login'
+      ? isHindi
+        ? 'अपने शिकायत डैशबोर्ड तक पहुंचने और अनुरोधों को ट्रैक करने के लिए साइन इन करें।'
+        : 'Sign in to access your complaint dashboard and track requests.'
+      : isHindi
+        ? 'शिकायतें दर्ज करने और उनकी प्रगति ट्रैक करने के लिए एक बार पंजीकरण करें।'
+        : 'Register once to submit complaints and track their progress.',
+    infoBox: mode === 'login'
+      ? isHindi
+        ? 'अपने खाते तक सुरक्षित पहुंच के लिए अपने पंजीकृत क्रेडेंशियल दर्ज करें।'
+        : 'Enter your registered credentials to securely access your account.'
+      : isHindi
+        ? 'अपना नागरिक खाता बनाने के लिए अपनी मूल जानकारी प्रदान करें।'
+        : 'Provide your basic details to create your citizen account.',
+    leftTitle: isHindi ? 'सार्वजनिक शिकायत पोर्टल' : 'Public Grievance Portal',
+    leftSubtitle: mode === 'login'
+      ? isHindi
+        ? 'शिकायतों को प्रबंधित करने के लिए अपने खाते तक पहुंचें'
+        : 'Access your account to manage complaints'
+      : isHindi
+        ? 'शिकायत दर्ज करने और उसे आसानी से ट्रैक करने के लिए पंजीकरण करें'
+        : 'Register to submit and track complaints easily',
+    emailLabel: isHindi ? 'ईमेल पता' : 'Email Address',
+    passwordLabel: isHindi ? 'पासवर्ड' : 'Password',
+    fullNameLabel: isHindi ? 'पूरा नाम' : 'Full Name',
+    mobileLabel: isHindi ? 'मोबाइल नंबर' : 'Mobile Number',
+    loginButton: isHindi ? 'जारी रखने के लिए साइन इन करें' : 'Sign In to Continue',
+    signupButton: isHindi ? 'पंजीकरण करें और जारी रखें' : 'Register and Continue',
+    officialNote: isHindi
+      ? 'यह एक आधिकारिक सरकारी पोर्टल है। आपकी जानकारी सुरक्षित है।'
+      : 'This is an official government portal. Your information is secure.',
+    bottomPrefix: mode === 'login'
+      ? isHindi
+        ? 'नए उपयोगकर्ता?'
+        : 'New user?'
+      : isHindi
+        ? 'पहले से पंजीकृत हैं?'
+        : 'Already registered?',
+    bottomAction: mode === 'login'
+      ? isHindi
+        ? 'नागरिक खाता बनाएं'
+        : 'Create a citizen account'
+      : isHindi
+        ? 'अपने खाते में साइन इन करें'
+        : 'Sign in to your account',
+    bottomSuffix: mode === 'login'
+      ? isHindi
+        ? 'ताकि शिकायतें दर्ज कर सकें और स्थिति ट्रैक कर सकें।'
+        : 'to raise complaints and track status.'
+      : '',
+  };
 
   useEffect(() => {
     const requestedMode = searchParams.get('mode');
@@ -388,365 +459,357 @@ function CitizenAuthContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb] text-slate-950">
-      <div className="flex h-[6px] w-full">
-        <div className="flex-1 bg-[#ff9933]" />
-        <div className="flex-1 bg-white" />
-        <div className="flex-1 bg-[#138808]" />
-      </div>
-
+    <div className="flex min-h-screen flex-col bg-[#f8fafc] text-slate-950">
       <div className="border-b border-[#dbe3f0] bg-[#1e3a8a] text-white shadow-[0_8px_24px_rgba(30,58,138,0.12)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 text-xs sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-1.5 text-sm sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <Landmark className="h-4 w-4 text-white" />
-            <span className="font-semibold tracking-[0.08em] uppercase">{text.topBannerTitle}</span>
+            <span className="font-semibold tracking-[0.08em] uppercase">{uiCopy.topHeaderTitle}</span>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-white/90 sm:block">{text.topBannerText}</div>
-            <SiteLanguageToggle />
-          </div>
+          <div className="text-white/90">{uiCopy.topHeaderHelpdesk}</div>
         </div>
       </div>
 
-      <main className="overflow-hidden">
-        <section className="relative isolate border-b border-slate-200 bg-[linear-gradient(180deg,#f7fbff_0%,#eef4ff_42%,#f9fafb_100%)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(29,78,216,0.15),transparent_26%),radial-gradient(circle_at_top_right,rgba(245,158,11,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(22,163,74,0.08),transparent_22%)]" />
-          <div className="relative mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_1fr] lg:px-8 lg:py-10">
-            <div className="max-w-none">
-              <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-5">
-                <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-slate-950">
+      <main className="main-container citizen-auth-container">
+        <section
+          className="left citizen-auth-left relative flex h-[40vh] min-h-[320px] items-end overflow-hidden bg-cover bg-center bg-no-repeat px-6 py-8 sm:px-8 sm:py-10 md:h-full md:min-h-0 md:items-end md:px-10 md:pb-32 md:pt-8 lg:px-12"
+          style={{ backgroundImage: "url('/images/citizen-bg.webp')" }}
+        >
+          <div className="absolute inset-0 bg-[rgba(15,40,80,0.75)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.15)_1px,transparent_1px)] [background-size:18px_18px] opacity-60" />
+
+          <div className="left-content max-w-lg">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/25 px-3 py-1.5 text-xs font-semibold tracking-[0.18em] uppercase text-white/90">
+              <Landmark className="h-4 w-4" />
+              {uiCopy.label}
+            </div>
+            <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+              {uiCopy.leftTitle}
+            </h1>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="h-1 w-24 rounded-full bg-[#ff9933]" />
+              <span className="h-1 w-28 rounded-full bg-white/90" />
+              <span className="h-1 w-24 rounded-full bg-[#138808]" />
+            </div>
+            <p className="mt-5 max-w-xl text-base leading-7 text-white/90 sm:text-lg">
+              {uiCopy.leftSubtitle}
+            </p>
+          </div>
+        </section>
+
+        <section className="right citizen-auth-right relative flex min-h-[60vh] items-center justify-center bg-[#f8fafc] px-5 py-8 sm:px-6 md:h-full md:min-h-0 md:px-8 md:py-10">
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(0,0,0,0.05)_1px,transparent_1px)] [background-size:18px_18px] opacity-40" />
+
+          <div className="login-card login-wrapper relative z-10 w-full p-5 sm:p-6 md:p-8">
+            <div className="mx-auto w-full max-w-[500px]">
+              <div className="flex items-start justify-between gap-4">
+                <Link
+                  href="/"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-[#1e40af]"
+                >
                   <ArrowLeft className="h-4 w-4" />
                   {text.backHome}
                 </Link>
-
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm text-sky-800 shadow-sm">
-                  <LockKeyhole className="h-4 w-4" />
-                  {text.accessChip}
+                <div className="shrink-0">
+                  <SiteLanguageToggle />
                 </div>
               </div>
 
-              <h1 className="mt-6 text-5xl font-semibold tracking-tight text-balance text-slate-950 sm:text-6xl lg:text-[4.35rem] lg:leading-[1.03]">
-                {text.heroTitle}
-              </h1>
+              <div className="mt-6 flex rounded-full border border-slate-200 bg-slate-100 p-1">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition ${
+                    mode === 'login' ? 'bg-[#133f7b] text-white' : 'text-slate-600'
+                  }`}
+                  onClick={() => switchMode('login')}
+                >
+                  {uiCopy.toggleLogin}
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition ${
+                    mode === 'signup' ? 'bg-[#133f7b] text-white' : 'text-slate-600'
+                  }`}
+                  onClick={() => switchMode('signup')}
+                >
+                  {uiCopy.toggleSignup}
+                </button>
+              </div>
 
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-                {text.heroDescription}
-              </p>
+              <div className="mt-6">
+                <div className="text-xs font-semibold tracking-[0.22em] text-[#1e40af]/75 uppercase">
+                  {uiCopy.label}
+                </div>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-[2.25rem]">
+                  {uiCopy.heading}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{uiCopy.subtext}</p>
+              </div>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                {text.featureBadges.map((badge, index) => (
-                  <div
-                    key={badge}
-                    className={`rounded-full border px-4 py-2 text-sm font-medium ${
-                      index === 0
-                        ? 'border-[#ffd9ac] bg-[#fff7ed] text-[#9a5b00]'
-                        : index === 1
-                          ? 'border-[#d7e7ff] bg-white text-[#1450b8]'
-                          : 'border-[#dff5e5] bg-white text-[#167c41]'
-                    }`}
+              <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+                <div className="rounded-[10px] border border-[#dbeafe] bg-[#f8fbff] px-4 py-4 text-sm leading-7 text-slate-600">
+                  {uiCopy.infoBox}
+                </div>
+
+                {mode === 'signup' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm font-medium text-slate-900">
+                        {uiCopy.fullNameLabel}
+                      </Label>
+                      <div className="relative">
+                        <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="name"
+                          value={form.name}
+                          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                          className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-11 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                          placeholder={text.fields.fullNamePlaceholder}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="phone" className="text-sm font-medium text-slate-900">
+                          {uiCopy.mobileLabel}
+                        </Label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 rounded-md bg-slate-100 px-2 py-1 text-sm font-medium text-slate-700">
+                            +91
+                          </span>
+                          <Input
+                            id="phone"
+                            inputMode="numeric"
+                            pattern="[0-9]{10}"
+                            value={form.phone}
+                            onChange={(event) => setForm((current) => ({ ...current, phone: sanitizeIndianPhoneInput(event.target.value) }))}
+                            className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-16 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                            placeholder="9876543210"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="email" className="text-sm font-medium text-slate-900">
+                          {uiCopy.emailLabel}
+                        </Label>
+                        <div className="relative">
+                          <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Input
+                            id="email"
+                            type="email"
+                            value={form.email}
+                            onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                            className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-11 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                            placeholder={text.fields.emailPlaceholder}
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="password" className="text-sm font-medium text-slate-900">
+                        {uiCopy.passwordLabel}
+                      </Label>
+                      <div className="relative">
+                        <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="password"
+                          type="password"
+                          value={form.password}
+                          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                          className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-11 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                          placeholder={text.fields.signupPasswordPlaceholder}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-sm font-medium text-slate-900">
+                        {uiCopy.emailLabel}
+                      </Label>
+                      <div className="relative">
+                        <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="email"
+                          type="email"
+                          value={form.email}
+                          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                          className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-11 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                          placeholder={text.fields.emailPlaceholder}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="password" className="text-sm font-medium text-slate-900">
+                        {uiCopy.passwordLabel}
+                      </Label>
+                      <div className="relative">
+                        <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="password"
+                          type="password"
+                          value={form.password}
+                          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                          className="h-12 rounded-[10px] border-[#e2e8f0] bg-white pl-11 text-slate-950 placeholder:text-slate-400 transition duration-200 focus-visible:border-[#1e40af] focus-visible:ring-2 focus-visible:ring-[#1e40af]/15"
+                          placeholder={text.fields.loginPasswordPlaceholder}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <Button
+                  type="submit"
+                  className="h-12 w-full rounded-full bg-[#1e40af] text-white transition duration-200 hover:-translate-y-px hover:bg-[#1e3a8a]"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <Spinner label={mode === 'login' ? text.submit.loadingLogin : text.submit.loadingSignup} />
+                  ) : mode === 'login' ? (
+                    uiCopy.loginButton
+                  ) : (
+                    uiCopy.signupButton
+                  )}
+                </Button>
+
+                <div className="rounded-[10px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+                  <div className="flex items-start gap-3">
+                    <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-[#1e40af]" />
+                    <span>{uiCopy.officialNote}</span>
+                  </div>
+                </div>
+
+                <div className="text-center text-sm leading-6 text-slate-600">
+                  {uiCopy.bottomPrefix}{' '}
+                  <button
+                    type="button"
+                    onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}
+                    className="font-semibold text-[#1e40af] underline-offset-4 hover:underline"
                   >
-                    {badge}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Button asChild size="lg" className="rounded-full px-7">
-                  <Link href="#citizen-auth-form" onClick={() => switchMode('signup')}>
-                    {text.ctaCreate}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="lg" className="rounded-full px-7">
-                  <Link href="/track">
-                    {text.ctaTrack}
-                    <SearchCheck className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
-
-              <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                {text.processSteps.map((step) => {
-                  const Icon = step.icon;
-
-                  return (
-                    <div key={step.title} className="rounded-[1.6rem] border border-slate-200 bg-white px-5 py-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-[1rem] bg-sky-50 text-sky-700">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="mt-4 text-base font-semibold text-slate-950">{step.title}</div>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">{step.description}</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
-                <div className="grid gap-4 lg:grid-cols-[1.06fr_0.94fr]">
-                  <div>
-                    <div className="text-sm font-semibold tracking-[0.18em] text-sky-800 uppercase">{text.whyRegister}</div>
-                    <div className="mt-3 space-y-2">
-                      {text.trustPoints.map((point) => (
-                        <div key={point} className="flex items-start gap-3 rounded-[1.2rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                          <span>{point}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.45rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-sky-800 uppercase">
-                      <MapPinned className="h-4 w-4" />
-                      {text.serviceAreas}
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      {text.serviceAreasDescription}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {loadingWards ? (
-                        <div className="text-sm text-slate-500">{text.loadingServiceAreas}</div>
-                      ) : (
-                        <>
-                          {visibleWards.map((ward) => (
-                            <span key={ward.id} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                              {ward.name}
-                            </span>
-                          ))}
-                          {remainingWardCount > 0 ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
-                              +{remainingWardCount} {text.moreSuffix}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  </div>
+                    {uiCopy.bottomAction}
+                  </button>
+                  {uiCopy.bottomSuffix ? ` ${uiCopy.bottomSuffix}` : null}
                 </div>
-              </div>
-            </div>
-
-            <div className="w-full" id="citizen-auth-form">
-              <div className="rounded-[2rem] border border-slate-200 bg-white p-2 shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
-                <div className="overflow-hidden rounded-[1.85rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]">
-                  <div className="border-b border-slate-200 bg-[linear-gradient(90deg,#0b3b78_0%,#1d4ed8_62%,#f59e0b_100%)] px-5 py-3 text-white">
-                    <div className="text-xs font-semibold tracking-[0.22em] text-white/80 uppercase">{text.authPanelEyebrow}</div>
-                    <div className="mt-1 text-[1.85rem] font-semibold leading-tight">
-                      {mode === 'login' ? text.panelTitle.login : text.panelTitle.signup}
-                    </div>
-                    <p className="mt-1 text-sm text-white/85">
-                      {mode === 'login' ? text.panelDescription.login : text.panelDescription.signup}
-                    </p>
-                  </div>
-
-                  <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-                    <CardHeader className="gap-0 border-b border-slate-200 px-6 py-3 pb-3">
-                      <div className="flex rounded-full border border-slate-200 bg-slate-50 p-1">
-                        <button
-                          type="button"
-                          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
-                            mode === 'signup' ? 'bg-slate-950 text-white' : 'text-slate-600'
-                          }`}
-                          onClick={() => switchMode('signup')}
-                        >
-                          {text.tabs.signup}
-                        </button>
-                        <button
-                          type="button"
-                          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
-                            mode === 'login' ? 'bg-slate-950 text-white' : 'text-slate-600'
-                          }`}
-                          onClick={() => switchMode('login')}
-                        >
-                          {text.tabs.login}
-                        </button>
-                      </div>
-
-                      <div className="mt-3 space-y-1.5">
-                        <CardTitle className="text-[1.95rem] leading-tight text-slate-950">
-                          {mode === 'login' ? text.cardTitle.login : text.cardTitle.signup}
-                        </CardTitle>
-                        <CardDescription className="text-sm leading-6">
-                          {mode === 'login' ? text.cardDescription.login : text.cardDescription.signup}
-                        </CardDescription>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="px-5 pb-5 pt-3">
-                      <form onSubmit={handleSubmit} className="space-y-4">
-                        {mode === 'signup' ? (
-                          <div className="rounded-[1.3rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                            {text.notices.signup}
-                          </div>
-                        ) : (
-                          <div className="rounded-[1.3rem] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-                            {text.notices.login}
-                          </div>
-                        )}
-
-                        {mode === 'signup' ? (
-                          <div className="space-y-4">
-                            <div>
-                              <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-950">{text.sections.personalDetails}</div>
-                              <div className="mt-4 space-y-2.5">
-                                <Label htmlFor="name">{text.fields.fullName}</Label>
-                                <div className="relative">
-                                  <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                  <Input
-                                    id="name"
-                                    value={form.name}
-                                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                                    className="h-11 rounded-xl border-slate-300 pl-10 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                    placeholder={text.fields.fullNamePlaceholder}
-                                    required
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-950">{text.sections.contactInformation}</div>
-                              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="phone">{text.fields.phoneNumber}</Label>
-                                  <div className="relative">
-                                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 rounded-md bg-slate-100 px-2 py-1 text-sm font-medium text-slate-700">
-                                      +91
-                                    </span>
-                                    <Input
-                                      id="phone"
-                                      inputMode="numeric"
-                                      pattern="[0-9]{10}"
-                                      value={form.phone}
-                                      onChange={(event) => setForm((current) => ({ ...current, phone: sanitizeIndianPhoneInput(event.target.value) }))}
-                                      className="h-11 rounded-xl border-slate-300 pl-16 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                      placeholder="9876543210"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label htmlFor="email">{text.fields.emailAddress}</Label>
-                                  <div className="relative">
-                                    <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                    <Input
-                                      id="email"
-                                      type="email"
-                                      value={form.email}
-                                      onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                                      className="h-11 rounded-xl border-slate-300 pl-10 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                      placeholder={text.fields.emailPlaceholder}
-                                      required
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                              <p className="mt-2 text-xs text-slate-500">{text.fields.phoneHelp}</p>
-                            </div>
-
-                            <div>
-                              <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-950">{text.sections.accountSecurity}</div>
-                              <div className="mt-4 space-y-2.5">
-                                <Label htmlFor="password">{text.fields.password}</Label>
-                                <div className="relative">
-                                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                  <Input
-                                    id="password"
-                                    type="password"
-                                    value={form.password}
-                                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                                    className="h-11 rounded-xl border-slate-300 pl-10 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                    placeholder={text.fields.signupPasswordPlaceholder}
-                                    required
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-4.5">
-                            <div>
-                              <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-950">{text.sections.contactInformation}</div>
-                              <div className="mt-4 space-y-2.5">
-                                <Label htmlFor="email">{text.fields.emailAddress}</Label>
-                                <div className="relative">
-                                  <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                  <Input
-                                    id="email"
-                                    type="email"
-                                    value={form.email}
-                                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                                    className="h-11 rounded-xl border-slate-300 pl-10 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                    placeholder={text.fields.emailPlaceholder}
-                                    required
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-950">{text.sections.accountSecurity}</div>
-                              <div className="mt-4 space-y-2.5">
-                                <Label htmlFor="password">{text.fields.password}</Label>
-                                <div className="relative">
-                                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                  <Input
-                                    id="password"
-                                    type="password"
-                                    value={form.password}
-                                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                                    className="h-11 rounded-xl border-slate-300 pl-10 focus-visible:border-sky-600 focus-visible:ring-sky-600"
-                                    placeholder={text.fields.loginPasswordPlaceholder}
-                                    required
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="rounded-[1.3rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-600">
-                          {mode === 'signup' ? text.summary.signup : text.summary.login}
-                        </div>
-
-                        <Button
-                          type="submit"
-                          className="h-12 w-full rounded-full bg-slate-950 text-white hover:bg-slate-800"
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <Spinner label={mode === 'login' ? text.submit.loadingLogin : text.submit.loadingSignup} />
-                          ) : mode === 'login' ? (
-                            text.submit.login
-                          ) : (
-                            text.submit.signup
-                          )}
-                        </Button>
-
-                        <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-600">
-                          {mode === 'signup' ? text.switchPrompt.signup : text.switchPrompt.login}{' '}
-                          <button
-                            type="button"
-                            onClick={() => switchMode(mode === 'signup' ? 'login' : 'signup')}
-                            className="font-semibold text-sky-700 underline-offset-4 hover:underline"
-                          >
-                            {mode === 'signup' ? text.switchPrompt.signupAction : text.switchPrompt.loginAction}
-                          </button>
-                          .
-                        </div>
-
-                        <div className="border-t border-slate-200 pt-4.5 text-center text-sm text-slate-500">
-                          {text.footer}
-                        </div>
-                      </form>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+              </form>
             </div>
           </div>
         </section>
       </main>
+
+      <style jsx>{`
+        :global(html),
+        :global(body) {
+          height: 100%;
+          margin: 0;
+          overflow-x: hidden;
+          overflow-y: auto;
+        }
+
+        .main-container {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          flex: 1 1 auto;
+          min-height: 0;
+        }
+
+        .citizen-auth-container {
+          flex: 1 1 auto;
+          min-height: 0;
+        }
+
+        .left,
+        .right {
+          min-width: 0;
+          min-height: 0;
+        }
+
+        .citizen-auth-left,
+        .citizen-auth-right {
+          height: 100%;
+        }
+
+        .left-content {
+          position: relative;
+          z-index: 3;
+          backdrop-filter: blur(2px);
+        }
+
+        .right {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: #f8fafc;
+          position: relative;
+        }
+
+        .login-card {
+          width: 100%;
+          max-width: 620px;
+          min-height: auto;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 24px;
+          border-radius: 12px;
+          border: 1px solid rgba(0, 0, 0, 0.06);
+          box-shadow: none;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.94));
+          backdrop-filter: blur(8px);
+        }
+
+        @media (max-width: 768px) {
+          :global(html),
+          :global(body) {
+            overflow-y: auto;
+          }
+
+          .main-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: auto;
+          }
+
+          .citizen-auth-container {
+            min-height: auto;
+          }
+
+          .left {
+            height: 40vh;
+            min-height: 40vh;
+          }
+
+          .right {
+            height: auto;
+            min-height: auto;
+            padding: 20px;
+          }
+
+          .login-card {
+            height: auto;
+            min-height: auto;
+            max-width: 100%;
+          }
+        }
+
+        @media (max-width: 320px) {
+          .login-wrapper,
+          .login-card {
+            padding: 16px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
