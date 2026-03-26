@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Copy,
   Crosshair,
+  Download,
   FileImage,
   Globe,
   Landmark,
@@ -327,6 +328,453 @@ async function copyComplaintIdToClipboard(complaintId: string) {
   }
 }
 
+const COMPLAINT_TRACKING_BASE_URL = 'https://bharat-service-pi.vercel.app';
+
+function buildComplaintTrackingUrl(complaintId: string) {
+  return `${COMPLAINT_TRACKING_BASE_URL}/track?code=${encodeURIComponent(complaintId)}`;
+}
+
+const QR_VERSION = 4;
+const QR_SIZE = QR_VERSION * 4 + 17;
+const QR_DATA_CODEWORDS = 80;
+const QR_EC_CODEWORDS = 20;
+const QR_QUIET_ZONE = 4;
+
+type QrMatrix = boolean[][];
+
+function createQrMatrix(size: number, fill = false): QrMatrix {
+  return Array.from({ length: size }, () => Array<boolean>(size).fill(fill));
+}
+
+function appendBits(value: number, length: number, bits: number[]) {
+  for (let index = length - 1; index >= 0; index -= 1) {
+    bits.push((value >>> index) & 1);
+  }
+}
+
+function gfMultiply(x: number, y: number) {
+  let result = 0;
+  let left = x;
+  let right = y;
+
+  while (right > 0) {
+    if ((right & 1) !== 0) {
+      result ^= left;
+    }
+
+    left <<= 1;
+    if ((left & 0x100) !== 0) {
+      left ^= 0x11d;
+    }
+
+    right >>>= 1;
+  }
+
+  return result;
+}
+
+function reedSolomonComputeDivisor(degree: number) {
+  const result = Array<number>(degree).fill(0);
+  result[degree - 1] = 1;
+  let root = 1;
+
+  for (let i = 0; i < degree; i += 1) {
+    for (let j = 0; j < degree; j += 1) {
+      result[j] = gfMultiply(result[j], root);
+      if (j + 1 < degree) {
+        result[j] ^= result[j + 1];
+      }
+    }
+
+    root = gfMultiply(root, 0x02);
+  }
+
+  return result;
+}
+
+function reedSolomonComputeRemainder(data: number[], divisor: number[]) {
+  const result = Array<number>(divisor.length).fill(0);
+
+  for (const value of data) {
+    const factor = value ^ result[0];
+    result.copyWithin(0, 1);
+    result[result.length - 1] = 0;
+
+    for (let i = 0; i < divisor.length; i += 1) {
+      result[i] ^= gfMultiply(divisor[i], factor);
+    }
+  }
+
+  return result;
+}
+
+function getMaskBit(mask: number, x: number, y: number) {
+  switch (mask) {
+    case 0:
+      return (x + y) % 2 === 0;
+    case 1:
+      return y % 2 === 0;
+    case 2:
+      return x % 3 === 0;
+    case 3:
+      return (x + y) % 3 === 0;
+    case 4:
+      return (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0;
+    case 5:
+      return ((x * y) % 2) + ((x * y) % 3) === 0;
+    case 6:
+      return ((((x * y) % 2) + ((x * y) % 3)) % 2) === 0;
+    case 7:
+      return ((((x + y) % 2) + ((x * y) % 3)) % 2) === 0;
+    default:
+      return false;
+  }
+}
+
+function drawFinderPattern(modules: QrMatrix, isFunction: boolean[][], left: number, top: number) {
+  for (let dy = -1; dy <= 7; dy += 1) {
+    for (let dx = -1; dx <= 7; dx += 1) {
+      const x = left + dx;
+      const y = top + dy;
+      if (x < 0 || y < 0 || x >= QR_SIZE || y >= QR_SIZE) {
+        continue;
+      }
+
+      const isSeparator = dx === -1 || dx === 7 || dy === -1 || dy === 7;
+      const isBorder = dx === 0 || dx === 6 || dy === 0 || dy === 6;
+      const isCenter = dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4;
+
+      modules[y][x] = !isSeparator && (isBorder || isCenter);
+      isFunction[y][x] = true;
+    }
+  }
+}
+
+function drawAlignmentPattern(modules: QrMatrix, isFunction: boolean[][], centerX: number, centerY: number) {
+  for (let dy = -2; dy <= 2; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      const x = centerX + dx;
+      const y = centerY + dy;
+      modules[y][x] = Math.max(Math.abs(dx), Math.abs(dy)) !== 1;
+      isFunction[y][x] = true;
+    }
+  }
+}
+
+function drawFormatBits(modules: QrMatrix, mask: number) {
+  const formatData = (0b01 << 3) | mask;
+  let rem = formatData;
+
+  for (let i = 0; i < 10; i += 1) {
+    rem = (rem << 1) ^ (((rem >>> 9) & 1) * 0x537);
+  }
+
+  const bits = ((formatData << 10) | rem) ^ 0x5412;
+  const getBit = (bitIndex: number) => ((bits >>> bitIndex) & 1) !== 0;
+
+  for (let i = 0; i <= 5; i += 1) {
+    modules[i][8] = getBit(i);
+  }
+  modules[7][8] = getBit(6);
+  modules[8][8] = getBit(7);
+  modules[8][7] = getBit(8);
+
+  for (let i = 9; i < 15; i += 1) {
+    modules[8][14 - i] = getBit(i);
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    modules[8][QR_SIZE - 1 - i] = getBit(i);
+  }
+
+  for (let i = 8; i < 15; i += 1) {
+    modules[QR_SIZE - 15 + i][8] = getBit(i);
+  }
+
+  modules[QR_SIZE - 8][8] = true;
+}
+
+function getPenaltyScore(modules: QrMatrix) {
+  let penalty = 0;
+  const finderPattern = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+  const inverseFinderPattern = [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1];
+
+  for (let y = 0; y < QR_SIZE; y += 1) {
+    let runColor = modules[y][0];
+    let runLength = 1;
+
+    for (let x = 1; x < QR_SIZE; x += 1) {
+      const current = modules[y][x];
+      if (current === runColor) {
+        runLength += 1;
+      } else {
+        if (runLength >= 5) {
+          penalty += 3 + (runLength - 5);
+        }
+        runColor = current;
+        runLength = 1;
+      }
+    }
+
+    if (runLength >= 5) {
+      penalty += 3 + (runLength - 5);
+    }
+  }
+
+  for (let x = 0; x < QR_SIZE; x += 1) {
+    let runColor = modules[0][x];
+    let runLength = 1;
+
+    for (let y = 1; y < QR_SIZE; y += 1) {
+      const current = modules[y][x];
+      if (current === runColor) {
+        runLength += 1;
+      } else {
+        if (runLength >= 5) {
+          penalty += 3 + (runLength - 5);
+        }
+        runColor = current;
+        runLength = 1;
+      }
+    }
+
+    if (runLength >= 5) {
+      penalty += 3 + (runLength - 5);
+    }
+  }
+
+  for (let y = 0; y < QR_SIZE - 1; y += 1) {
+    for (let x = 0; x < QR_SIZE - 1; x += 1) {
+      const color = modules[y][x];
+      if (color === modules[y][x + 1] && color === modules[y + 1][x] && color === modules[y + 1][x + 1]) {
+        penalty += 3;
+      }
+    }
+  }
+
+  for (let y = 0; y < QR_SIZE; y += 1) {
+    for (let x = 0; x <= QR_SIZE - finderPattern.length; x += 1) {
+      let matchesFinder = true;
+      let matchesInverse = true;
+
+      for (let i = 0; i < finderPattern.length; i += 1) {
+        const value = modules[y][x + i] ? 1 : 0;
+        if (value !== finderPattern[i]) {
+          matchesFinder = false;
+        }
+        if (value !== inverseFinderPattern[i]) {
+          matchesInverse = false;
+        }
+      }
+
+      if (matchesFinder || matchesInverse) {
+        penalty += 40;
+      }
+    }
+  }
+
+  for (let x = 0; x < QR_SIZE; x += 1) {
+    for (let y = 0; y <= QR_SIZE - finderPattern.length; y += 1) {
+      let matchesFinder = true;
+      let matchesInverse = true;
+
+      for (let i = 0; i < finderPattern.length; i += 1) {
+        const value = modules[y + i][x] ? 1 : 0;
+        if (value !== finderPattern[i]) {
+          matchesFinder = false;
+        }
+        if (value !== inverseFinderPattern[i]) {
+          matchesInverse = false;
+        }
+      }
+
+      if (matchesFinder || matchesInverse) {
+        penalty += 40;
+      }
+    }
+  }
+
+  let darkModules = 0;
+  for (const row of modules) {
+    for (const cell of row) {
+      if (cell) {
+        darkModules += 1;
+      }
+    }
+  }
+
+  const totalModules = QR_SIZE * QR_SIZE;
+  const balancePenalty = Math.max(0, Math.ceil(Math.abs(darkModules * 20 - totalModules * 10) / totalModules) - 1);
+  penalty += balancePenalty * 10;
+
+  return penalty;
+}
+
+function generateQrMatrixValue(text: string) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  if (bytes.length > 78) {
+    throw new Error('Tracking URL is too long for the built-in QR generator.');
+  }
+
+  const dataBits: number[] = [];
+  appendBits(0b0100, 4, dataBits);
+  appendBits(bytes.length, 8, dataBits);
+
+  for (const value of bytes) {
+    appendBits(value, 8, dataBits);
+  }
+
+  const capacityBits = QR_DATA_CODEWORDS * 8;
+  appendBits(0, Math.min(4, capacityBits - dataBits.length), dataBits);
+
+  while (dataBits.length % 8 !== 0) {
+    dataBits.push(0);
+  }
+
+  for (let padIndex = 0; dataBits.length < capacityBits; padIndex += 1) {
+    appendBits(padIndex % 2 === 0 ? 0xec : 0x11, 8, dataBits);
+  }
+
+  const dataCodewords: number[] = [];
+  for (let i = 0; i < dataBits.length; i += 8) {
+    let value = 0;
+    for (let j = 0; j < 8; j += 1) {
+      value = (value << 1) | dataBits[i + j];
+    }
+    dataCodewords.push(value);
+  }
+
+  const ecDivisor = reedSolomonComputeDivisor(QR_EC_CODEWORDS);
+  const ecCodewords = reedSolomonComputeRemainder(dataCodewords, ecDivisor);
+  const finalCodewords = [...dataCodewords, ...ecCodewords];
+
+  const modules = createQrMatrix(QR_SIZE);
+  const isFunction = createQrMatrix(QR_SIZE);
+  const isData = createQrMatrix(QR_SIZE);
+
+  drawFinderPattern(modules, isFunction, 0, 0);
+  drawFinderPattern(modules, isFunction, QR_SIZE - 7, 0);
+  drawFinderPattern(modules, isFunction, 0, QR_SIZE - 7);
+  drawAlignmentPattern(modules, isFunction, 26, 26);
+
+  for (let i = 8; i < QR_SIZE - 8; i += 1) {
+    const isDark = i % 2 === 0;
+    if (!isFunction[6][i]) {
+      modules[6][i] = isDark;
+      isFunction[6][i] = true;
+    }
+    if (!isFunction[i][6]) {
+      modules[i][6] = isDark;
+      isFunction[i][6] = true;
+    }
+  }
+
+  for (let i = 0; i < 9; i += 1) {
+    if (i !== 6) {
+      isFunction[8][i] = true;
+      isFunction[i][8] = true;
+    }
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    isFunction[8][QR_SIZE - 1 - i] = true;
+    isFunction[QR_SIZE - 1 - i][8] = true;
+  }
+
+  isFunction[QR_SIZE - 8][8] = true;
+
+  const allBits: number[] = [];
+  for (const codeword of finalCodewords) {
+    appendBits(codeword, 8, allBits);
+  }
+
+  let bitIndex = 0;
+  for (let right = QR_SIZE - 1; right >= 1; right -= 2) {
+    if (right === 6) {
+      right -= 1;
+    }
+
+    for (let verticalIndex = 0; verticalIndex < QR_SIZE; verticalIndex += 1) {
+      const y = ((right + 1) & 2) === 0 ? QR_SIZE - 1 - verticalIndex : verticalIndex;
+
+      for (let j = 0; j < 2; j += 1) {
+        const x = right - j;
+        if (isFunction[y][x]) {
+          continue;
+        }
+
+        if (bitIndex < allBits.length) {
+          modules[y][x] = allBits[bitIndex] === 1;
+          isData[y][x] = true;
+          bitIndex += 1;
+        }
+      }
+    }
+  }
+
+  let bestMatrix = modules.map((row) => row.slice());
+  let bestPenalty = Number.POSITIVE_INFINITY;
+
+  for (let mask = 0; mask < 8; mask += 1) {
+    const candidate = modules.map((row) => row.slice());
+
+    for (let y = 0; y < QR_SIZE; y += 1) {
+      for (let x = 0; x < QR_SIZE; x += 1) {
+        if (isData[y][x] && getMaskBit(mask, x, y)) {
+          candidate[y][x] = !candidate[y][x];
+        }
+      }
+    }
+
+    drawFormatBits(candidate, mask);
+    const penalty = getPenaltyScore(candidate);
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestMatrix = candidate;
+    }
+  }
+
+  return bestMatrix;
+}
+
+function buildQrSvgMarkup(text: string) {
+  const matrix = generateQrMatrixValue(text);
+  const svgSize = QR_SIZE + QR_QUIET_ZONE * 2;
+  let path = '';
+
+  for (let y = 0; y < QR_SIZE; y += 1) {
+    for (let x = 0; x < QR_SIZE; x += 1) {
+      if (!matrix[y][x]) {
+        continue;
+      }
+
+      const drawX = x + QR_QUIET_ZONE;
+      const drawY = y + QR_QUIET_ZONE;
+      path += `M${drawX},${drawY}h1v1h-1z `;
+    }
+  }
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgSize} ${svgSize}" shape-rendering="crispEdges">`,
+    '<rect width="100%" height="100%" fill="#ffffff"/>',
+    `<path d="${path.trim()}" fill="#111827"/>`,
+    '</svg>',
+  ].join('');
+}
+
+function downloadSvgFile(filename: string, svgMarkup: string) {
+  const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+  const downloadUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = downloadUrl;
+  anchor.download = filename;
+  anchor.click();
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(downloadUrl);
+  }, 1000);
+}
+
 function ComplaintSubmissionSuccessOverlay({
   complaintId,
   copied,
@@ -357,6 +805,17 @@ function ComplaintSubmissionSuccessOverlay({
     }
   }
 
+  function handleDownloadQr() {
+    try {
+      const trackUrl = buildComplaintTrackingUrl(complaintId);
+      const svgMarkup = buildQrSvgMarkup(trackUrl);
+      downloadSvgFile(`complaint-${complaintId}-track-qr.svg`, svgMarkup);
+      toast.success('Tracking QR downloaded successfully.');
+    } catch (error) {
+      console.error('Unable to generate complaint tracking QR', error);
+      toast.error('Unable to generate tracking QR right now.');
+    }
+  }
   if (!mounted) {
     return null;
   }
@@ -406,7 +865,7 @@ function ComplaintSubmissionSuccessOverlay({
                   )}
                 >
                   {copiedState ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copiedState ? 'Copied to clipboard' : 'Copy manually'}
+                  {copiedState ? 'Copied to clipboard' : 'Ready to copy'}
                 </div>
 
                 <button
@@ -415,13 +874,26 @@ function ComplaintSubmissionSuccessOverlay({
                   className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 transition hover:bg-emerald-50"
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  Copy again
+                  Copy to clipboard
                 </button>
               </div>
 
               <p className="mt-3 text-sm leading-5 text-slate-600">
-                {copiedState ? 'Complaint ID has been copied to clipboard for quick reference.' : 'Clipboard access is unavailable. Please copy the complaint ID manually.'}
+                {copiedState
+                  ? 'Complaint ID has been copied to clipboard for quick reference.'
+                  : 'Complaint ID will only be copied when you tap Copy to clipboard.'}
               </p>
+
+              <div className="mt-4 border-t border-emerald-100 pt-4">
+                <button
+                  type="button"
+                  onClick={handleDownloadQr}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                >
+                  <Download className="h-4 w-4" />
+                  Download tracking QR
+                </button>
+              </div>
             </div>
           </div>
         </div>
