@@ -1,14 +1,33 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Activity } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Flame,
+  Gauge,
+  MapPinned,
+  RefreshCw,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+  UserCircle2,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react';
 
 import { useAdminWorkspace } from '@/components/admin-workspace';
+import { useLandingLanguage } from '@/components/landing-language';
+import { useSession } from '@/components/session-provider';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { buildAdminZoneOptions, findAdminZoneLabel } from '@/app/admin/_lib/zone-options';
 import { fetchAdminDashboard, fetchWards } from '@/lib/client/complaints';
 import { subscribeComplaintFeedChanged } from '@/lib/client/live-updates';
 import type { Complaint, Ward } from '@/lib/types';
@@ -46,34 +65,43 @@ const INITIAL_SUMMARY: AdminSummary = {
 };
 
 const PAGE_SHELL =
-  'border border-[#dbe4ee] bg-[#f5f6f8] p-2 sm:p-3';
+  'bg-[#F8FAFC] p-3 sm:p-4';
 const PANEL_CARD =
-  'border border-[#d4dfeb] bg-white';
+  'rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]';
 const SUB_CARD =
-  'border border-[#dfe7f0] bg-[#fafbfc]';
+  'rounded-xl bg-[#F8FAFC]';
 const SECTION_LABEL =
-  'text-[10px] font-bold uppercase tracking-[0.2em] text-[#5d7388]';
+  'text-[10px] font-semibold uppercase tracking-[0.18em] text-[#64748B]';
 const SECTION_TITLE =
-  'text-[0.95rem] font-bold tracking-[-0.02em] text-[#0B3D91]';
+  'text-[0.98rem] font-bold tracking-[-0.02em] text-[#1E3A8A]';
 const SECONDARY_TEXT =
-  'text-[11px] text-[#60758a]';
+  'text-[11px] text-[#64748B]';
 const LIST_ROW =
-  'flex items-start justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-white';
+  'flex items-start justify-between gap-3 rounded-xl px-3 py-3 transition-all duration-200 hover:bg-white';
 const STATUS_BADGE_BASE =
-  'inline-flex items-center gap-1.5 border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em]';
+  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]';
 const MONITORING_BADGE =
-  'inline-flex items-center gap-2 border border-[#d6e4d7] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#138808]';
+  'inline-flex items-center gap-2 rounded-full border border-[#D1FAE5] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#15803D]';
 const TABLE_HEAD_CLASS =
-  'h-9 bg-[#f8fafc] px-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[#5d7388]';
+  'h-10 bg-[#F8FAFC] px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#64748B]';
 const TABLE_CELL_CLASS =
-  'px-2.5 py-2.5 text-[13px] align-middle text-[#12385b]';
+  'px-3 py-3 text-[13px] align-middle text-[#1E3A8A]';
 const ADMIN_REFRESH_INTERVAL_MS = 15000;
-const ZONE_OPTIONS = [
-  { value: 'all', label: 'All zones' },
-  { value: '1', label: 'Rohini' },
-  { value: '2', label: 'Karol Bagh' },
-] as const;
 
+type StatCard = {
+  title: string;
+  value: number;
+  signal: string;
+  trend: string;
+  trendDirection: 'up' | 'down';
+  liveDelta: string;
+  featured: boolean;
+  tone: BadgeTone;
+  accent: string;
+  borderTone: string;
+  iconBg: string;
+  icon: LucideIcon;
+};
 function formatLabel(value: string) {
   return value
     .replace(/_/g, ' ')
@@ -206,6 +234,22 @@ function getDeadlineLabel(deadline?: string | null, status?: Complaint['status']
   return `${hours}h ${minutes}m left`;
 }
 
+function getTrendTone(tone: BadgeTone) {
+  if (tone === 'urgent') {
+    return 'text-[#B91C1C]';
+  }
+
+  if (tone === 'pending') {
+    return 'text-[#B45309]';
+  }
+
+  if (tone === 'resolved') {
+    return 'text-[#15803D]';
+  }
+
+  return 'text-[#1E3A8A]';
+}
+
 function SectionHeader({
   eyebrow,
   title,
@@ -242,7 +286,7 @@ function StatusBadge({ tone, label }: { tone: BadgeTone; label: string }) {
 
   return (
     <span className={`${STATUS_BADGE_BASE} ${badge.container}`}>
-      <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
+      <span className={`h-2 w-2 rounded-full animate-pulse ${badge.dot}`} />
       {label}
     </span>
   );
@@ -268,11 +312,14 @@ function DashboardSkeleton() {
 
 export default function AdminDashboardPage() {
   const { activateFocusMode, isMobile, isSidebarExpanded } = useAdminWorkspace();
+  const { language } = useLandingLanguage();
+  const session = useSession();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AdminSummary>(INITIAL_SUMMARY);
   const [wards, setWards] = useState<Ward[]>([]);
-  const [zoneFilter, setZoneFilter] = useState<'all' | '1' | '2'>('all');
+  const [zoneFilter, setZoneFilter] = useState('all');
   const [lastUpdatedAt, setLastUpdatedAt] = useState(() => new Date().toISOString());
+  const [expandedComplaintId, setExpandedComplaintId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchWards().then(setWards);
@@ -341,7 +388,105 @@ export default function AdminDashboardPage() {
     }
   }
   const liveIssues = summary.top_urgent_issues;
-  const currentZoneLabel = ZONE_OPTIONS.find((zone) => zone.value === zoneFilter)?.label || 'All zones';
+  const t = {
+    dashboard: language === 'hi' ? 'डैशबोर्ड' : 'Dashboard',
+    liveUpdating: language === 'hi' ? 'लाइव / अपडेटिंग' : 'Live / Updating',
+    stats: language === 'hi' ? 'आंकड़े' : 'Stats',
+    scope: language === 'hi' ? 'क्षेत्र' : 'Scope',
+    allZones: language === 'hi' ? 'सभी ज़ोन' : 'All zones',
+    totalComplaints: language === 'hi' ? 'कुल शिकायतें' : 'Total Complaints',
+    l1Complaints: language === 'hi' ? 'L1 शिकायतें' : 'L1 Complaints',
+    l2Complaints: language === 'hi' ? 'L2 शिकायतें' : 'L2 Complaints',
+    l3Complaints: language === 'hi' ? 'L3 शिकायतें' : 'L3 Complaints',
+    complaints: language === 'hi' ? 'शिकायतें' : 'Complaints',
+    priorityQueue: language === 'hi' ? 'प्राथमिकता कतार' : 'Priority Queue',
+    assign: language === 'hi' ? 'आवंटित करें' : 'Assign',
+    escalate: language === 'hi' ? 'एस्केलेट करें' : 'Escalate',
+    view: language === 'hi' ? 'देखें' : 'View',
+    priorityAlert: language === 'hi' ? 'प्राथमिकता अलर्ट' : 'Priority Alert',
+    complaintId: language === 'hi' ? 'शिकायत आईडी' : 'Complaint ID',
+    title: language === 'hi' ? 'शीर्षक' : 'Title',
+    level: language === 'hi' ? 'स्तर' : 'Level',
+    department: language === 'hi' ? 'विभाग' : 'Department',
+    status: language === 'hi' ? 'स्थिति' : 'Status',
+    liveState: language === 'hi' ? 'लाइव स्थिति' : 'Live State',
+    details: language === 'hi' ? 'विवरण' : 'Details',
+    actions: language === 'hi' ? 'कार्रवाइयां' : 'Actions',
+    hide: language === 'hi' ? 'छिपाएं' : 'Hide',
+    expand: language === 'hi' ? 'विस्तार करें' : 'Expand',
+    summary: language === 'hi' ? 'सारांश' : 'Summary',
+    assignment: language === 'hi' ? 'आवंटन' : 'Assignment',
+    officer: language === 'hi' ? 'अधिकारी' : 'Officer',
+    pendingAssignment: language === 'hi' ? 'आवंटन लंबित' : 'Pending assignment',
+    zone: language === 'hi' ? 'ज़ोन' : 'Zone',
+    ward: language === 'hi' ? 'वार्ड' : 'Ward',
+    timing: language === 'hi' ? 'समय' : 'Timing',
+    priority: language === 'hi' ? 'प्राथमिकता' : 'Priority',
+    updated: language === 'hi' ? 'अपडेट' : 'Updated',
+    deadline: language === 'hi' ? 'समय-सीमा' : 'Deadline',
+    noDetails: language === 'hi' ? 'कोई विवरण नहीं' : 'No details',
+    showing: language === 'hi' ? 'दिखाई जा रही हैं' : 'Showing',
+    rapidQueue: language === 'hi' ? 'रैपिड एक्शन कतार' : 'rapid action queue',
+    urgent: language === 'hi' ? 'अति आवश्यक' : 'Urgent',
+    pending: language === 'hi' ? 'लंबित' : 'Pending',
+    resolved: language === 'hi' ? 'निस्तारित' : 'Resolved',
+    noPriorityComplaints: language === 'hi' ? 'कोई प्राथमिक शिकायत नहीं है।' : 'No priority complaints.',
+    updates: language === 'hi' ? 'अपडेट' : 'Updates',
+    liveFeed: language === 'hi' ? 'लाइव फ़ीड' : 'Live Feed',
+    recentUpdates: language === 'hi' ? 'हालिया अपडेट' : 'recent updates',
+    noRecentUpdates: language === 'hi' ? 'कोई हालिया अपडेट नहीं है।' : 'No recent updates.',
+    analytics: language === 'hi' ? 'विश्लेषण' : 'Analytics',
+    liveMonitoring: language === 'hi' ? 'लाइव मॉनिटरिंग' : 'Live monitoring',
+    complaintTrend: language === 'hi' ? 'शिकायत रुझान' : 'Complaint Trend',
+    recentUpdateRhythm: language === 'hi' ? 'हालिया अपडेट लय' : 'Recent update rhythm',
+    topDept: language === 'hi' ? 'शीर्ष विभाग' : 'Top dept',
+    peak: language === 'hi' ? 'शीर्ष समय' : 'Peak',
+    openQueue: language === 'hi' ? 'खुली कतार' : 'Open Queue',
+    levelDistribution: language === 'hi' ? 'स्तर वितरण' : 'Level Distribution',
+    noOfficerLoad: language === 'hi' ? 'कोई अधिकारी भार नहीं है।' : 'No officer load.',
+    departmentPressure: language === 'hi' ? 'विभागीय दबाव' : 'Department Pressure',
+    noDepartmentLoad: language === 'hi' ? 'कोई विभागीय भार नहीं है।' : 'No department load.',
+    zoneWatch: language === 'hi' ? 'ज़ोन और वार्ड निगरानी' : 'Zone And Ward Watch',
+    zones: language === 'hi' ? 'ज़ोन' : 'Zones',
+    unassignedZone: language === 'hi' ? 'अनावंटित ज़ोन' : 'Unassigned zone',
+    hotspot: language === 'hi' ? 'हॉटस्पॉट' : 'Hotspot',
+    monitor: language === 'hi' ? 'निगरानी' : 'Monitor',
+    active: language === 'hi' ? 'सक्रिय' : 'Active',
+    noWardWatchlist: language === 'hi' ? 'कोई वार्ड वॉचलिस्ट नहीं है।' : 'No ward watchlist.',
+    noDepartmentData: language === 'hi' ? 'कोई विभागीय डेटा नहीं' : 'No department data',
+    stable: language === 'hi' ? 'स्थिर' : 'Stable',
+    open: language === 'hi' ? 'खुली' : 'Open',
+    officerPending: language === 'hi' ? 'अधिकारी लंबित' : 'Officer pending',
+    l2Escalated: language === 'hi' ? 'L2 एस्केलेटेड' : 'L2 Escalated',
+    allZonesComplaintRecords: language === 'hi' ? 'सभी ज़ोन शिकायत अभिलेख' : 'All zones complaint records',
+    complaintsInL1Workflow: language === 'hi' ? 'L1 कार्यप्रवाह में शिकायतें' : 'Complaints in L1 workflow',
+    complaintsInL2Workflow: language === 'hi' ? 'L2 कार्यप्रवाह में शिकायतें' : 'Complaints in L2 workflow',
+    complaintsInL3Workflow: language === 'hi' ? 'L3 कार्यप्रवाह में शिकायतें' : 'Complaints in L3 workflow',
+    currentlyOpen: language === 'hi' ? 'वर्तमान में खुली' : 'currently open',
+    unassigned: language === 'hi' ? 'अनावंटित' : 'unassigned',
+    escalated: language === 'hi' ? 'एस्केलेटेड' : 'escalated',
+    awaitingFeedback: language === 'hi' ? 'फीडबैक प्रतीक्षारत' : 'awaiting feedback',
+    citizenLoopClear: language === 'hi' ? 'नागरिक चक्र स्पष्ट' : 'Citizen loop clear',
+    today: language === 'hi' ? 'आज' : 'today',
+    highPriority: language === 'hi' ? 'उच्च प्राथमिकता' : 'high priority',
+    overdue: language === 'hi' ? 'समय-सीमा पार' : 'overdue',
+    feedbackPending: language === 'hi' ? 'फीडबैक लंबित' : 'feedback pending',
+    visibleLoad: language === 'hi' ? 'कुल दृश्य भार का' : 'of total visible load',
+    noDeadline: language === 'hi' ? 'कोई समय-सीमा नहीं' : 'No deadline',
+    finalized: language === 'hi' ? 'अंतिम' : 'Finalized',
+    left: language === 'hi' ? 'शेष' : 'left',
+    minAgo: language === 'hi' ? 'मिनट पहले' : 'min ago',
+    hrAgo: language === 'hi' ? 'घंटे पहले' : 'hr ago',
+    dayAgo: language === 'hi' ? 'दिन पहले' : 'day ago',
+    wardWatch: language === 'hi' ? 'वार्ड निगरानी' : 'Ward watch',
+    hotspotAlert: language === 'hi' ? 'हॉटस्पॉट अलर्ट' : 'Hotspot alert',
+    complaintsUnderWatch: language === 'hi' ? 'शिकायतें निगरानी में' : 'complaints under watch',
+    noOfficerData: language === 'hi' ? 'कोई अधिकारी डेटा नहीं है।' : 'No officer load.',
+    openOfTotal: language === 'hi' ? 'खुली, कुल में से' : 'open of',
+    totalComplaintsSuffix: language === 'hi' ? 'कुल शिकायतें' : 'total complaints',
+  };
+  const zoneOptions = useMemo(() => buildAdminZoneOptions(wards), [wards]);
+  const currentZoneLabel = findAdminZoneLabel(zoneOptions, zoneFilter);
   const selectedZoneWardIds = zoneFilter === 'all'
     ? null
     : new Set(wards.filter((ward) => String(ward.zone_id) === zoneFilter).map((ward) => ward.id));
@@ -350,11 +495,9 @@ export default function AdminDashboardPage() {
     .slice(0, 5);
   const hotspotWardIds = new Set(summary.hotspot_wards.map((ward) => ward.ward_id));
   const leadWard = wardWatchlist[0] ?? summary.hotspot_wards[0] ?? summary.most_affected_wards[0];
-  const isCompactDesktop = !isMobile && isSidebarExpanded;
-  const pageShellClass = `${PAGE_SHELL} ${isCompactDesktop ? 'lg:p-3' : 'lg:p-4'}`;
+  const pageShellClass = `${PAGE_SHELL} lg:p-4`;
   const kpiGridClass = 'grid gap-2 md:grid-cols-2 xl:grid-cols-4';
-  const splitViewClass = isCompactDesktop ? 'grid gap-3 2xl:grid-cols-[1.9fr_0.75fr]' : 'grid gap-3 xl:grid-cols-[1.9fr_0.75fr]';
-  const analyticsGridClass = isCompactDesktop ? 'grid gap-2 md:grid-cols-2 2xl:grid-cols-[0.92fr_1.08fr_1fr]' : 'grid gap-2 xl:grid-cols-[0.92fr_1.08fr_1fr]';
+  const commandCenterClass = 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]';
   const queueRows = liveIssues.slice(0, 10);
   const queueStatusSummary = queueRows.reduce(
     (acc, complaint) => {
@@ -370,10 +513,10 @@ export default function AdminDashboardPage() {
   }, {});
   const orderedLevelData = useMemo(() => {
     const orderedLevels = [
-      { key: 'unassigned', label: 'Unassigned' },
+      { key: 'unassigned', label: t.unassigned },
       { key: 'L1', label: 'L1' },
       { key: 'L2', label: 'L2' },
-      { key: 'L2_ESCALATED', label: 'L2 Escalated' },
+      { key: 'L2_ESCALATED', label: t.l2Escalated },
       { key: 'L3', label: 'L3' },
     ] as const;
     const total = summary.level_breakdown.reduce((sum, item) => sum + item.count, 0);
@@ -386,76 +529,161 @@ export default function AdminDashboardPage() {
       }))
       .filter((level) => level.count > 0 || level.key !== 'L2_ESCALATED');
   }, [levelCounts, summary.level_breakdown]);
-  const zoneOpenCounts = summary.zone_breakdown.reduce<Record<string, number>>((acc, zone) => {
-    if (zone.zone_id != null) {
-      acc[String(zone.zone_id)] = zone.open_count;
-    }
-    return acc;
-  }, {});
-  const rohiniOpenCount = zoneOpenCounts['1'] || 0;
-  const karolBaghOpenCount = zoneOpenCounts['2'] || 0;
   const l1QueueCount = (levelCounts.unassigned || 0) + (levelCounts.L1 || 0);
   const l2QueueCount = (levelCounts.L2 || 0) + (levelCounts.L2_ESCALATED || 0);
   const l3QueueCount = levelCounts.L3 || 0;
-  const queueSummary = `${currentZoneLabel} | Lead ward ${leadWard ? leadWard.ward_name : 'Stable'} | Open ${summary.open_count}`;
+  const queueSummary = `${currentZoneLabel} | ${t.open} ${summary.open_count} | ${leadWard ? leadWard.ward_name : t.stable}`;
+  const recentHotspotLoad = summary.hotspot_wards.reduce((sum, ward) => sum + ward.count, 0);
+  const peakHourLabel = (() => {
+    if (!queueRows.length) {
+      return 'N/A';
+    }
 
-  const statCards = [
+    const topHour = Object.entries(
+      queueRows.reduce<Record<string, number>>((acc, complaint) => {
+        const date = new Date(complaint.updated_at);
+        const key = String(date.getHours());
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    ).sort((a, b) => b[1] - a[1])[0]?.[0];
+
+    const hour = Number(topHour || 0);
+    return new Date(2026, 0, 1, hour).toLocaleTimeString('en-IN', { hour: 'numeric', hour12: true });
+  })();
+  const trendBars = Array.from({ length: 6 }, (_, index) => {
+    const complaint = queueRows[index];
+    if (!complaint) {
+      return 18;
+    }
+
+    const minutesAgo = Math.max(1, Math.floor((Date.now() - new Date(complaint.updated_at).getTime()) / (1000 * 60)));
+    return Math.max(18, 90 - Math.min(minutesAgo, 72));
+  });
+
+  const statCards: StatCard[] = [
     {
-      title: 'Open Complaints',
-      value: summary.open_count,
-      signal: `${summary.total_complaints} total records`,
-      trend: `${summary.total_complaints - summary.open_count} archived`,
+      title: t.totalComplaints,
+      value: summary.total_complaints,
+      signal: zoneFilter === 'all' ? t.allZonesComplaintRecords : `${currentZoneLabel} ${language === 'hi' ? 'शिकायत अभिलेख' : 'complaint records'}`,
+      trend: `${summary.open_count} ${t.currentlyOpen}`,
+      trendDirection: 'up',
+      liveDelta: `+${recentHotspotLoad || 0} ${t.today}`,
       featured: true,
-      tone: 'neutral' as const,
+      tone: 'neutral',
       accent: 'bg-[#0B3D91]',
+      borderTone: 'border-t-[#1E3A8A]',
+      iconBg: 'bg-[#DBEAFE] text-[#1E3A8A]',
+      icon: Gauge,
     },
     {
-      title: 'L1 Queue',
+      title: t.l1Complaints,
       value: l1QueueCount,
-      signal: 'Execution intake',
-      trend: `${levelCounts.unassigned || 0} unassigned`,
+      signal: zoneFilter === 'all' ? t.complaintsInL1Workflow : `${currentZoneLabel} ${t.complaintsInL1Workflow.toLowerCase()}`,
+      trend: `${levelCounts.unassigned || 0} ${t.unassigned}`,
+      trendDirection: l1QueueCount > 0 ? 'up' : 'down',
+      liveDelta: `+${levelCounts.unassigned || 0} ${t.today}`,
       featured: false,
-      tone: l1QueueCount > 0 ? ('pending' as const) : ('resolved' as const),
+      tone: l1QueueCount > 0 ? 'pending' : 'resolved',
       accent: l1QueueCount > 0 ? 'bg-[#FF9933]' : 'bg-[#138808]',
+      borderTone: l1QueueCount > 0 ? 'border-t-[#F59E0B]' : 'border-t-[#16A34A]',
+      iconBg: l1QueueCount > 0 ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#DCFCE7] text-[#15803D]',
+      icon: Workflow,
     },
     {
-      title: 'L2 Review',
+      title: t.l2Complaints,
       value: l2QueueCount,
-      signal: 'Review and escalation',
-      trend: `${levelCounts.L2_ESCALATED || 0} escalated`,
+      signal: zoneFilter === 'all' ? t.complaintsInL2Workflow : `${currentZoneLabel} ${t.complaintsInL2Workflow.toLowerCase()}`,
+      trend: `${levelCounts.L2_ESCALATED || 0} ${t.escalated}`,
+      trendDirection: l2QueueCount > 0 ? 'up' : 'down',
+      liveDelta: `+${levelCounts.L2_ESCALATED || 0} ${t.today}`,
       featured: false,
-      tone: l2QueueCount > 0 ? ('neutral' as const) : ('resolved' as const),
+      tone: l2QueueCount > 0 ? 'neutral' : 'resolved',
       accent: 'bg-[#0B3D91]',
+      borderTone: l2QueueCount > 0 ? 'border-t-[#2563EB]' : 'border-t-[#16A34A]',
+      iconBg: l2QueueCount > 0 ? 'bg-[#DBEAFE] text-[#1E3A8A]' : 'bg-[#DCFCE7] text-[#15803D]',
+      icon: ShieldAlert,
     },
     {
-      title: 'L3 Escalations',
+      title: t.l3Complaints,
       value: l3QueueCount,
-      signal: summary.overdue_count > 0 ? `${summary.overdue_count} overdue cases` : 'Escalation stable',
-      trend: summary.awaiting_feedback_count > 0 ? `${summary.awaiting_feedback_count} awaiting feedback` : 'Citizen loop clear',
+      signal: zoneFilter === 'all' ? t.complaintsInL3Workflow : `${currentZoneLabel} ${t.complaintsInL3Workflow.toLowerCase()}`,
+      trend: summary.awaiting_feedback_count > 0 ? `${summary.awaiting_feedback_count} ${t.awaitingFeedback}` : t.citizenLoopClear,
+      trendDirection: l3QueueCount > 0 || summary.overdue_count > 0 ? 'up' : 'down',
+      liveDelta: `+${summary.overdue_count || 0} ${t.today}`,
       featured: false,
-      tone: l3QueueCount > 0 || summary.overdue_count > 0 ? ('urgent' as const) : ('resolved' as const),
+      tone: l3QueueCount > 0 || summary.overdue_count > 0 ? 'urgent' : 'resolved',
       accent: l3QueueCount > 0 || summary.overdue_count > 0 ? 'bg-[#C62828]' : 'bg-[#138808]',
+      borderTone: l3QueueCount > 0 || summary.overdue_count > 0 ? 'border-t-[#DC2626]' : 'border-t-[#16A34A]',
+      iconBg: l3QueueCount > 0 || summary.overdue_count > 0 ? 'bg-[#FEE2E2] text-[#B91C1C]' : 'bg-[#DCFCE7] text-[#15803D]',
+      icon: Flame,
     },
   ];
-
+  const highPriorityShare = summary.total_complaints ? Math.round((summary.high_priority_count / summary.total_complaints) * 100) : 0;
+  const openShare = summary.total_complaints ? Math.round((summary.open_count / summary.total_complaints) * 100) : 0;
+  const adminDisplayName = session?.name || (language === 'hi' ? 'प्रशासक' : 'Admin');
+  const zoneCards = summary.zone_breakdown.slice(0, 4);
+  const departmentCards = summary.department_breakdown.slice(0, 5);
+  const leadDepartment = summary.department_breakdown[0]?.department_name || t.noDepartmentData;
   const activityFeed = [
     ...liveIssues.slice(0, 5).map((complaint) => ({
       id: complaint.id,
       title: complaint.title,
-      meta: `${complaint.ward_name ?? `Ward ${complaint.ward_id}`} | ${complaint.department_name || formatLabel(complaint.department)} | ${formatLevelLabel(complaint.current_level)}`,
-      time: getRelativeTime(complaint.updated_at),
+      meta: `${complaint.ward_name ?? `${t.ward} ${complaint.ward_id}`} | ${complaint.department_name || formatLabel(complaint.department)} | ${getLocalizedLevelLabel(complaint.current_level)}`,
+      time: getRelativeTimeLabel(complaint.updated_at),
       stamp: formatTimestamp(complaint.updated_at),
       tone: getStatusIndicator(complaint.status),
     })),
     ...summary.hotspot_wards.slice(0, 2).map((ward) => ({
       id: `hotspot-${ward.ward_id}`,
-      title: `${ward.ward_name} hotspot watch`,
-      meta: `${ward.count} complaints under watch`,
-      time: 'Ward watch',
-      stamp: 'Hotspot alert',
+      title: language === 'hi' ? `${ward.ward_name} हॉटस्पॉट निगरानी` : `${ward.ward_name} hotspot watch`,
+      meta: `${ward.count} ${t.complaintsUnderWatch}`,
+      time: t.wardWatch,
+      stamp: t.hotspotAlert,
       tone: getStatusIndicator('assigned'),
     })),
   ].slice(0, 6);
+  function getLocalizedStatusLabel(label: string) {
+    if (language !== 'hi') {
+      return label;
+    }
+
+    if (label === 'Resolved') {
+      return 'निस्तारित';
+    }
+
+    if (label === 'Pending') {
+      return 'लंबित';
+    }
+
+    if (label === 'Urgent') {
+      return 'अति आवश्यक';
+    }
+
+    return label;
+  }
+  function getLocalizedLevelLabel(level?: Complaint['current_level'] | 'unassigned' | null) {
+    if (!level || level === 'unassigned') {
+      return t.unassigned;
+    }
+
+    return level === 'L2_ESCALATED' ? t.l2Escalated : level;
+  }
+  function getRelativeTimeLabel(value: string) {
+    const diffMs = Date.now() - new Date(value).getTime();
+    const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+
+    if (diffMinutes < 60) {
+      return `${diffMinutes} ${t.minAgo}`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+      return `${diffHours} ${t.hrAgo}`;
+    }
+
+    return `${Math.floor(diffHours / 24)} ${t.dayAgo}`;
+  }
 
   return (
     <DashboardLayout title="Dashboard">
@@ -465,57 +693,43 @@ export default function AdminDashboardPage() {
         ) : (
           <div className={pageShellClass}>
             <div className="space-y-4" onMouseDownCapture={handleContentEngagement} onFocusCapture={handleContentEngagement}>
-              <section className="border border-[#ced8e4] bg-[linear-gradient(135deg,#ffffff_0%,#f6f9fc_58%,#edf3f8_100%)] px-3 py-3 sm:px-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="space-y-2">
-                    <div className={`inline-flex items-center gap-2 ${SECTION_LABEL}`}>
-                      <span className="h-2 w-2 rounded-full bg-[#138808]" />
-                      NIC Civic Operations Console
+              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+                <div className="h-[3px] w-full bg-[#1E3A8A]" />
+                <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-5">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <h1 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#0F172A]">{t.dashboard}</h1>
                     </div>
-                    <h1 className="text-[1.32rem] font-bold tracking-[-0.04em] text-[#0B3D91] sm:text-[1.55rem]">
-                      Administrative Operations Dashboard
-                    </h1>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-[#F0FDF4] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#15803D]">
+                      <span className="h-2 w-2 rounded-full bg-[#16A34A] animate-pulse" />
+                      {t.liveUpdating}
+                    </span>
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
-                    <div className="border border-[#d6e3ef] bg-white px-3 py-2">
-                      <div className={SECTION_LABEL}>System</div>
-                      <div className="mt-1 text-sm font-bold text-[#0B3D91]">Command Center</div>
+                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#64748B]">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-[#F8FAFC] px-3 py-2">
+                      <RefreshCw className="h-3.5 w-3.5 text-[#1E3A8A]" />
+                      {formatHeaderTimestamp(lastUpdatedAt)}
                     </div>
-                    <div className="border border-[#d6e3ef] bg-white px-3 py-2">
-                      <div className={SECTION_LABEL}>Status</div>
-                      <div className="mt-1">
-                        <span className={MONITORING_BADGE}>
-                          <span className="h-2 w-2 rounded-full bg-[#138808]" />
-                          Live monitoring
-                        </span>
-                      </div>
-                    </div>
-                    <div className="border border-[#d6e3ef] bg-white px-3 py-2">
-                      <div className={SECTION_LABEL}>Last updated</div>
-                      <div className="mt-1 text-sm font-bold text-[#0B3D91]">{formatHeaderTimestamp(lastUpdatedAt)}</div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-[#F8FAFC] px-3 py-2">
+                      <UserCircle2 className="h-3.5 w-3.5 text-[#1E3A8A]" />
+                      <span className="font-medium text-[#0F172A]">{adminDisplayName}</span>
                     </div>
                   </div>
                 </div>
               </section>
 
               <section className="space-y-2">
-                <div className="flex flex-col gap-2 border-b border-[#d9e2ec] pb-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={SECTION_LABEL}>KPI Overview</div>
-                    <div className="h-px w-20 bg-[#d7e0eb] sm:w-32" />
-                  </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className={SECTION_LABEL}>{t.stats}</div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <div className={SECONDARY_TEXT}>Operational scope: {currentZoneLabel.toLowerCase()} with live officer workflow tracking.</div>
-                    <Select
-                      value={zoneFilter}
-                      onValueChange={(value) => setZoneFilter(value as 'all' | '1' | '2')}
-                    >
-                      <SelectTrigger className="h-8 w-full border-[#d2dde9] bg-[#fbfcfe] px-2.5 text-[12px] text-[#0B3D91] sm:w-[170px]">
-                        <SelectValue placeholder="All zones" />
+                    <div className={SECONDARY_TEXT}>{t.scope}: {currentZoneLabel}</div>
+                    <Select value={zoneFilter} onValueChange={setZoneFilter}>
+                      <SelectTrigger className="h-8 w-full rounded-xl border-[#E5E7EB] bg-white px-3 text-[12px] text-[#1E3A8A] sm:w-[180px]">
+                        <SelectValue placeholder={t.allZones} />
                       </SelectTrigger>
                       <SelectContent>
-                        {ZONE_OPTIONS.map((zone) => (
+                        {zoneOptions.map((zone) => (
                           <SelectItem key={zone.value} value={zone.value}>
                             {zone.label}
                           </SelectItem>
@@ -527,291 +741,404 @@ export default function AdminDashboardPage() {
 
                 <div className={kpiGridClass}>
                   {statCards.map((card) => {
+                    const Icon = card.icon;
+                    const TrendIcon = card.trendDirection === 'up' ? TrendingUp : TrendingDown;
+
                     return (
                       <article
                         key={card.title}
-                        className={`relative overflow-hidden border border-[#d7e0eb] bg-white px-3 py-2.5 transition-colors duration-150 hover:bg-[#fcfdff] ${
-                          card.featured
-                            ? 'bg-[#f8fafc] border-[#cfd9e5]'
-                            : ''
-                        }`}
-                        >
-                        <div className={`absolute inset-x-0 top-0 h-1 ${card.accent}`} />
-                        <div className="flex items-start justify-between gap-2">
-                          <div className={SECTION_LABEL}>{card.title}</div>
-                          <span className={SECONDARY_TEXT}>{card.trend}</span>
+                        className="rounded-2xl bg-white px-3 py-3 shadow-[0_6px_18px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.iconBg}`}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-[#64748B]">{card.title}</div>
+                              <div className="mt-1 text-[1.65rem] font-semibold tracking-[-0.04em] text-[#0F172A]">{card.value}</div>
+                            </div>
+                          </div>
+                          <div className={`inline-flex items-center gap-1 text-[10px] font-semibold ${getTrendTone(card.tone)}`}>
+                            <TrendIcon className="h-3.5 w-3.5" />
+                            {card.liveDelta}
+                          </div>
                         </div>
-                        <div
-                          className={
-                            card.featured
-                              ? isCompactDesktop
-                                ? 'mt-3 text-[2.2rem] font-bold tracking-[-0.05em] text-[#0B3D91]'
-                                : 'mt-3 text-[2.5rem] font-bold tracking-[-0.05em] text-[#0B3D91]'
-                              : isCompactDesktop
-                                ? 'mt-3 text-[1.95rem] font-bold tracking-[-0.04em] text-[#0B3D91]'
-                                : 'mt-3 text-[2.15rem] font-bold tracking-[-0.04em] text-[#0B3D91]'
-                          }
-                        >
-                          {card.value}
-                        </div>
-                        <div className="mt-1.5 text-[11px] font-medium text-[#4d657d]">
-                          {card.signal}
+                        <div className="mt-2 text-[11px] text-[#64748B] line-clamp-1">{card.signal}</div>
+                        <div className="mt-2 h-1 rounded-full bg-[#E5E7EB]">
+                          <div className={`h-full rounded-full ${card.accent}`} style={{ width: `${Math.max(card.featured ? openShare : 18, 12)}%` }} />
                         </div>
                       </article>
                     );
                   })}
                 </div>
-                <div className="grid gap-2 md:grid-cols-2">
-                  <article className="border border-[#d7e0eb] bg-white px-3 py-2.5">
-                    <div className={SECTION_LABEL}>Rohini Open</div>
-                    <div className="mt-3 text-[1.95rem] font-bold tracking-[-0.04em] text-[#0B3D91]">{zoneFilter === '2' ? 0 : rohiniOpenCount}</div>
-                    <div className="mt-1.5 text-[11px] font-medium text-[#4d657d]">Live open complaints in Rohini wards</div>
-                  </article>
-                  <article className="border border-[#d7e0eb] bg-white px-3 py-2.5">
-                    <div className={SECTION_LABEL}>Karol Bagh Open</div>
-                    <div className="mt-3 text-[1.95rem] font-bold tracking-[-0.04em] text-[#0B3D91]">{zoneFilter === '1' ? 0 : karolBaghOpenCount}</div>
-                    <div className="mt-1.5 text-[11px] font-medium text-[#4d657d]">Live open complaints in Karol Bagh wards</div>
-                  </article>
-                </div>
               </section>
 
-              <section className={splitViewClass}>
-                <div className={`${PANEL_CARD} flex h-full min-w-0 flex-col p-3`}>
-                  <SectionHeader
-                    eyebrow="Rapid Action"
-                    title="Priority complaints"
-                    compact={isCompactDesktop}
-                    trailing={
-                      <div className={SECONDARY_TEXT}>{queueSummary}</div>
-                    }
-                  />
+              <section className={commandCenterClass}>
+                <div className="space-y-4">
+                  <section className={`${PANEL_CARD} p-3`}>
+                    <div className="flex flex-col gap-3 border-b border-[#EEF2F7] pb-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className={SECTION_LABEL}>{t.complaints}</div>
+                        <h2 className="mt-1 text-lg font-semibold text-[#0F172A]">{t.priorityQueue}</h2>
+                        <div className="mt-1 text-xs text-[#64748B]">{queueSummary}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button asChild size="sm" className="h-9 rounded-lg bg-[#1E3A8A] px-3 text-white transition hover:bg-[#1D4ED8]">
+                          <Link href="/admin/complaints">{t.assign}</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline" className="h-9 rounded-lg border-[#E5E7EB] px-3 text-[#1E3A8A] transition hover:bg-[#F8FAFC]">
+                          <Link href="/admin/complaints?priority=high">{t.escalate}</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline" className="h-9 rounded-lg border-[#E5E7EB] px-3 text-[#1E3A8A] transition hover:bg-[#F8FAFC]">
+                          <Link href="/admin/complaints">{t.view}</Link>
+                        </Button>
+                      </div>
+                    </div>
 
-                  <div className={`mt-3 flex flex-1 flex-col overflow-hidden border border-[#dfe7f0] bg-white`}>
-                    {queueRows.length ? (
-                      <>
-                        <Table className="text-[12px]">
-                          <TableHeader>
-                            <TableRow className="border-b border-[#dfe7f0] hover:bg-[#f8fafc]">
-                              <TableHead className={TABLE_HEAD_CLASS}>Complaint ID</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Title</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Level</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Department</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Status</TableHead>
-                              <TableHead className={TABLE_HEAD_CLASS}>Live State</TableHead>
-                              <TableHead className={`${TABLE_HEAD_CLASS} text-right`}>Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {queueRows.map((complaint) => {
-                            const tone = getStatusIndicator(complaint.status);
-
-                            return (
-                              <TableRow key={complaint.id} className="border-b border-[#e6edf5] hover:bg-[#fbfcfe]">
-                                <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-semibold text-[#0B3D91]">{complaint.complaint_id}</div>
-                                  <div className={SECONDARY_TEXT}>{complaint.tracking_code}</div>
-                                </TableCell>
-                                <TableCell className={`${TABLE_CELL_CLASS} max-w-[280px]`}>
-                                  <div className="truncate font-semibold text-[#0B3D91]">{complaint.title}</div>
-                                  <div className={`${SECONDARY_TEXT} truncate`}>
-                                    {complaint.ward_name ?? `Ward ${complaint.ward_id}`} | {complaint.assigned_officer_name || 'Officer pending'}
-                                  </div>
-                                </TableCell>
-                                <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-medium text-[#12385b]">{formatLevelLabel(complaint.current_level)}</div>
-                                  <div className={SECONDARY_TEXT}>L1 {levelCounts.L1 || 0} | L2 {(levelCounts.L2 || 0) + (levelCounts.L2_ESCALATED || 0)} | L3 {levelCounts.L3 || 0}</div>
-                                </TableCell>
-                                <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-medium text-[#12385b]">{complaint.department_name || formatLabel(complaint.department)}</div>
-                                  <div className={SECONDARY_TEXT}>{complaint.category_name || formatLabel(complaint.category)}</div>
-                                </TableCell>
-                                <TableCell className={TABLE_CELL_CLASS}>
-                                  <StatusBadge tone={tone.tone} label={tone.label} />
-                                </TableCell>
-                                <TableCell className={TABLE_CELL_CLASS}>
-                                  <div className="font-medium text-[#12385b]">{complaint.work_status || 'Pending'}</div>
-                                  <div className={SECONDARY_TEXT}>{getDeadlineLabel(complaint.deadline, complaint.status)} | {getRelativeTime(complaint.updated_at)}</div>
-                                </TableCell>
-                                <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <Button
-                                      asChild
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 rounded-md border-[#ccd6e2] px-2.5 text-[11px] font-bold shadow-none hover:translate-y-0"
-                                    >
-                                      <Link href={`/admin/complaints?q=${encodeURIComponent(complaint.complaint_id)}`}>
-                                        View
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="h-7 rounded-md bg-[#0B3D91] px-2.5 text-[11px] font-bold text-white shadow-none hover:translate-y-0 hover:bg-[#103c85]"
-                                      onClick={() => {
-                                        if (complaint.zone_id === 1 || complaint.zone_id === 2) {
-                                          setZoneFilter(String(complaint.zone_id) as '1' | '2');
-                                        }
-                                        activateFocusMode();
-                                      }}
-                                    >
-                                      Focus
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                            })}
-                          </TableBody>
-                        </Table>
-                        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#dfe7f0] bg-[#fafbfc] px-3 py-2 text-[11px] text-[#60758a]">
-                          <div>Showing {queueRows.length} complaints from the priority queue.</div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span>Urgent {queueStatusSummary.urgent}</span>
-                            <span>Pending {queueStatusSummary.pending}</span>
-                            <span>Resolved {queueStatusSummary.resolved}</span>
+                    <div className="mt-3 rounded-2xl bg-[#FEF2F2] px-3 py-2.5 shadow-[0_6px_18px_rgba(220,38,38,0.08)]">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="mt-0.5 h-5 w-5 animate-pulse text-[#B91C1C]" />
+                          <div>
+                            <div className="text-sm font-semibold text-[#991B1B]">{t.priorityAlert}</div>
+                            <div className="text-xs text-[#B91C1C]">
+                              {summary.high_priority_count} {t.highPriority} | {summary.overdue_count} {t.overdue} | {summary.awaiting_feedback_count} {t.feedbackPending}
+                            </div>
                           </div>
                         </div>
-                      </>
-                    ) : (
-                      <div className="px-3 py-5 text-sm text-[#60758a]">No priority complaints.</div>
-                    )}
-                  </div>
-                </div>
+                        <div className="text-xs font-semibold text-[#991B1B]">{highPriorityShare}% {t.visibleLoad}</div>
+                      </div>
+                    </div>
 
-                <div className={`${PANEL_CARD} flex h-full flex-col p-3`}>
-                  <SectionHeader
-                    eyebrow="Live Monitor"
-                    title="Recent updates"
-                    compact={isCompactDesktop}
-                    trailing={<div className={SECONDARY_TEXT}>{activityFeed.length} latest signals</div>}
-                  />
+                    <div className="mt-3 overflow-hidden rounded-2xl bg-white shadow-[0_6px_20px_rgba(15,23,42,0.04)]">
+                      {queueRows.length ? (
+                        <>
+                          <div className="overflow-x-auto">
+                          <Table className="text-[12px]">
+                            <TableHeader className="sticky top-0 z-10">
+                              <TableRow className="border-b border-[#E5E7EB] bg-[#F8FAFC] hover:bg-[#F8FAFC]">
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.complaintId}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.title}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.level}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.department}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.status}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.liveState}</TableHead>
+                                <TableHead className={TABLE_HEAD_CLASS}>{t.details}</TableHead>
+                                <TableHead className={`${TABLE_HEAD_CLASS} text-right`}>{t.actions}</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {queueRows.map((complaint) => {
+                                const tone = getStatusIndicator(complaint.status);
+                                const statusBorderTone = tone.tone === 'resolved'
+                                  ? 'border-l-[#16A34A]'
+                                  : tone.tone === 'pending'
+                                    ? 'border-l-[#F59E0B]'
+                                    : 'border-l-[#DC2626]';
+                                const isExpanded = expandedComplaintId === complaint.id;
 
-                  <div className={`mt-3 flex flex-1 flex-col overflow-hidden border border-[#dfe7f0] bg-[#fafbfc]`}>
-                    {activityFeed.length ? (
-                      <div className="divide-y divide-[#e8eef5]">
-                        {activityFeed.map((item) => (
-                          <div key={item.id} className={LIST_ROW}>
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-[#0B3D91]">{item.title}</div>
-                              <div className={`mt-1 truncate ${SECONDARY_TEXT}`}>{item.meta}</div>
-                            </div>
-
-                            <div className="flex shrink-0 flex-col items-end gap-1.5">
-                              <StatusBadge tone={item.tone.tone} label={item.tone.label} />
-                              <span className={SECONDARY_TEXT}>{`${item.time} | ${item.stamp}`}</span>
+                                return (
+                                  <Fragment key={complaint.id}>
+                                  <TableRow className="border-b border-[#F1F5F9] bg-white transition-all duration-150 odd:bg-white even:bg-[#FBFCFE] hover:bg-[#F8FAFC]">
+                                    <TableCell className={`${TABLE_CELL_CLASS} border-l-4 ${statusBorderTone}`}>
+                                      <div className="font-semibold text-[#1E3A8A]">{complaint.complaint_id}</div>
+                                      <div className={SECONDARY_TEXT}>{complaint.tracking_code}</div>
+                                    </TableCell>
+                                    <TableCell className={`${TABLE_CELL_CLASS} max-w-[280px]`}>
+                                      <div className="truncate font-semibold text-[#1E3A8A]">{complaint.title}</div>
+                                      <div className={`${SECONDARY_TEXT} truncate`}>
+                                        {complaint.ward_name ?? `${t.ward} ${complaint.ward_id}`} | {complaint.assigned_officer_name || t.officerPending}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className={TABLE_CELL_CLASS}>
+                              <div className="font-medium text-[#1E3A8A]">{getLocalizedLevelLabel(complaint.current_level)}</div>
+                                      <div className={SECONDARY_TEXT}>L1 {levelCounts.L1 || 0} | L2 {(levelCounts.L2 || 0) + (levelCounts.L2_ESCALATED || 0)} | L3 {levelCounts.L3 || 0}</div>
+                                    </TableCell>
+                                    <TableCell className={TABLE_CELL_CLASS}>
+                                      <div className="font-medium text-[#1E3A8A]">{complaint.department_name || formatLabel(complaint.department)}</div>
+                                      <div className={SECONDARY_TEXT}>{complaint.category_name || formatLabel(complaint.category)}</div>
+                                    </TableCell>
+                                    <TableCell className={TABLE_CELL_CLASS}>
+                                      <StatusBadge tone={tone.tone} label={getLocalizedStatusLabel(tone.label)} />
+                                    </TableCell>
+                                    <TableCell className={TABLE_CELL_CLASS}>
+                                      <div className="font-medium text-[#1E3A8A]">{complaint.work_status || t.pending}</div>
+                                      <div className={SECONDARY_TEXT}>{getDeadlineLabel(complaint.deadline, complaint.status)} | {getRelativeTime(complaint.updated_at)}</div>
+                                    </TableCell>
+                                    <TableCell className={TABLE_CELL_CLASS}>
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-semibold text-[#1E3A8A] transition hover:bg-white active:scale-[0.98]"
+                                        onClick={() => setExpandedComplaintId((current) => current === complaint.id ? null : complaint.id)}
+                                      >
+                                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                        {isExpanded ? t.hide : t.expand}
+                                      </button>
+                                    </TableCell>
+                                    <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
+                                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                        <Button asChild size="sm" variant="outline" className="h-8 rounded-lg border-transparent bg-[#F8FAFC] px-2.5 text-[11px] font-semibold text-[#1E3A8A] transition hover:bg-[#EFF6FF] active:scale-[0.98]">
+                                          <Link href={`/admin/complaints?q=${encodeURIComponent(complaint.complaint_id)}`}>{t.assign}</Link>
+                                        </Button>
+                                        <Button asChild size="sm" variant="outline" className="h-8 rounded-lg border-transparent bg-[#FFF7ED] px-2.5 text-[11px] font-semibold text-[#B45309] transition hover:bg-[#FFEDD5] active:scale-[0.98]">
+                                          <Link href={`/admin/complaints?q=${encodeURIComponent(complaint.complaint_id)}&priority=high`}>{t.escalate}</Link>
+                                        </Button>
+                                        <Button asChild size="sm" className="h-8 rounded-lg bg-[#1E3A8A] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#1D4ED8] active:scale-[0.98]">
+                                          <Link href={`/admin/complaints?q=${encodeURIComponent(complaint.complaint_id)}`}>{t.view}</Link>
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  {isExpanded ? (
+                                    <TableRow className="border-b border-[#EEF2F7] bg-[#F8FAFC]">
+                                      <TableCell className="px-4 py-4" colSpan={8}>
+                                        <div className="grid gap-3 md:grid-cols-3">
+                                          <div className="rounded-xl border border-[#E5E7EB] bg-white p-3">
+                                            <div className={SECTION_LABEL}>{t.summary}</div>
+                                            <div className="mt-2 text-sm font-semibold text-[#1E3A8A]">{complaint.title}</div>
+                                            <div className="mt-1 text-[12px] leading-5 text-[#64748B] line-clamp-3">{complaint.text || t.noDetails}</div>
+                                          </div>
+                                          <div className="rounded-xl border border-[#E5E7EB] bg-white p-3">
+                                            <div className={SECTION_LABEL}>{t.assignment}</div>
+                                            <div className="mt-2 text-[12px] text-[#64748B]">{t.officer}: {complaint.assigned_officer_name || t.pendingAssignment}</div>
+                                            <div className="mt-1 text-[12px] text-[#64748B]">{t.zone}: {complaint.zone_name || currentZoneLabel}</div>
+                                            <div className="mt-1 text-[12px] text-[#64748B]">{t.ward}: {complaint.ward_name ?? `${t.ward} ${complaint.ward_id}`}</div>
+                                          </div>
+                                          <div className="rounded-xl border border-[#E5E7EB] bg-white p-3">
+                                            <div className={SECTION_LABEL}>{t.timing}</div>
+                                            <div className="mt-2 text-[12px] text-[#64748B]">{t.priority}: {formatLabel(complaint.priority)}</div>
+                                            <div className="mt-1 text-[12px] text-[#64748B]">{t.updated}: {formatTimestamp(complaint.updated_at)}</div>
+                                            <div className="mt-1 text-[12px] text-[#64748B]">{t.deadline}: {getDeadlineLabel(complaint.deadline, complaint.status)}</div>
+                                          </div>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : null}
+                                  </Fragment>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-[11px] text-[#64748B]">
+                            <div>{t.showing} {queueRows.length} {language === 'hi' ? 'शिकायतें' : 'complaints'} {language === 'hi' ? 'रैपिड एक्शन कतार से' : 'from the rapid action queue.'}</div>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span>{t.urgent} {queueStatusSummary.urgent}</span>
+                              <span>{t.pending} {queueStatusSummary.pending}</span>
+                              <span>{t.resolved} {queueStatusSummary.resolved}</span>
                             </div>
                           </div>
-                        ))}
+                        </>
+                      ) : (
+                        <div className="px-4 py-8 text-sm text-[#64748B]">{t.noPriorityComplaints}</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className={`${PANEL_CARD} p-3`}>
+                    <div className="flex items-center justify-between border-b border-[#EEF2F7] pb-3">
+                      <div>
+                        <div className={SECTION_LABEL}>{t.updates}</div>
+                        <h2 className="mt-1 text-base font-semibold text-[#0F172A]">{t.liveFeed}</h2>
                       </div>
-                    ) : (
-                      <div className="px-3 py-5 text-sm text-[#60758a]">No recent updates.</div>
-                    )}
-                  </div>
+                      <span className={SECONDARY_TEXT}>{activityFeed.length} {t.recentUpdates}</span>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {activityFeed.length ? (
+                        activityFeed.map((item) => (
+                          <div key={item.id} className="rounded-xl bg-[#F8FAFC] p-3 transition-all duration-200 hover:bg-white hover:shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-[#1E3A8A]">{item.title}</div>
+                                <div className={`mt-1 truncate ${SECONDARY_TEXT}`}>{item.meta}</div>
+                              </div>
+                              <StatusBadge tone={item.tone.tone} label={getLocalizedStatusLabel(item.tone.label)} />
+                            </div>
+                            <div className="mt-2 text-[11px] text-[#64748B]">{`${item.time} | ${item.stamp}`}</div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-3 py-5 text-sm text-[#64748B]">{t.noRecentUpdates}</div>
+                      )}
+                    </div>
+                  </section>
                 </div>
-              </section>
 
-              <section className={`${PANEL_CARD} bg-[#fafbfc] p-3`}>
-                <SectionHeader
-                  eyebrow="Analytics"
-                  title="Queue analytics"
-                  compact={isCompactDesktop}
-                  trailing={
-                    <span className={MONITORING_BADGE}>
-                      <Activity className="h-3.5 w-3.5" />
-                      Live monitoring
-                    </span>
-                  }
-                />
-
-                <div className={`mt-3 ${analyticsGridClass}`}>
-                  <div className={`${SUB_CARD} p-3`}>
-                    <div className={SECTION_LABEL}>Department Load</div>
-                    <div className="mt-3 space-y-3">
-                      {summary.department_breakdown.length ? (
-                        summary.department_breakdown.slice(0, 6).map((item) => {
-                          const width = Math.max(18, Math.round((item.count / summary.department_breakdown[0].count) * 100));
-
-                          return (
-                            <div key={`${item.department_id ?? 'unassigned'}-${item.department_name}`} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
-                              <div className="flex items-center justify-between gap-3 text-[12px]">
-                                <span className="font-semibold text-[#0B3D91]">{item.department_name}</span>
-                                <span className={SECONDARY_TEXT}>{item.open_count} open</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-[#e8eef5]">
-                                <div className="h-full rounded-full bg-[#FF9933]" style={{ width: `${width}%` }} />
-                              </div>
-                              <div className={SECONDARY_TEXT}>{item.count} total complaints mapped to this department</div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-sm text-[#60758a]">No department load.</div>
-                      )}
+                <aside className="space-y-4">
+                  <section className={`${PANEL_CARD} p-3`}>
+                    <div className="flex items-center justify-between border-b border-[#EEF2F7] pb-3">
+                      <div>
+                        <div className={SECTION_LABEL}>{t.analytics}</div>
+                        <h2 className="mt-1 text-base font-semibold text-[#0F172A]">{t.analytics}</h2>
+                      </div>
+                      <span className={MONITORING_BADGE}>
+                        <Activity className="h-3.5 w-3.5" />
+                        {t.liveMonitoring}
+                      </span>
                     </div>
-                  </div>
 
-                  <div className={`${SUB_CARD} p-3`}>
-                    <div className={SECTION_LABEL}>Officer Load</div>
                     <div className="mt-3 space-y-3">
-                      {orderedLevelData.length ? (
-                        orderedLevelData.map((level) => {
-                          const width = Math.max(18, Math.round((level.count / orderedLevelData[0].count) * 100));
-
-                          return (
-                            <div key={level.key} className="space-y-1.5 border-t border-[#edf2f7] pt-2 first:border-t-0 first:pt-0">
-                              <div className="flex items-center justify-between gap-3 text-[12px]">
-                                <span className="font-semibold text-[#0B3D91]">{level.label}</span>
-                                <span className={SECONDARY_TEXT}>{level.count}</span>
+                      <div className={`${SUB_CARD} p-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className={SECTION_LABEL}>{t.complaintTrend}</div>
+                          <span className="text-[11px] font-semibold text-[#64748B]">{t.recentUpdateRhythm}</span>
+                        </div>
+                        <div className="mt-3 flex items-end justify-between gap-2">
+                          {trendBars.map((height, index) => (
+                            <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                              <div className="flex h-20 w-full items-end rounded-lg bg-white px-1.5 py-1">
+                                <div
+                                  className="w-full rounded-md bg-[linear-gradient(180deg,#60A5FA_0%,#1E3A8A_100%)] transition-all duration-300"
+                                  style={{ height: `${height}%` }}
+                                />
                               </div>
-                              <div className="h-1.5 rounded-full bg-[#e8eef5]">
-                                <div className="h-full rounded-full bg-[#0B3D91]" style={{ width: `${width}%` }} />
-                              </div>
-                              <div className={SECONDARY_TEXT}>{level.share}% of visible officer workflow load</div>
+                              <span className="text-[10px] text-[#64748B]">T{index + 1}</span>
                             </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-sm text-[#60758a]">No officer load.</div>
-                      )}
-                    </div>
-                  </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 text-[11px] text-[#64748B]">
+                          {t.topDept}: <span className="font-semibold text-[#1E3A8A]">{leadDepartment}</span> | {t.peak}: <span className="font-semibold text-[#1E3A8A]">{peakHourLabel}</span>
+                        </div>
+                      </div>
 
-                  <div className={`${SUB_CARD} p-3`}>
-                    <div className={SECTION_LABEL}>Zone and Ward Watch</div>
-                    <div className="mt-3 space-y-2">
+                      <div className={`${SUB_CARD} p-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className={SECTION_LABEL}>{t.openQueue}</div>
+                          <span className="text-xs font-semibold text-[#1E3A8A]">{openShare}%</span>
+                        </div>
+                        <div className="mt-2 flex items-end justify-between">
+                          <div className="text-2xl font-bold text-[#1E3A8A]">{summary.open_count}</div>
+                          <div className="flex items-end gap-1">
+                            {[40, 60, 48, 72, 64].map((height, index) => (
+                              <span key={index} className="w-2 rounded-full bg-[#93C5FD]" style={{ height }} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-3 h-2 rounded-full bg-[#E5E7EB]">
+                          <div className="h-full rounded-full bg-[#1E3A8A]" style={{ width: `${Math.max(openShare, 8)}%` }} />
+                        </div>
+                      </div>
+
+                      <div className={`${SUB_CARD} p-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className={SECTION_LABEL}>{t.levelDistribution}</div>
+                          <Gauge className="h-4 w-4 text-[#1E3A8A]" />
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          {orderedLevelData.length ? (
+                            orderedLevelData.map((level) => (
+                              <div key={level.key} className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[12px]">
+                                  <span className="font-semibold text-[#1E3A8A]">{level.label}</span>
+                                  <span className="text-[#64748B]">{level.count} | {level.share}%</span>
+                                </div>
+                                <div className="h-2 rounded-full bg-[#E5E7EB]">
+                                  <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${Math.max(level.share, 10)}%` }} />
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-sm text-[#64748B]">{t.noOfficerLoad}</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className={`${SUB_CARD} p-3`}>
+                        <div className="flex items-center justify-between">
+                          <div className={SECTION_LABEL}>{t.departmentPressure}</div>
+                          <ShieldAlert className="h-4 w-4 text-[#B45309]" />
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          {departmentCards.length ? (
+                            departmentCards.map((item) => {
+                              const share = summary.department_breakdown[0]?.count ? Math.round((item.count / summary.department_breakdown[0].count) * 100) : 0;
+                              return (
+                                <div key={`${item.department_id ?? 'unassigned'}-${item.department_name}`} className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[12px]">
+                                    <span className="font-semibold text-[#1E3A8A]">{item.department_name}</span>
+                                    <span className="text-[#64748B]">{item.open_count} {t.open}</span>
+                                  </div>
+                                  <div className="h-2 rounded-full bg-[#E5E7EB]">
+                                    <div className="h-full rounded-full bg-[#F59E0B]" style={{ width: `${Math.max(share, 12)}%` }} />
+                                  </div>
+                                  <div className="text-[11px] text-[#64748B]">{item.count} {t.totalComplaintsSuffix}</div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-sm text-[#64748B]">{t.noDepartmentLoad}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className={`${PANEL_CARD} p-3`}>
+                    <div className="flex items-center justify-between border-b border-[#EEF2F7] pb-3">
+                      <div>
+                        <div className={SECTION_LABEL}>{t.zoneWatch}</div>
+                        <h2 className="mt-1 text-base font-semibold text-[#0F172A]">{t.zones}</h2>
+                      </div>
+                      <MapPinned className="h-4 w-4 text-[#1E3A8A]" />
+                    </div>
+
+                    <div className="mt-4 space-y-3">
                       {wardWatchlist.length ? (
                         wardWatchlist.map((ward) => {
                           const hotspot = hotspotWardIds.has(ward.ward_id);
                           const wardMeta = wards.find((item) => item.id === ward.ward_id);
 
                           return (
-                            <div key={ward.ward_id} className="flex items-center justify-between gap-3 border border-[#e8eef5] bg-white px-2.5 py-2">
-                              <div className="min-w-0">
-                                <div className="truncate text-[12px] font-semibold text-[#0B3D91]">{ward.ward_name}</div>
-                                <div className={`mt-0.5 ${SECONDARY_TEXT}`}>{wardMeta?.zone_name || 'Unassigned zone'} | {ward.count} complaints</div>
+                            <button
+                              type="button"
+                              key={ward.ward_id}
+                            className="block w-full rounded-xl bg-[#F8FAFC] p-3 text-left transition-all duration-200 hover:bg-white hover:shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+                              onClick={() => activateFocusMode()}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-[#1E3A8A]">{ward.ward_name}</div>
+                                  <div className="mt-1 text-[11px] text-[#64748B]">{wardMeta?.zone_name || t.unassignedZone} | {ward.count} {language === 'hi' ? 'शिकायतें' : 'complaints'}</div>
+                                </div>
+                                <StatusBadge tone={hotspot ? 'pending' : 'neutral'} label={hotspot ? t.hotspot : t.monitor} />
                               </div>
-                              <StatusBadge tone={hotspot ? 'pending' : 'neutral'} label={hotspot ? 'Hotspot' : 'Monitor'} />
-                            </div>
+                            </button>
                           );
                         })
                       ) : (
-                        <div className="text-sm text-[#60758a]">No ward watchlist.</div>
+                        <div className="text-sm text-[#64748B]">{t.noWardWatchlist}</div>
                       )}
-                      <div className="grid gap-2 pt-2">
-                        {summary.zone_breakdown.map((zone) => (
-                          <div key={`${zone.zone_id ?? 'unassigned'}-${zone.zone_name}`} className="flex items-center justify-between border border-[#e8eef5] bg-white px-2.5 py-2">
+
+                      <div className="grid gap-3 pt-1">
+                        {zoneCards.map((zone) => (
+                          <button
+                            type="button"
+                            key={`${zone.zone_id ?? 'unassigned'}-${zone.zone_name}`}
+                            className="flex items-center justify-between rounded-xl bg-[#F8FAFC] px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+                            onClick={() => {
+                              if (zone.zone_id != null) {
+                                setZoneFilter(String(zone.zone_id));
+                              }
+                              activateFocusMode();
+                            }}
+                          >
                             <div>
-                              <div className="text-[12px] font-semibold text-[#0B3D91]">{zone.zone_name}</div>
-                              <div className={SECONDARY_TEXT}>{zone.open_count} open of {zone.count} total</div>
+                              <div className="text-sm font-semibold text-[#1E3A8A]">{zone.zone_name}</div>
+                              <div className="mt-1 text-[11px] text-[#64748B]">{zone.open_count} {t.openOfTotal} {zone.count} {language === 'hi' ? 'कुल' : 'total'}</div>
                             </div>
-                            <StatusBadge tone={zone.open_count > 0 ? 'pending' : 'resolved'} label={zone.open_count > 0 ? 'Active' : 'Clear'} />
-                          </div>
+                            <StatusBadge
+                              tone={zone.open_count >= 10 ? 'urgent' : zone.open_count > 0 ? 'pending' : 'resolved'}
+                              label={zone.open_count >= 10 ? t.hotspot : zone.open_count > 0 ? t.active : t.monitor}
+                            />
+                          </button>
                         ))}
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </section>
+
+                </aside>
               </section>
             </div>
           </div>

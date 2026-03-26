@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { useOptionalAdminWorkspace } from '@/components/admin-workspace'
 import { Header } from '@/components/header'
 import { Sidebar } from '@/components/sidebar'
@@ -15,6 +16,26 @@ interface DashboardLayoutProps {
   userRole?: UserRole
   userName?: string
   compactCitizenHeader?: boolean
+}
+
+const TITLE_TRANSLATIONS: Record<string, { en: string; hi: string }> = {
+  Dashboard: { en: 'Dashboard', hi: 'डैशबोर्ड' },
+  'Complaint Queue': { en: 'Complaint Queue', hi: 'शिकायत कतार' },
+  Reports: { en: 'Reports', hi: 'रिपोर्ट' },
+  'Officer Roster': { en: 'Officer Roster', hi: 'अधिकारी रोस्टर' },
+  'Field Operations': { en: 'Field Operations', hi: 'फील्ड संचालन' },
+  'Assigned Tasks': { en: 'Assigned Tasks', hi: 'आवंटित कार्य' },
+  'Submit Update': { en: 'Submit Update', hi: 'अपडेट जमा करें' },
+  'Department Head Dashboard': { en: 'Department Head Dashboard', hi: 'विभाग प्रमुख डैशबोर्ड' },
+  'Department Head Reports': { en: 'Department Head Reports', hi: 'विभाग प्रमुख रिपोर्ट' },
+  'Department Head Trends': { en: 'Department Head Trends', hi: 'विभाग प्रमुख रुझान' },
+  'Department Head Ward Comparison': { en: 'Department Head Ward Comparison', hi: 'विभाग प्रमुख वार्ड तुलना' },
+  'Complaint Tracker': { en: 'Complaint Tracker', hi: 'शिकायत ट्रैकर' },
+  'Raise Complaint': { en: 'Raise Complaint', hi: 'शिकायत दर्ज करें' },
+  'L2 Dashboard': { en: 'L2 Dashboard', hi: 'L2 डैशबोर्ड' },
+  'L3 Dashboard': { en: 'L3 Dashboard', hi: 'L3 डैशबोर्ड' },
+  'L1 Update Desk': { en: 'L1 Update Desk', hi: 'L1 अपडेट डेस्क' },
+  'L2 Update Desk': { en: 'L2 Update Desk', hi: 'L2 अपडेट डेस्क' },
 }
 
 function AdminIdentityBar({ isExpanded }: { isExpanded: boolean }) {
@@ -38,6 +59,7 @@ export function DashboardLayout({
   userName,
   compactCitizenHeader = false,
 }: DashboardLayoutProps) {
+  const { language } = useLandingLanguage()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const session = useSession()
@@ -45,6 +67,7 @@ export function DashboardLayout({
   const resolvedRole = userRole ?? session?.role ?? 'citizen'
   const resolvedName = userName ?? session?.name ?? 'GovCRM User'
   const isAdmin = resolvedRole === 'admin'
+  const resolvedTitle = TITLE_TRANSLATIONS[title]?.[language] ?? title
 
   if (isAdmin) {
     if (!workspace) {
@@ -66,7 +89,7 @@ export function DashboardLayout({
           />
           <div className="flex min-h-0 flex-1 flex-col bg-transparent">
             <Header
-              title={title}
+              title={resolvedTitle}
               userRole={resolvedRole}
               userName={resolvedName}
               onMenuClick={workspace.toggleSidebar}
@@ -101,7 +124,7 @@ export function DashboardLayout({
       />
       <div className={cn('flex min-h-screen flex-1 flex-col', isAdmin ? 'bg-[#f4f6f8]' : '')}>
         <Header
-          title={title}
+          title={resolvedTitle}
           userRole={resolvedRole}
           userName={resolvedName}
           onMenuClick={() => setSidebarOpen((open) => !open)}

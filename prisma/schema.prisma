@@ -45,6 +45,7 @@ model Ward {
   city            String           @default("Delhi")
   created_at      DateTime         @default(now()) @db.Timestamptz(6)
   complaints      Complaint[]
+  issue_groups    IssueGroup[]
   mappings        OfficerMapping[]
   officers        Officer[]
   workers         Worker[]
@@ -72,6 +73,7 @@ model Category {
   department_id Int
   created_at    DateTime         @default(now()) @db.Timestamptz(6)
   complaints    Complaint[]
+  issue_groups  IssueGroup[]
   department    DepartmentRecord @relation(fields: [department_id], references: [id], onDelete: Cascade)
   mappings      OfficerMapping[]
 
@@ -147,6 +149,9 @@ model Complaint {
   id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tracking_code        String            @unique
   user_id              String            @db.Uuid
+  issue_group_id       String?           @db.Uuid
+  parent_complaint_id  String?           @db.Uuid
+  is_primary           Boolean           @default(true)
   applicant_name       String?
   applicant_mobile     String?
   applicant_email      String?
@@ -195,6 +200,10 @@ model Complaint {
   worker_assigned      Boolean           @default(false)
   history              ComplaintHistory[]
   updates              ComplaintUpdate[]
+  issue_group          IssueGroup?       @relation("IssueGroupComplaints", fields: [issue_group_id], references: [id], onDelete: SetNull)
+  parent_complaint     Complaint?        @relation("ComplaintIssueHierarchy", fields: [parent_complaint_id], references: [id], onDelete: SetNull)
+  joined_complaints    Complaint[]       @relation("ComplaintIssueHierarchy")
+  primary_issue_group  IssueGroup[]      @relation("IssueGroupPrimaryComplaint")
   assigned_officer     Officer?          @relation("ComplaintOfficerAssignment", fields: [assigned_officer_id], references: [id])
   assigned_worker      Worker?           @relation("ComplaintAssignment", fields: [assigned_worker_id], references: [id])
   category_record      Category?         @relation(fields: [category_id], references: [id], onDelete: SetNull)
@@ -207,6 +216,8 @@ model Complaint {
   rating               Rating?
 
   @@index([zone_id], map: "idx_complaints_zone_id")
+  @@index([issue_group_id], map: "idx_complaints_issue_group_id")
+  @@index([parent_complaint_id], map: "idx_complaints_parent_complaint_id")
   @@index([department_id], map: "idx_complaints_department_id")
   @@index([category_id], map: "idx_complaints_category_id")
   @@index([assigned_officer_id], map: "idx_complaints_assigned_officer_id")
@@ -220,6 +231,24 @@ model Complaint {
   @@index([ward_id, priority, status, created_at(sort: Desc)], map: "idx_complaints_ward_priority_status_created")
   @@index([department, ward_id, status, created_at(sort: Desc)], map: "idx_complaints_department_ward_status_created")
   @@map("complaints")
+}
+
+model IssueGroup {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ward_id              Int
+  category_id          Int
+  primary_complaint_id String?           @db.Uuid
+  supporter_count      Int               @default(1)
+  priority             ComplaintPriority @default(low)
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  ward                 Ward              @relation(fields: [ward_id], references: [id], onDelete: Cascade)
+  category             Category          @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  primary_complaint    Complaint?        @relation("IssueGroupPrimaryComplaint", fields: [primary_complaint_id], references: [id], onDelete: SetNull)
+  complaints           Complaint[]       @relation("IssueGroupComplaints")
+
+  @@index([ward_id, category_id, created_at(sort: Desc)], map: "idx_issue_groups_detection")
+  @@index([primary_complaint_id], map: "idx_issue_groups_primary_complaint_id")
+  @@map("issue_groups")
 }
 
 model ComplaintHistory {
@@ -272,6 +301,19 @@ model ComplaintProof {
 
   @@index([complaint_id, created_at(sort: Desc)], map: "idx_complaint_proofs_complaint")
   @@map("complaint_proofs")
+}
+
+model FileUpload {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stored_name  String
+  original_name String
+  content_type String
+  size         Int
+  file_data    Bytes
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)], map: "idx_file_uploads_created")
+  @@map("file_uploads")
 }
 
 model notifications {
@@ -376,6 +418,9 @@ enum DepartmentName {
 
   @@map("department_name")
 }
+
+
+
 
 
 

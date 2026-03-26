@@ -51,6 +51,150 @@ export type ComplaintTrackerSnapshot = {
   isRejected: boolean;
 };
 
+export type TrackerLanguage = 'en' | 'hi';
+
+function translateTrackerText(value: string | null | undefined, language: TrackerLanguage) {
+  if (!value || language === 'en') {
+    return value || '';
+  }
+
+  const exactMap: Record<string, string> = {
+    Completed: 'पूर्ण',
+    Live: 'सक्रिय',
+    Pending: 'लंबित',
+    'Pending action': 'कार्रवाई लंबित',
+    'Not yet updated': 'अभी अपडेट नहीं हुआ',
+    Low: 'निम्न',
+    Medium: 'मध्यम',
+    High: 'उच्च',
+    'Complaint Received': 'शिकायत प्राप्त',
+    'Review And Assignment': 'समीक्षा और आवंटन',
+    'Field Action': 'मैदानी कार्रवाई',
+    'Completion Verification': 'पूर्णता सत्यापन',
+    'Formal Closure': 'औपचारिक समापन',
+    'Review And Assignment Desk': 'समीक्षा और आवंटन डेस्क',
+    'Intake Desk': 'इनटेक डेस्क',
+    'Pending assignment': 'आवंटन लंबित',
+    'Citizen Feedback Pending': 'नागरिक फीडबैक लंबित',
+    'Citizen Verification Pending': 'नागरिक सत्यापन लंबित',
+    'Review Decision Pending': 'समीक्षा निर्णय लंबित',
+    'Level 2 Review Decision Pending': 'स्तर 2 समीक्षा निर्णय लंबित',
+    'Complaint Closed': 'शिकायत बंद',
+    'Work Started': 'कार्य शुरू',
+    'On Site': 'स्थल पर',
+    'Submitted': 'जमा किया गया',
+    'Completion And Verification': 'पूर्णता और सत्यापन',
+    'Complaint Closure': 'शिकायत समापन',
+    'Closure Review Desk': 'समापन समीक्षा डेस्क',
+    'Senior Closure Review Desk': 'वरिष्ठ समापन समीक्षा डेस्क',
+    'Level 2 Review Desk': 'स्तर 2 समीक्षा डेस्क',
+    'Closed In Official Record': 'आधिकारिक अभिलेख में बंद',
+    'Returned For Rework': 'पुनःकार्य हेतु वापस',
+    'Awaiting closure review': 'समापन समीक्षा लंबित',
+    'Waiting for citizen feedback': 'नागरिक फीडबैक की प्रतीक्षा है',
+    'Senior monitoring active': 'वरिष्ठ निगरानी सक्रिय',
+    'Field action in progress': 'मैदानी कार्रवाई प्रगति पर है',
+    'Review Halted': 'समीक्षा रुकी हुई',
+    'Action Delay Recorded': 'कार्रवाई में विलंब दर्ज',
+    'Senior Monitoring Active': 'वरिष्ठ निगरानी सक्रिय',
+    'Returned For Further Review': 'अतिरिक्त समीक्षा हेतु वापस',
+    'Complaint Expired': 'शिकायत समाप्त',
+    'Awaiting Level 2 Closure': 'स्तर 2 समापन लंबित',
+    'Awaiting Formal Closure': 'औपचारिक समापन लंबित',
+    'Waiting For Citizen Feedback': 'नागरिक फीडबैक की प्रतीक्षा है',
+    'Completion Evidence Uploaded': 'पूर्णता प्रमाण अपलोड किया गया',
+    'Reviewed For Action': 'कार्रवाई हेतु समीक्षा पूर्ण',
+    'Field Action In Progress': 'मैदानी कार्रवाई प्रगति पर',
+    'Level 2 Supervision Active': 'स्तर 2 पर्यवेक्षण सक्रिय',
+    'Under Supervisory Review': 'पर्यवेक्षी समीक्षा के अंतर्गत',
+    'Cleanliness (Swachhta)': 'स्वच्छता',
+  };
+
+  if (exactMap[value]) {
+    return exactMap[value];
+  }
+
+  const regexRules: Array<[RegExp, (...args: string[]) => string]> = [
+    [/^Complaint registered in the (.+) workflow with (.+) priority\.$/, (dept, priority) => `${dept} वर्कफ़्लो में ${translateTrackerText(priority.charAt(0).toUpperCase() + priority.slice(1), 'hi')?.toLowerCase()} प्राथमिकता के साथ शिकायत दर्ज की गई।`],
+    [/^Your complaint has been registered successfully and entered into the official service workflow\.$/, () => 'आपकी शिकायत सफलतापूर्वक दर्ज हो गई है और आधिकारिक सेवा वर्कफ़्लो में शामिल कर दी गई है।'],
+    [/^The complaint has been reviewed and assigned for field handling\.$/, () => 'शिकायत की समीक्षा कर उसे मैदानी कार्रवाई के लिए आवंटित किया गया है।'],
+    [/^Initial review and assignment have been recorded for field handling\.$/, () => 'मैदानी कार्रवाई हेतु प्रारंभिक समीक्षा और आवंटन दर्ज कर लिया गया है।'],
+    [/^The assigned field desk has reviewed the complaint details and prepared the next action\.$/, () => 'आवंटित फील्ड डेस्क ने शिकायत विवरण की समीक्षा कर अगली कार्रवाई तैयार की है।'],
+    [/^Official municipal tracking entry$/, () => 'आधिकारिक नगर निगम ट्रैकिंग प्रविष्टि'],
+    [/^received$/, () => 'प्राप्त'],
+    [/^review assignment$/, () => 'समीक्षा आवंटन'],
+    [/^field action$/, () => 'मैदानी कार्रवाई'],
+    [/^completion verification$/, () => 'पूर्णता सत्यापन'],
+    [/^closure$/, () => 'समापन'],
+  ];
+
+  for (const [pattern, replacer] of regexRules) {
+    const match = value.match(pattern);
+    if (match) {
+      return replacer(...match.slice(1));
+    }
+  }
+
+  const extraExactMap: Record<string, string> = {
+    'Citizen feedback indicates that additional work or review is required before the complaint can close.':
+      'नागरिक फीडबैक से संकेत मिलता है कि शिकायत बंद होने से पहले अतिरिक्त कार्य या समीक्षा आवश्यक है।',
+    'Citizen verification is complete and the complaint is under final departmental closure review.':
+      'नागरिक सत्यापन पूरा हो चुका है और शिकायत अंतिम विभागीय समापन समीक्षा के अंतर्गत है।',
+    'Citizen feedback has reached the active review desk for closure decision.':
+      'नागरिक फीडबैक समापन निर्णय हेतु सक्रिय समीक्षा डेस्क तक पहुंच गया है।',
+    'Citizen verification is complete and the complaint is awaiting formal closure review.':
+      'नागरिक सत्यापन पूरा हो चुका है और शिकायत औपचारिक समापन समीक्षा की प्रतीक्षा में है।',
+    'Citizen verification is complete and the complaint is waiting for the Level 2 review desk to close it or reopen it.':
+      'नागरिक सत्यापन पूरा हो चुका है और शिकायत के बंद या पुनःखोलने के निर्णय हेतु स्तर 2 समीक्षा डेस्क की प्रतीक्षा है।',
+    'Citizen feedback has been recorded and sent to the Level 2 review desk for the final close or reopen decision.':
+      'नागरिक फीडबैक दर्ज कर स्तर 2 समीक्षा डेस्क को अंतिम बंद या पुनःखोलने के निर्णय हेतु भेज दिया गया है।',
+    'Work completion evidence is ready. Submit citizen feedback now and it will be routed to the Level 2 review desk.':
+      'कार्य पूर्णता प्रमाण तैयार है। अब नागरिक फीडबैक जमा करें, जिसे स्तर 2 समीक्षा डेस्क को भेजा जाएगा।',
+    'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.':
+      'कार्य पूर्णता प्रमाण तैयार है। नागरिक फीडबैक शिकायत को अंतिम समीक्षा चक्र में आगे बढ़ाएगा।',
+  };
+
+  if (extraExactMap[value]) {
+    return extraExactMap[value];
+  }
+
+  return value;
+}
+
+function localizeTrackerSnapshot(snapshot: ComplaintTrackerSnapshot, language: TrackerLanguage): ComplaintTrackerSnapshot {
+  if (language === 'en') {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    headline: translateTrackerText(snapshot.headline, language),
+    subheadline: translateTrackerText(snapshot.subheadline, language),
+    humanStatus: translateTrackerText(snapshot.humanStatus, language),
+    supportLine: translateTrackerText(snapshot.supportLine, language),
+    priorityLabel: translateTrackerText(snapshot.priorityLabel, language),
+    currentStageTitle: translateTrackerText(snapshot.currentStageTitle, language),
+    liveMessage: translateTrackerText(snapshot.liveMessage, language),
+    assignmentLabel: translateTrackerText(snapshot.assignmentLabel, language) || null,
+    assignmentDescription: translateTrackerText(snapshot.assignmentDescription, language) || null,
+    assignmentStatusLabel: translateTrackerText(snapshot.assignmentStatusLabel, language),
+    feedbackDeskLabel: translateTrackerText(snapshot.feedbackDeskLabel, language) || null,
+    feedbackDeskDescription: translateTrackerText(snapshot.feedbackDeskDescription, language) || null,
+    timeline: snapshot.timeline.map((step) => ({
+      ...step,
+      title: translateTrackerText(step.title, language),
+      description: translateTrackerText(step.description, language),
+      timestampLabel: translateTrackerText(step.timestampLabel, language),
+    })),
+    phaseHighlights: Object.fromEntries(
+      Object.entries(snapshot.phaseHighlights).map(([key, highlights]) => [
+        key,
+        highlights.map((highlight) => translateTrackerText(highlight, language)),
+      ]),
+    ) as ComplaintTrackerSnapshot['phaseHighlights'],
+  };
+}
+
 function formatStatusTitle(status: ComplaintUpdate['status']) {
   return status
     .split('_')
@@ -76,6 +220,14 @@ export function normalizeCitizenFacingNote(note?: string | null) {
     lower.includes('pending at l2 for official review')
   ) {
     return 'The L1 action window was missed, so L2 supervisory monitoring is now active.';
+  }
+
+  if (
+    lower.includes('forwarded the complaint to level 2 for supervision while level 1 continues field work') ||
+    (lower.includes('forwarded the complaint to level 2') && lower.includes('continues field work')) ||
+    lower.includes('forwarded by the assigned level 1 officer to level 2 supervision')
+  ) {
+    return 'The complaint has been manually moved under Level 2 supervision. Level 1 continues field work with an extended timeline, and Level 2 will take the final close or reopen decision after citizen feedback.';
   }
 
   if (
@@ -112,7 +264,8 @@ export function normalizeCitizenFacingNote(note?: string | null) {
   if (
     lower.includes('complaint resolved by the level 3 officer') ||
     lower.includes('resolved at l3 with uploaded proof') ||
-    lower.includes('complaint completed by the assigned l1 officer and is awaiting citizen feedback')
+    lower.includes('complaint completed by the assigned l1 officer and is awaiting citizen feedback') ||
+    lower.includes('complaint completed by the assigned l1 officer under level 2 supervision and is awaiting citizen feedback before final level 2 review')
   ) {
     return 'Work completion has been recorded and citizen verification is pending.';
   }
@@ -245,7 +398,11 @@ function findLatestUpdateByNote(updates: ComplaintUpdate[], matcher: (note: stri
   return [...updates].reverse().find((update) => matcher(update.note?.toLowerCase() || '')) || null;
 }
 
-function formatDepartmentLabel(department: string) {
+function formatDepartmentLabel(department?: string | null) {
+  if (!department) {
+    return 'Not assigned';
+  }
+
   return department
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -294,12 +451,26 @@ function hasAssignmentActivity(complaint: Complaint) {
   );
 }
 
+function isDirectReworkStartPending(complaint: Complaint) {
+  return complaint.status === 'reopened' && (!complaint.work_status || complaint.work_status === 'Pending');
+}
+
 function isUnderSeniorMonitoring(complaint: Complaint) {
   return complaint.status === 'l2_deadline_missed' || complaint.status === 'l3_failed_back_to_l2' || complaint.current_level === 'L3';
 }
 
 function isUnderSupervisoryMonitoring(complaint: Complaint) {
   return complaint.status === 'l1_deadline_missed' || complaint.current_level === 'L2' || complaint.current_level === 'L2_ESCALATED';
+}
+
+function isManualL1ForwardToL2(complaint: Complaint) {
+  const message = `${complaint.department_message || ''}`.toLowerCase();
+
+  return (
+    message.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+    message.includes('under level 2 supervision') ||
+    message.includes('final level 2 review')
+  );
 }
 
 function pushUniquePhaseHighlight(
@@ -421,6 +592,7 @@ function buildAssignmentSummary(input: {
   isExpired: boolean;
 }) {
   const { complaint, awaitingClosureReview, waitingForFeedback, reopenedForRework, isClosed, isExpired } = input;
+  const manualL2Forward = isManualL1ForwardToL2(complaint);
 
   if (isClosed) {
     return {
@@ -440,19 +612,49 @@ function buildAssignmentSummary(input: {
 
   if (awaitingClosureReview) {
     return {
-      assignmentLabel: isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk',
+      assignmentLabel: isUnderSeniorMonitoring(complaint)
+        ? 'Senior Closure Review Desk'
+        : manualL2Forward
+          ? 'Level 2 Review Desk'
+          : 'Closure Review Desk',
       assignmentDescription: isUnderSeniorMonitoring(complaint)
         ? 'Citizen verification is complete, but the closure review crossed its timeline and is now under senior monitoring.'
-        : 'Citizen verification is complete and the complaint is awaiting formal closure review.',
-      assignmentStatusLabel: isUnderSeniorMonitoring(complaint) ? 'Senior closure monitoring' : 'Awaiting closure review',
+        : manualL2Forward
+          ? 'Citizen verification is complete and the complaint is waiting for the Level 2 review desk to close it or reopen it.'
+          : 'Citizen verification is complete and the complaint is awaiting formal closure review.',
+      assignmentStatusLabel: isUnderSeniorMonitoring(complaint)
+        ? 'Senior closure monitoring'
+        : manualL2Forward
+          ? 'Awaiting Level 2 review'
+          : 'Awaiting closure review',
     };
   }
 
   if (reopenedForRework) {
     return {
       assignmentLabel: 'Field Action Desk',
-      assignmentDescription: 'The complaint has been reopened for fresh field action after citizen review.',
+      assignmentDescription: isDirectReworkStartPending(complaint)
+        ? 'The complaint has been reopened for fresh field action after citizen review. The new rework cycle can restart directly from work start.'
+        : 'The complaint has been reopened for fresh field action after citizen review.',
       assignmentStatusLabel: 'Reopened for rework',
+    };
+  }
+
+  if (waitingForFeedback) {
+    return {
+      assignmentLabel: 'Citizen Verification Desk',
+      assignmentDescription: manualL2Forward
+        ? 'Work completion evidence is ready. Citizen feedback is now open and will be routed to the Level 2 review desk for the final decision.'
+        : 'Work completion evidence is available and the complaint is waiting for citizen verification.',
+      assignmentStatusLabel: 'Waiting for citizen feedback',
+    };
+  }
+
+  if (manualL2Forward) {
+    return {
+      assignmentLabel: 'Level 2 Supervision Desk',
+      assignmentDescription: 'Level 2 supervision is active after a manual L1 forward. Level 1 continues field work under the extended service timeline.',
+      assignmentStatusLabel: 'L2 supervision active',
     };
   }
 
@@ -480,14 +682,6 @@ function buildAssignmentSummary(input: {
     };
   }
 
-  if (waitingForFeedback) {
-    return {
-      assignmentLabel: 'Citizen Verification Desk',
-      assignmentDescription: 'Work completion evidence is available and the complaint is waiting for citizen verification.',
-      assignmentStatusLabel: 'Waiting for citizen feedback',
-    };
-  }
-
   if (complaint.current_level === 'L1' || complaint.assigned_officer_id || complaint.assigned_to) {
     return {
       assignmentLabel: 'Review And Assignment Desk',
@@ -503,10 +697,10 @@ function buildAssignmentSummary(input: {
   };
 }
 
-export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTrackerSnapshot {
+export function buildComplaintTrackerSnapshot(complaint: Complaint, language: TrackerLanguage = 'en'): ComplaintTrackerSnapshot {
   const updates = sortUpdatesAsc(complaint.updates);
   const departmentMessage = normalizeCitizenFacingNote(complaint.department_message) || null;
-  const departmentLabel = formatDepartmentLabel(complaint.department);
+  const departmentLabel = complaint.department_name?.trim() || formatDepartmentLabel(complaint.department);
   const priorityLabel = formatPriorityLabel(complaint.priority);
   const satisfaction = normalizeComplaintSatisfaction(complaint);
 
@@ -586,7 +780,9 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
 
   const fieldActionDescription =
     reopenedForRework
-      ? 'Fresh field action is required because the complaint was reopened after citizen review.'
+      ? isDirectReworkStartPending(complaint)
+        ? 'Fresh field action is required because the complaint was reopened after citizen review, and the team can restart directly from work start in this new cycle.'
+        : 'Fresh field action is required because the complaint was reopened after citizen review.'
       : proofSubmitted || complaint.status === 'resolved' || complaint.status === 'closed'
         ? 'Field action was carried out and completion proof is now part of the official record.'
         : complaint.work_status === 'On Site'
@@ -631,6 +827,13 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     phaseHighlights,
     'received',
     `Complaint registered in the ${departmentLabel} workflow with ${priorityLabel.toLowerCase()} priority.`,
+  );
+  pushUniquePhaseHighlight(
+    phaseHighlights,
+    'review_assignment',
+    isManualL1ForwardToL2(complaint)
+      ? 'The complaint was manually forwarded to Level 2 supervision while Level 1 continues field work under an extended timeline.'
+      : null,
   );
   pushUniquePhaseHighlight(
     phaseHighlights,
@@ -815,6 +1018,7 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
 
   let feedbackDeskLabel: string | null = null;
   let feedbackDeskDescription: string | null = null;
+  const manualL2Forward = isManualL1ForwardToL2(complaint);
 
   if (isClosed) {
     feedbackDeskLabel = 'Closed In Official Record';
@@ -826,13 +1030,21 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     feedbackDeskLabel = 'Returned For Rework';
     feedbackDeskDescription = 'Citizen feedback resulted in fresh field action, so the complaint is back in the execution cycle.';
   } else if (awaitingClosureReview) {
-    feedbackDeskLabel = isUnderSeniorMonitoring(complaint) ? 'Senior Closure Review Desk' : 'Closure Review Desk';
+    feedbackDeskLabel = isUnderSeniorMonitoring(complaint)
+      ? 'Senior Closure Review Desk'
+      : manualL2Forward
+        ? 'Level 2 Review Desk'
+        : 'Closure Review Desk';
     feedbackDeskDescription = isUnderSeniorMonitoring(complaint)
       ? 'Citizen feedback is recorded and the complaint is under senior monitoring before the final closure decision.'
-      : 'Citizen feedback is recorded and the complaint is waiting for the final close or reopen decision.';
+      : manualL2Forward
+        ? 'Citizen feedback has been recorded and sent to the Level 2 review desk for the final close or reopen decision.'
+        : 'Citizen feedback is recorded and the complaint is waiting for the final close or reopen decision.';
   } else if (waitingForFeedback) {
-    feedbackDeskLabel = 'Citizen Verification Pending';
-    feedbackDeskDescription = 'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.';
+    feedbackDeskLabel = manualL2Forward ? 'Citizen Feedback Pending' : 'Citizen Verification Pending';
+    feedbackDeskDescription = manualL2Forward
+      ? 'Work completion evidence is ready. Submit citizen feedback now and it will be routed to the Level 2 review desk.'
+      : 'Work completion evidence is ready. Citizen feedback will move the complaint into the final review cycle.';
   }
 
   let humanStatus = 'Complaint Received';
@@ -866,16 +1078,24 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     supportLine = 'This complaint cannot continue further. Please create a new complaint if the issue still exists.';
     liveMessage = departmentMessage || 'The complaint expired and now requires a fresh complaint for any further action.';
   } else if (awaitingClosureReview && satisfaction === 'satisfied') {
-    humanStatus = 'Awaiting Formal Closure';
-    headline = 'The reported work has been accepted by the citizen.';
-    supportLine = 'Citizen verification is complete. The complaint now awaits formal closure in the official record.';
+    humanStatus = manualL2Forward ? 'Awaiting Level 2 Closure' : 'Awaiting Formal Closure';
+    headline = manualL2Forward
+      ? 'The reported work has been accepted by the citizen and is waiting for Level 2 closure.'
+      : 'The reported work has been accepted by the citizen.';
+    supportLine = manualL2Forward
+      ? 'Citizen verification is complete. The Level 2 review desk will now close the complaint in the official record.'
+      : 'Citizen verification is complete. The complaint now awaits formal closure in the official record.';
     liveMessage = complaint.rating?.feedback
       ? `Citizen feedback recorded: ${complaint.rating.feedback}`
       : 'Citizen satisfaction has been recorded in the official complaint file.';
   } else if (awaitingClosureReview && satisfaction === 'not_satisfied') {
-    humanStatus = 'Review Decision Pending';
-    headline = 'Citizen feedback has requested further action on this complaint.';
-    supportLine = 'The final review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.';
+    humanStatus = manualL2Forward ? 'Level 2 Review Decision Pending' : 'Review Decision Pending';
+    headline = manualL2Forward
+      ? 'Citizen feedback has reached Level 2 and further action is now under review.'
+      : 'Citizen feedback has requested further action on this complaint.';
+    supportLine = manualL2Forward
+      ? 'The Level 2 review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.'
+      : 'The final review desk will decide whether the complaint is reopened for fresh work or closed with further remarks.';
     liveMessage = complaint.rating?.feedback
       ? `Citizen feedback recorded: ${complaint.rating.feedback}`
       : 'Citizen review requiring further action has been recorded in the official complaint file.';
@@ -887,13 +1107,27 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
   } else if (reopenedForRework) {
     humanStatus = 'Reopened For Rework';
     headline = 'This complaint has been reopened for fresh field action.';
-    supportLine = 'New field work and fresh proof submission are required before the complaint can move again.';
-    liveMessage = departmentMessage || 'Citizen feedback or review findings have returned the complaint for fresh action.';
+    supportLine = isDirectReworkStartPending(complaint)
+      ? 'New field work and fresh proof submission are required before the complaint can move again. The reopened cycle now resumes directly from work start.'
+      : 'New field work and fresh proof submission are required before the complaint can move again.';
+    liveMessage = departmentMessage || (
+      isDirectReworkStartPending(complaint)
+        ? 'Citizen feedback or review findings returned the complaint for fresh action, and the field team can restart work directly.'
+        : 'Citizen feedback or review findings have returned the complaint for fresh action.'
+    );
   } else if (complaint.status === 'resolved' && !feedbackRecorded) {
     humanStatus = 'Waiting For Citizen Feedback';
-    headline = 'Proof has been uploaded and citizen verification is pending.';
-    supportLine = 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
-    liveMessage = departmentMessage || 'The complaint has been marked completed and is waiting for citizen feedback.';
+    headline = manualL2Forward
+      ? 'Proof has been uploaded under Level 2 supervision and citizen verification is pending.'
+      : 'Proof has been uploaded and citizen verification is pending.';
+    supportLine = manualL2Forward
+      ? 'Please review the uploaded evidence and submit feedback. Your feedback will go to the Level 2 review desk, and the complaint will not close before that review.'
+      : 'Please review the uploaded evidence and submit feedback to complete the review cycle.';
+    liveMessage = departmentMessage || (
+      manualL2Forward
+        ? 'The complaint has been marked completed under Level 2 supervision and is waiting for citizen feedback before final Level 2 review.'
+        : 'The complaint has been marked completed and is waiting for citizen feedback.'
+    );
   } else if (proofSubmitted) {
     humanStatus = 'Completion Evidence Uploaded';
     headline = 'Work completion evidence has been uploaded for this complaint.';
@@ -919,6 +1153,11 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     headline = 'Ground work is active for this complaint.';
     supportLine = 'Field action has started and further proof updates will appear automatically.';
     liveMessage = departmentMessage || 'The assigned team is actively working on the complaint.';
+  } else if (isManualL1ForwardToL2(complaint)) {
+    humanStatus = 'Level 2 Supervision Active';
+    headline = 'This complaint is under Level 2 supervision with an extended action timeline.';
+    supportLine = 'Level 1 continues the field work, and Level 2 will make the final close or reopen decision after citizen feedback is recorded.';
+    liveMessage = departmentMessage || 'The complaint is under Level 2 supervision while field action continues.';
   } else if (isUnderSeniorMonitoring(complaint) || isUnderSupervisoryMonitoring(complaint)) {
     humanStatus = 'Under Supervisory Review';
     headline = 'The complaint is under supervisory review or escalation handling.';
@@ -931,7 +1170,7 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     liveMessage = departmentMessage || 'The complaint is pending review and field action assignment.';
   }
 
-  return {
+  const snapshot: ComplaintTrackerSnapshot = {
     headline,
     subheadline: `Track all official review, field action, completion, and closure updates using complaint ID ${complaint.complaint_id}.`,
     humanStatus,
@@ -959,6 +1198,8 @@ export function buildComplaintTrackerSnapshot(complaint: Complaint): ComplaintTr
     isClosed,
     isRejected,
   };
+
+  return localizeTrackerSnapshot(snapshot, language);
 }
 
 export function buildComplaintHistoryCard(complaint: Complaint): ComplaintHistoryCard {

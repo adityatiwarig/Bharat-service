@@ -1,6 +1,7 @@
 import { AlertCircle, Clock, MapPin } from 'lucide-react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PriorityBadge, StatusBadge, WorkCompletedBadge } from '@/components/status-badge'
 import type { Complaint, Ward } from '@/lib/types'
@@ -9,7 +10,7 @@ import { cn } from '@/lib/utils'
 interface ComplaintCardProps {
   complaint: Complaint
   ward?: Ward
-  onViewDetails?: () => void
+  onViewDetails?: (event: ReactMouseEvent<HTMLDivElement>) => void
   compact?: boolean
   badgeExtras?: ReactNode
   footer?: ReactNode
@@ -23,6 +24,7 @@ export function ComplaintCard({
   badgeExtras,
   footer,
 }: ComplaintCardProps) {
+  const { language } = useLandingLanguage()
   const categoryColors = {
     pothole: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
     streetlight: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -60,6 +62,30 @@ export function ComplaintCard({
         minute: '2-digit',
       }).format(new Date(complaint.deadline))
     : null
+  const text = {
+    unknownWard: language === 'hi' ? 'अज्ञात वार्ड' : 'Unknown ward',
+    daysAgo: language === 'hi' ? 'दिन पहले' : 'days ago',
+    dayAgo: language === 'hi' ? 'दिन पहले' : 'day ago',
+    due: language === 'hi' ? 'अंतिम समय' : 'Due',
+    overdue: language === 'hi' ? 'समय-सीमा पार' : 'Overdue',
+    complaintRecord: language === 'hi' ? 'शिकायत अभिलेख' : 'Complaint record',
+    loggedFor: language === 'hi' ? 'दर्ज किया गया' : 'Logged for',
+    andLastUpdated: language === 'hi' ? 'और अंतिम अपडेट' : 'and last updated',
+    departmentRisk: language === 'hi' ? 'जोखिम' : 'Risk',
+    ward: language === 'hi' ? 'वार्ड' : 'Ward',
+    age: language === 'hi' ? 'आयु' : 'Age',
+  }
+  const categoryLabels: Record<string, string> = {
+    pothole: language === 'hi' ? 'गड्ढा' : 'pothole',
+    streetlight: language === 'hi' ? 'स्ट्रीट लाइट' : 'streetlight',
+    water: language === 'hi' ? 'पानी' : 'water',
+    waste: language === 'hi' ? 'कचरा' : 'waste',
+    sanitation: language === 'hi' ? 'स्वच्छता' : 'sanitation',
+    drainage: language === 'hi' ? 'निकासी' : 'drainage',
+    sewer: language === 'hi' ? 'सीवर' : 'sewer',
+    encroachment: language === 'hi' ? 'अतिक्रमण' : 'encroachment',
+    other: language === 'hi' ? 'अन्य' : 'other',
+  }
 
   if (compact) {
     return (
@@ -72,7 +98,7 @@ export function ComplaintCard({
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className={cn('rounded-md px-2.5 py-1 text-xs font-medium capitalize', categoryColors[complaint.category])}>
-                  {complaint.category}
+                  {categoryLabels[complaint.category] || complaint.category}
                 </span>
                 <StatusBadge status={complaint.status} />
                 {badgeExtras}
@@ -85,11 +111,11 @@ export function ComplaintCard({
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                {ward?.name ?? 'Unknown ward'} / {daysAgo} days ago
+                {ward?.name ?? text.unknownWard} / {daysAgo} {daysAgo === 1 ? text.dayAgo : text.daysAgo}
               </p>
               {dueLabel ? (
                 <p className={cn('mt-1 text-[11px]', isOverdue ? 'text-rose-600' : 'text-slate-500')}>
-                  {`Due ${dueLabel}${complaint.current_level ? ` | ${complaint.current_level}` : ''}${isOverdue ? ' | Overdue' : ''}`}
+                  {`${text.due} ${dueLabel}${complaint.current_level ? ` | ${complaint.current_level}` : ''}${isOverdue ? ` | ${text.overdue}` : ''}`}
                 </p>
               ) : null}
               {footer ? <div className="mt-3">{footer}</div> : null}
@@ -111,7 +137,7 @@ export function ComplaintCard({
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
-                Complaint record
+                {text.complaintRecord}
               </span>
               <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
                 {complaint.complaint_id}
@@ -119,7 +145,7 @@ export function ComplaintCard({
             </div>
             <CardTitle className="mt-2.5 text-lg text-slate-950">{complaint.title}</CardTitle>
             <p className="mt-1.5 text-sm text-slate-500">
-              Logged for {ward?.name ?? 'Unknown ward'} and last updated {daysAgo} day{daysAgo === 1 ? '' : 's'} ago.
+              {text.loggedFor} {ward?.name ?? text.unknownWard} {text.andLastUpdated} {daysAgo} {daysAgo === 1 ? text.dayAgo : text.daysAgo}.
             </p>
           </div>
           <AlertCircle className={cn('mt-1 h-5 w-5 shrink-0', priorityColors[complaint.priority])} />
@@ -130,7 +156,7 @@ export function ComplaintCard({
 
         <div className="flex flex-wrap gap-2">
           <span className={cn('rounded-md px-3 py-1 text-xs font-medium capitalize', categoryColors[complaint.category])}>
-            {complaint.category}
+            {categoryLabels[complaint.category] || complaint.category}
           </span>
           <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs capitalize text-slate-600">
             {complaint.department.replace('_', ' ')}
@@ -140,23 +166,23 @@ export function ComplaintCard({
           <PriorityBadge priority={complaint.priority} />
           {hasWorkProof ? <WorkCompletedBadge /> : null}
           <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-            Risk {Math.round(complaint.risk_score)}
+            {text.departmentRisk} {Math.round(complaint.risk_score)}
           </span>
         </div>
 
         <div className="grid grid-cols-1 gap-2.5 text-sm text-slate-500 sm:grid-cols-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-            <div className="mb-1 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">Ward</div>
+            <div className="mb-1 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">{text.ward}</div>
             <div className="flex items-center gap-2 text-slate-700">
               <MapPin className="h-4 w-4" />
-              {ward?.name ?? 'Unknown ward'}
+              {ward?.name ?? text.unknownWard}
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-            <div className="mb-1 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">Age</div>
+            <div className="mb-1 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">{text.age}</div>
             <div className="flex items-center gap-2 text-slate-700">
               <Clock className="h-4 w-4" />
-              {daysAgo} days ago
+              {daysAgo} {daysAgo === 1 ? text.dayAgo : text.daysAgo}
             </div>
           </div>
         </div>

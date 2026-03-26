@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ArrowUpRight, LifeBuoy, ShieldCheck, Sparkles } from 'lucide-react'
 
+import { useLandingLanguage } from '@/components/landing-language'
 import { cn } from '@/lib/utils'
 import { getPageMeta } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
@@ -15,8 +16,9 @@ interface AppSidebarProps {
 }
 
 export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
-  const pathname = usePathname()
-  const { nav, active, roleMeta } = getPageMeta(pathname)
+  const pathname = usePathname() ?? ''
+  const { language } = useLandingLanguage()
+  const { nav, active, roleMeta } = getPageMeta(pathname, language)
 
   return (
     <>
@@ -65,7 +67,7 @@ export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
 
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="px-2 text-xs font-semibold tracking-[0.24em] text-slate-400 uppercase">
-              Workspace
+              {language === 'hi' ? 'कार्यस्थल' : 'Workspace'}
             </div>
             <nav className="mt-4 space-y-2">
               {nav.map((item) => {
@@ -132,9 +134,9 @@ export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
                   <ShieldCheck className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-950">Operational readiness</div>
+                  <div className="text-sm font-semibold text-slate-950">{language === 'hi' ? 'संचालन तत्परता' : 'Operational readiness'}</div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Review queue health, escalations, and field updates from one place.
+                    {language === 'hi' ? 'कतार स्थिति, एस्केलेशन और फील्ड अपडेट एक ही स्थान से देखें।' : 'Review queue health, escalations, and field updates from one place.'}
                   </p>
                 </div>
               </div>
@@ -143,7 +145,7 @@ export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
                   variant="ghost"
                   className="w-full justify-between rounded-xl px-3 text-slate-700 hover:bg-white"
                 >
-                  Return to overview
+                  {language === 'hi' ? 'अवलोकन पर लौटें' : 'Return to overview'}
                   <ArrowUpRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -151,7 +153,7 @@ export function Sidebar({ isOpen = true, onClose }: AppSidebarProps) {
                 variant="ghost"
                 className="mt-2 w-full justify-between rounded-xl px-3 text-slate-700 hover:bg-white"
               >
-                Support guide
+                {language === 'hi' ? 'सहायता मार्गदर्शिका' : 'Support guide'}
                 <LifeBuoy className="h-4 w-4" />
               </Button>
             </div>

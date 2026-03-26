@@ -96,3 +96,10 @@ export function computeL1ComplaintDeadline(priority?: ComplaintPriority | null, 
 export function computeL2ComplaintDeadline(startAt = new Date()) {
   return new Date(startAt.getTime() + L2_REVIEW_SLA_WINDOW.deadline_minutes * 60 * 1000);
 }
+
+export function computeForwardedL2ComplaintDeadline(priority?: ComplaintPriority | null, startAt = new Date()) {
+  const normalizedPriority = normalizeComplaintPriority(priority);
+  const totalMinutes = L1_PRIORITY_SLA_WINDOWS[normalizedPriority].deadline_minutes * 2;
+
+  return new Date(startAt.getTime() + totalMinutes * 60 * 1000);
+}

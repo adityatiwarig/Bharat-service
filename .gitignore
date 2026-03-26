@@ -20,3 +20,5 @@ data/uploads/
 OFFICER_LOGIN_CREDENTIALS.txt
 .tmp-mapping.zip
 .tmp-xlsx/
+.codex-*.log
+.tools/

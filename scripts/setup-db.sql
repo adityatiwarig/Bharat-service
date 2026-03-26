@@ -582,6 +582,16 @@ CREATE TABLE IF NOT EXISTS complaint_proofs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS file_uploads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stored_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  file_data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS ratings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   complaint_id UUID NOT NULL UNIQUE REFERENCES complaints(id) ON DELETE CASCADE,
@@ -649,6 +659,9 @@ CREATE INDEX IF NOT EXISTS idx_complaint_updates_complaint
   ON complaint_updates (complaint_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_complaint_proofs_complaint
   ON complaint_proofs (complaint_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_file_uploads_created
+  ON file_uploads (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_complaint_history_complaint_timestamp
   ON complaint_history (complaint_id, "timestamp" DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created

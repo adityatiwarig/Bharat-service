@@ -1,193 +1,189 @@
-# GovCRM
+# SmartCRM
 
-GovCRM is a role-based civic complaint management platform built with Next.js, React, Prisma, and PostgreSQL. It is designed around a Delhi ward workflow where citizens raise complaints, department heads review and assign them, workers execute field work, and admin users monitor the full system.
+SmartCRM is a civic grievance platform built with Next.js, React, Prisma, and PostgreSQL. The current product flow is officer-first: citizens submit complaints, the system classifies and routes them, mapped `L1` officers handle field execution, `L2` and `L3` officers supervise delays and review citizen feedback, and admins monitor the full command view.
 
-This README focuses on project overview, working flow, architecture, routes, and setup. Runtime environment values are intentionally not listed here.
+The repo still contains older `leader` and `worker` routes for backward compatibility, but the primary internal workflow now runs through `L1`, `L2`, `L3`, and `admin`.
 
-## What The Project Does
+## Current Product Model
 
-The app supports four distinct workspaces:
+- Public landing portal with complaint information, service categories, and ward-wise complaint heatmap
+- Citizen auth and dashboard for complaint filing, tracking, proof review, and feedback
+- Internal officer login for `L1`, `L2`, `L3`, and `ADMIN`
+- Automated complaint classification, priority scoring, hotspot detection, and officer assignment
+- SLA-aware escalation workflow with reminders, review desks, and expiry handling
+- Admin command center for queue visibility, reports, analytics, and officer roster management
 
-- `citizen`: register, submit complaints, track live status, review proof, and rate the resolution
-- `worker`: view assigned complaints, start work, and submit proof after completion
-- `leader`: department-head review, complaint scrutiny, worker assignment, closure, and reopen flow
-- `admin`: platform-wide monitoring, complaint analytics, hotspots, and user visibility
+## Main Features
 
-The system also exposes a public tracking page where anyone with a tracking code can see a limited complaint summary without seeing private complaint details.
+### Citizen-facing
 
-## Core Stack
+- Public landing page at `/`
+- Citizen sign up and login at `/auth`
+- Government-style complaint submission form at `/citizen/submit`
+- Zone, ward, department, and category based filing
+- Optional previous complaint reference
+- Camera capture and file upload for complaint photos
+- Geo-tagged evidence generation with reverse geocoding support
+- Optional live location capture for complaint site coordinates
+- Citizen dashboard and searchable complaint history
+- Full tracker with status timeline, handling desk, proof images, and citizen feedback
+- PDF export of the complaint tracking record
+- Public limited tracking page at `/track` using complaint tracking code
+- Guided citizen assistant via `/api/chatbot`
 
-- Next.js App Router
-- React 19
-- TypeScript
-- Prisma with PostgreSQL
-- Tailwind CSS and Radix UI based components
-- Cookie-based auth with server-side role guards
-- Local file storage for complaint attachments and proof images
-- Redis-backed cache when available, with in-memory fallback when Redis is missing or unavailable
+### Complaint intelligence and routing
 
-## High-Level Architecture
+- Department and category normalization during intake
+- Risk scoring and priority assignment
+- Sentiment and repeat-issue analysis
+- Hotspot detection based on recent complaint frequency
+- Spam flagging and review messaging
+- Automatic mapping to the correct `L1` officer using `zone + ward + department + category`
+- Deadline scheduling for `L1`, `L2`, and `L3` review windows
 
-The app is split into a few clear layers:
+### Officer workflow
 
-- `app/`
-  App Router pages, layouts, and API routes
-- `components/`
-  Shared UI, dashboard shells, trackers, cards, and workspace widgets
-- `lib/client/`
-  Browser-side API wrappers
-- `lib/server/`
-  Auth, complaint lifecycle, dashboards, uploads, notifications, caching, and reporting services
-- `prisma/`
-  Prisma schema and migrations
-- `scripts/`
-  SQL bootstrap and maintenance scripts
-- `data/uploads/`
-  Persisted evidence and attachment files written by the app
+- Single internal login page at `/worker-login`
+- Officer credentials accepted as login ID or full email
+- `L1` field desk for:
+  - mark viewed
+  - mark on site
+  - mark work started
+  - upload geo-tagged proof
+  - complete work and send for citizen feedback
+  - manually forward to `L2` before deadline
+- `L2` supervision desk for:
+  - monitor `L1` overdue or manually forwarded complaints
+  - send reminders to `L1`
+  - review citizen feedback
+  - close satisfied complaints
+  - reopen unsatisfied complaints back to `L1`
+- `L3` supervision desk for:
+  - monitor `L2` overdue complaints
+  - send reminders to `L2`
+  - send direct reminders to `L1`
+  - take final close or reopen decisions after citizen feedback
+- Automatic escalation queue and worker for deadline misses
 
-## Role-Based Product Entry Points
+### Admin-facing
 
-- Public landing page: `/`
-- Public complaint tracking: `/track`
-- Citizen auth: `/auth`
-- Internal login for worker, leader, and admin users: `/worker-login`
-- Citizen workspace: `/citizen`
-- Worker workspace: `/worker`
-- Leader workspace: `/leader`
-- Admin workspace: `/admin`
+- Live command dashboard at `/admin`
+- Complaint queue at `/admin/complaints`
+- Analytics and reporting at `/admin/analytics`
+- Officer roster and zone coverage view at `/admin/users`
+- Level, zone, ward, hotspot, and department breakdowns
+- Priority queue monitoring and recent activity feed
 
-## Full Working Flow
+### Platform support
 
-### 1. Public access and login split
+- JWT cookie-based sessions
+- Role and officer-level guards
+- Notifications for citizens, officers, admins, and legacy department heads
+- Redis-backed cache and escalation queue with in-memory fallback where applicable
+- Local upload serving through `/api/uploads/[storage]/[id]`
 
-The project uses two different login experiences:
+## Current End-to-End Flow
 
-- citizens use `/auth`
-- internal staff use `/worker-login`
+### 1. Public entry and authentication
 
-This keeps public access and internal role access separate. On successful login, the app writes a signed session cookie and routes the user to the correct workspace.
+- Citizens use `/auth`
+- Internal users use `/worker-login`
+- Officer login redirects automatically:
+  - `L1 -> /l1`
+  - `L2 -> /l2`
+  - `L3 -> /l3`
+  - `ADMIN -> /admin`
 
 ### 2. Citizen complaint submission
 
-From `/citizen/submit`, the citizen fills a government-style complaint form with:
+Citizens submit a complaint from `/citizen/submit` with:
 
 - applicant details
-- ward
-- department or category
+- zone and ward
+- department and category
 - title and description
-- address or landmark
-- optional geolocation
-- optional previous complaint reference
-- optional file attachments
+- street or landmark details
+- optional previous complaint ID
+- optional GPS location
+- complaint photos
 
-When the form posts to `POST /api/complaints`:
+At submission time the app:
 
-1. the citizen session is validated
-2. ward and category values are checked
-3. attachments are stored in `data/uploads`
-4. a complaint row is inserted
-5. an initial complaint timeline update is created
-6. a citizen notification is created
-7. the complaint is returned immediately
-8. background complaint post-processing starts
+1. validates the citizen session
+2. validates zone, ward, department, and category selections
+3. stores complaint evidence
+4. creates the complaint record
+5. generates a public complaint ID and tracking code
+6. records the initial timeline entry
+7. redirects the citizen to `/citizen/tracker?id=<complaint_id>`
 
-### 3. Automated routing and triage
+### 3. Automated analysis and initial routing
 
-After complaint creation, the server runs a complaint pipeline that:
+After creation, the complaint pipeline:
 
-- resolves the most suitable department
-- scores sentiment and danger keywords
-- calculates frequency and hotspot signals
-- flags likely spam
-- assigns a priority level
-- updates the complaint with department message, routing metadata, and risk scores
-- notifies matching department-head users
-- notifies admin users
-- writes a timeline entry explaining the routing decision
+- analyzes complaint text
+- normalizes department and category
+- computes priority and risk
+- checks repeat frequency
+- flags hotspot or spam signals
+- updates the citizen-facing department message
+- resolves the officer mapping
+- assigns the complaint to the mapped `L1` officer
+- creates notifications and audit entries
+- schedules the first SLA deadline
 
-This logic lives mainly in:
+### 4. L1 field execution
 
-- [lib/server/complaints.ts](/d:/smartcrm/lib/server/complaints.ts)
-- [lib/server/ai.ts](/d:/smartcrm/lib/server/ai.ts)
-- [lib/ai/complaint-intelligence.js](/d:/smartcrm/lib/ai/complaint-intelligence.js)
+`L1` officers work through `/l1` and `/l1/updates`.
 
-### 4. Department-head review
+Their controlled sequence is:
 
-Leaders use `/leader` as a department review console.
+1. `Viewed by L1`
+2. `On Site`
+3. `Work Started`
+4. `Proof Uploaded`
+5. `Awaiting Citizen Feedback`
 
-Their workflow is:
+`L1` can also manually forward an active complaint to `L2` before the deadline, but field execution still remains with `L1`.
 
-1. filter complaints by status, priority, and ward
-2. open one complaint in the review workspace
-3. mark it as viewed
-4. load workers mapped to the same ward and department
-5. assign a worker
-6. later verify proof and citizen feedback
-7. close the complaint or reopen it for rework
+### 5. L2 supervision
 
-Important rules in the current implementation:
+`L2` officers work through `/l2` and `/l2/updates`.
 
-- leaders only see complaints for their own department
-- a complaint must be marked viewed before worker assignment
-- only workers from the same ward and department are assignable
-- final close requires citizen feedback
-- a resolved or closed complaint can be reopened for reassignment
+They do not perform field execution. They:
 
-### 5. Worker execution flow
+- supervise manually forwarded `L1` complaints
+- supervise complaints whose `L1` deadline has been missed
+- send reminders to `L1`
+- review citizen feedback after resolution
+- close satisfied complaints
+- reopen unsatisfied complaints back to fresh `L1` action
 
-Workers use `/worker` and `/worker/updates`.
+### 6. L3 supervision
 
-Their complaint lifecycle is tightly controlled:
+`L3` officers work through `/l3`.
 
-- `assigned -> in_progress`
-- `in_progress -> resolved`
+They supervise complaints whose `L2` review window has been missed. `L3` can:
 
-Workers cannot arbitrarily move complaints across statuses. To resolve a complaint, the worker must submit:
+- send reminders to `L2`
+- send direct reminders to `L1`
+- take the final close decision on satisfied feedback
+- reopen the complaint to `L1` when the citizen is not satisfied
 
-- proof text
-- proof image
-- optional completion note
+If the complaint is not cleared within the final review window, it can move to `expired`.
 
-On resolution:
+### 7. Citizen feedback and final review
 
-- proof is stored
-- complaint status becomes `resolved`
-- a timeline update is recorded
-- citizen gets a notification
-- admin users get a notification
+Once `L1` completes the work and proof is available:
 
-### 6. Citizen tracking and feedback
+- the citizen reviews the evidence in `/citizen/tracker`
+- the citizen submits rating and feedback
+- satisfied feedback routes the complaint to the correct review desk for closure
+- unsatisfied feedback routes the complaint to the correct review desk for reopen handling
 
-Citizens use `/citizen/tracker?id=<complaint_id>` to see:
+### 8. Public tracking
 
-- current stage
-- administrative timeline
-- department message
-- assigned worker state
-- proof text and proof image
-- rating form when complaint is resolved
-
-The tracker also supports PDF export of the complaint record for a more formal report-style view.
-
-After the worker resolves the complaint, the citizen can submit:
-
-- 1 to 5 rating
-- optional feedback note
-
-Citizen feedback is stored in `ratings`, appended to the complaint history, and sent to leaders and admin for final review.
-
-### 7. Final closure or reopen
-
-Department head or admin users can finish the lifecycle:
-
-- `resolved -> closed` when citizen feedback exists
-- `resolved/closed -> in_progress` if the case needs rework
-
-Reopen clears worker proof-related completion state so the complaint can go back through assignment and execution again.
-
-### 8. Public tracking flow
-
-The public page `/track` accepts a tracking code and returns a safe summary only:
+The public route `/track` exposes a limited safe summary by tracking code:
 
 - complaint ID
 - current status
@@ -195,62 +191,70 @@ The public page `/track` accepts a tracking code and returns a safe summary only
 - department
 - last updated time
 
-Private data such as complaint text, attachments, proof image, internal notes, and user identity are intentionally hidden.
+If the logged-in citizen is the owner, the app redirects them to the full tracker instead.
 
-If the current logged-in user is the complaint owner, the public route redirects them to the full citizen tracker instead of showing the limited summary.
+## Lifecycle Snapshot
 
-## Complaint Lifecycle At A Glance
-
-### Main status flow
+### Primary internal flow
 
 `submitted -> assigned -> in_progress -> resolved -> closed`
 
-### Supporting actions
+### Supervisory and exception states
 
-- `submitted`: complaint created and routed for department review
-- `assigned`: leader has mapped the case to a worker
-- `in_progress`: worker has started execution
-- `resolved`: worker submitted proof and marked work complete
-- `closed`: leader or admin closed the complaint after citizen feedback
-- `reopened`: handled by moving a `resolved` or `closed` complaint back to `in_progress`
+- `l1_deadline_missed`
+- `l2_deadline_missed`
+- `reopened`
+- `expired`
+- `rejected`
 
-## Current Pages And Workspaces
+### Review logic
+
+- satisfied feedback is required before final close
+- unsatisfied feedback reopens the complaint to `L1`
+- automatic deadline processing can move responsibility from `L1` to `L2`, then `L2` to `L3`
+
+## Main Routes
 
 ### Public and auth
 
-- [app/page.tsx](/d:/smartcrm/app/page.tsx)
-- [app/track/page.tsx](/d:/smartcrm/app/track/page.tsx)
-- [app/auth/page.tsx](/d:/smartcrm/app/auth/page.tsx)
-- [app/worker-login/page.tsx](/d:/smartcrm/app/worker-login/page.tsx)
+- `/`
+- `/track`
+- `/auth`
+- `/worker-login`
 
 ### Citizen
 
-- [app/citizen/page.tsx](/d:/smartcrm/app/citizen/page.tsx)
-- [app/citizen/submit/page.tsx](/d:/smartcrm/app/citizen/submit/page.tsx)
-- [app/citizen/my-complaints/page.tsx](/d:/smartcrm/app/citizen/my-complaints/page.tsx)
-- [app/citizen/tracker/page.tsx](/d:/smartcrm/app/citizen/tracker/page.tsx)
+- `/citizen`
+- `/citizen/submit`
+- `/citizen/my-complaints`
+- `/citizen/tracker`
 
-### Worker
+### Current officer-first workflow
 
-- [app/worker/page.tsx](/d:/smartcrm/app/worker/page.tsx)
-- [app/worker/assigned/page.tsx](/d:/smartcrm/app/worker/assigned/page.tsx)
-- [app/worker/updates/page.tsx](/d:/smartcrm/app/worker/updates/page.tsx)
-
-### Leader
-
-- [app/leader/page.tsx](/d:/smartcrm/app/leader/page.tsx)
-- [app/leader/trends/page.tsx](/d:/smartcrm/app/leader/trends/page.tsx)
-- [app/leader/ward-comparison/page.tsx](/d:/smartcrm/app/leader/ward-comparison/page.tsx)
-- [app/leader/reports/page.tsx](/d:/smartcrm/app/leader/reports/page.tsx)
+- `/l1`
+- `/l1/updates`
+- `/l2`
+- `/l2/updates`
+- `/l3`
 
 ### Admin
 
-- [app/admin/page.tsx](/d:/smartcrm/app/admin/page.tsx)
-- [app/admin/complaints/page.tsx](/d:/smartcrm/app/admin/complaints/page.tsx)
-- [app/admin/analytics/page.tsx](/d:/smartcrm/app/admin/analytics/page.tsx)
-- [app/admin/users/page.tsx](/d:/smartcrm/app/admin/users/page.tsx)
+- `/admin`
+- `/admin/complaints`
+- `/admin/analytics`
+- `/admin/users`
 
-## API Overview
+### Legacy compatibility routes
+
+- `/worker`
+- `/worker/assigned`
+- `/worker/updates`
+- `/leader`
+- `/leader/reports`
+- `/leader/trends`
+- `/leader/ward-comparison`
+
+## API Surface
 
 ### Session and auth
 
@@ -258,106 +262,115 @@ If the current logged-in user is the complaint owner, the public route redirects
 - `POST /api/session/login`
 - `GET /api/session/me`
 - `POST /api/session/logout`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
 
-### Core data
-
-- `GET /api/wards`
-- `GET /api/users`
-- `GET /api/notifications`
-- `PATCH /api/notifications`
-
-### Complaint APIs
+### Citizen and complaint APIs
 
 - `GET /api/complaints`
 - `POST /api/complaints`
+- `GET /api/complaints/my`
 - `GET /api/complaints/[id]`
-- `PATCH /api/complaints/[id]`
 - `GET /api/complaints/[id]/timeline`
 - `GET /api/complaints/[id]/proof`
+- `POST /api/complaints/[id]/proofs`
 - `POST /api/complaints/[id]/rating`
-- `GET /api/complaints/[id]/assignment`
-- `PATCH /api/complaints/[id]/assignment`
+- `GET /api/public/complaints/[trackingCode]`
 
-### Dashboard and operational APIs
+### Officer workflow APIs
+
+- `PATCH /api/complaints/[id]/l1`
+- `PATCH /api/complaints/[id]/review`
+- `PATCH /api/complaints/[id]/escalate`
+- `GET /api/dashboard/officer`
+
+### Admin and analytics APIs
 
 - `GET /api/dashboard/admin`
-- `GET /api/dashboard/worker`
-- `GET /api/dashboard/leader-trends`
-- `GET /api/dashboard/leader-ward-comparison`
-- `GET /api/public/complaints/[trackingCode]`
+- `GET /api/users`
+- `GET /api/analytics/ward-heatmap`
+- `GET /api/public/wards/distribution`
+- `GET /api/notifications`
+- `PATCH /api/notifications`
+
+### Utility APIs
+
+- `GET /api/wards`
+- `GET /api/grievance-mapping`
+- `GET /api/geo/reverse`
+- `POST /api/system/escalations/run`
 - `GET /api/system/redis-status`
+- `POST /api/chatbot`
 
-## Important Server Modules
+## Project Structure
 
-- Auth and role checks: [lib/server/auth.ts](/d:/smartcrm/lib/server/auth.ts)
-- Session cookie signing: [lib/server/session.ts](/d:/smartcrm/lib/server/session.ts)
-- Auth route handlers: [lib/server/auth-handlers.ts](/d:/smartcrm/lib/server/auth-handlers.ts)
-- Complaint lifecycle: [lib/server/complaints.ts](/d:/smartcrm/lib/server/complaints.ts)
-- Dashboard summaries: [lib/server/dashboard.ts](/d:/smartcrm/lib/server/dashboard.ts)
-- Department trend analytics: [lib/server/leader-trends.ts](/d:/smartcrm/lib/server/leader-trends.ts)
-- Notifications: [lib/server/notifications.ts](/d:/smartcrm/lib/server/notifications.ts)
-- Upload persistence: [lib/server/uploads.ts](/d:/smartcrm/lib/server/uploads.ts)
-- Cache and Redis fallback: [lib/server/complaint-cache.ts](/d:/smartcrm/lib/server/complaint-cache.ts), [lib/server/redis-cache.ts](/d:/smartcrm/lib/server/redis-cache.ts)
-- DB query wrapper: [lib/server/db.ts](/d:/smartcrm/lib/server/db.ts)
-- Prisma client: [lib/prisma.ts](/d:/smartcrm/lib/prisma.ts)
+- `app/`
+  App Router pages, layouts, and route handlers
+- `components/`
+  Shared UI, dashboards, tracker views, heatmap, and chatbot components
+- `components/chatbot/`
+  Guided citizen assistant logic and training data
+- `lib/server/complaints.ts`
+  Complaint lifecycle, tracking, feedback, and intake pipeline
+- `lib/server/officer-routing.ts`
+  Officer mapping, supervision, reminders, review, and reopen logic
+- `lib/server/dashboard.ts`
+  Admin, officer, and legacy dashboard summaries
+- `lib/server/uploads.ts`
+  Complaint evidence and proof storage helpers
+- `lib/server/notifications.ts`
+  Notification creation and read-state updates
+- `lib/server/redis-cache.ts`
+  Redis cache and fallback integration
+- `lib/server/escalation-queue.ts`
+  Escalation deadline scheduling
+- `prisma/`
+  Prisma schema and migrations
+- `scripts/`
+  DB bootstrap, officer seeding, and escalation worker scripts
 
 ## Database Model Summary
 
-Main entities in PostgreSQL:
+Main tables and models:
 
-- `users`: citizen, worker, admin, and leader accounts
-- `wards`: supported municipal wards
-- `workers`: ward and department mapping for worker users
-- `complaints`: main grievance record
-- `complaint_updates`: timeline and audit history
-- `ratings`: citizen closure feedback
-- `notifications`: in-app user notifications
-
-The complaint record stores more than basic text. It also keeps:
-
-- routing department
-- assigned worker
-- priority and risk scores
-- hotspot and spam flags
-- file attachments
-- proof image and proof text
-- location fields
-- resolution notes
-- department review state
+- `users`
+- `officers`
+- `officer_mapping`
+- `complaints`
+- `complaint_history`
+- `complaint_updates`
+- `complaint_proofs`
+- `ratings`
+- `notifications`
+- `wards`
+- `zones`
+- `departments`
+- `categories`
+- `workers` for legacy worker flow
+- `file_uploads`
 
 Schema reference:
 
 - [prisma/schema.prisma](/d:/smartcrm/prisma/schema.prisma)
-- [scripts/setup-db.sql](/d:/smartcrm/scripts/setup-db.sql)
 
-## Uploads, Notifications, And Caching
+## Runtime Configuration
 
-### Uploads
+### Required
 
-- citizen attachments and worker proof images are stored on disk under `data/uploads`
-- uploaded files are served back through `/api/uploads/local/[id]`
+- `DATABASE_URL` or `DIRECT_URL`
+- `JWT_SECRET` or `SESSION_SECRET`
 
-### Notifications
+### Optional
 
-Notifications are created during important lifecycle events such as:
+- `SHADOW_DATABASE_URL` for Prisma migration workflows
+- `REDIS_URL` or `REDIS_REST_URL` plus `REDIS_REST_TOKEN`
+- `KV_REST_API_URL` and `KV_REST_API_TOKEN` as Redis REST aliases
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
 
-- complaint submission
-- department routing
-- worker assignment
-- work start
-- work completion
-- citizen feedback
-- complaint close
-- complaint reopen
-
-### Cache behavior
-
-Complaint summary, proof, timeline, and worker mapping use a short-lived cache.
-
-- if Redis is available, Redis is used
-- if Redis is missing or unreachable, the app falls back to in-memory cache
-
-This means the system can still run without Redis, but cache durability is lower in that mode.
+Environment values are intentionally not committed to this README.
 
 ## Local Setup
 
@@ -367,90 +380,126 @@ This means the system can still run without Redis, but cache durability is lower
 npm install
 ```
 
-### 2. Prepare your local runtime config
+### 2. Configure environment variables
 
-Set up the required local configuration before running the app. Values are intentionally omitted from this README.
+Create local runtime config with the required database and session secret values.
 
-### 3. Prepare the database
-
-You can use either of these approaches:
-
-#### SQL bootstrap
+### 3. Run Prisma setup
 
 ```bash
-psql "<your_database_connection>" -f scripts/setup-db.sql
+npm run prisma:generate
 ```
-
-#### Prisma migration flow
 
 ```bash
-npm run prisma:migrate -- --name init
+npm run prisma:deploy
 ```
 
-### 4. Start the app
+If you are developing new schema changes locally, use:
+
+```bash
+npm run prisma:migrate -- --name <migration_name>
+```
+
+### 4. Seed officer mappings
+
+The current officer workflow depends on `officer_mapping` and officer accounts generated from the grievance mapping sheet.
+
+```bash
+npm run seed:officers -- full_grievance_mapping_complete.csv.xlsx
+```
+
+This generates:
+
+- mapped `L1`, `L2`, `L3`, and `ADMIN` accounts
+- `OFFICER_LOGIN_CREDENTIALS.txt`
+- default seeded officer password: `123456`
+
+### 5. Start the web app
 
 ```bash
 npm run dev
 ```
 
-Then open:
+Open:
 
 - citizen portal: `http://localhost:3000/`
-- internal login: `http://localhost:3000/worker-login`
+- internal portal: `http://localhost:3000/worker-login`
 
-## Demo Access
+### 6. Run escalation processing
 
-These seeded credentials are useful after running the setup script.
+For SLA automation, run the escalation worker in a separate terminal:
+
+```bash
+npm run escalation:worker
+```
+
+Or trigger one polling cycle:
+
+```bash
+npm run escalation:run-once
+```
+
+## Demo and Seeded Access
 
 ### Citizen
 
-- `citizen@govcrm.demo` / `changeme`
+- create a fresh citizen account from `/auth`
 
-### Admin
+### Officer and admin
 
-- `admin@govcrm.demo` / `changeme`
+- read [OFFICER_LOGIN_CREDENTIALS.txt](/d:/smartcrm/OFFICER_LOGIN_CREDENTIALS.txt)
+- login with either `Login ID` or `Email`
+- default seeded password: `123456`
 
-### Leaders
+The generated file includes:
 
-- `leader.roads@govcrm.demo` / `changeme`
-- `leader.water@govcrm.demo` / `changeme`
-- `leader.sanitation@govcrm.demo` / `changeme`
-- `leader.electricity@govcrm.demo` / `changeme`
-- `leader.fire@govcrm.demo` / `changeme`
-- `leader.drainage@govcrm.demo` / `changeme`
-- `leader.garbage@govcrm.demo` / `changeme`
-- `leader.streetlight@govcrm.demo` / `changeme`
+- officer name
+- role
+- zone, ward, department, and category scope
+- login ID
+- full email
+- password
+- linked user and officer UUIDs
 
-### Workers
+## Legacy Assets Still Present
 
-Workers are seeded by department and ward pattern:
+The repo still contains the older:
 
-- `worker.<department>.<ward>@govcrm.demo`
-- password: `changeme`
+- department-head review flow
+- worker assignment flow
+- legacy worker dashboard
+- legacy leader analytics routes
+- SQL bootstrap helpers in `scripts/setup-db.sql`
 
-Examples:
+These paths are still useful for compatibility and reference, but the current README and main workflow above reflect the active officer-first architecture.
 
-- `worker.roads.rohini@govcrm.demo`
-- `worker.water.dwarka@govcrm.demo`
-- `worker.sanitation.saket@govcrm.demo`
-
-Some older generic demo workers are also inserted by the SQL bootstrap for backward compatibility, but the current assignment logic is department plus ward scoped, so the exact worker mapping matters.
-
-## Useful Scripts
-
-- [scripts/setup-db.sql](/d:/smartcrm/scripts/setup-db.sql)
-  Database bootstrap, base schema, wards, and seeded demo users
-- [scripts/fix-dummy-data.sql](/d:/smartcrm/scripts/fix-dummy-data.sql)
-  Data cleanup and alignment script for leader departments, worker mappings, and complaint department normalization
-
-## Validation Commands
+## Useful Commands
 
 ```bash
 npm run build
 ```
 
 ```bash
+npm run lint
+```
+
+```bash
 npm run prisma:validate
 ```
 
-If you want stronger validation during development, TypeScript can also be checked with `tsc --noEmit` in the workspace.
+## Key References
+
+- [app/page.tsx](/d:/smartcrm/app/page.tsx)
+- [app/citizen/submit/page.tsx](/d:/smartcrm/app/citizen/submit/page.tsx)
+- [app/citizen/tracker/page.tsx](/d:/smartcrm/app/citizen/tracker/page.tsx)
+- [app/worker-login/page.tsx](/d:/smartcrm/app/worker-login/page.tsx)
+- [app/l1/page.tsx](/d:/smartcrm/app/l1/page.tsx)
+- [app/l1/updates/page.tsx](/d:/smartcrm/app/l1/updates/page.tsx)
+- [app/l2/page.tsx](/d:/smartcrm/app/l2/page.tsx)
+- [app/l2/updates/page.tsx](/d:/smartcrm/app/l2/updates/page.tsx)
+- [app/l3/page.tsx](/d:/smartcrm/app/l3/page.tsx)
+- [app/admin/page.tsx](/d:/smartcrm/app/admin/page.tsx)
+- [lib/server/complaints.ts](/d:/smartcrm/lib/server/complaints.ts)
+- [lib/server/officer-routing.ts](/d:/smartcrm/lib/server/officer-routing.ts)
+- [scripts/seed-officers-from-csv.mjs](/d:/smartcrm/scripts/seed-officers-from-csv.mjs)
+- [scripts/escalation-worker.mjs](/d:/smartcrm/scripts/escalation-worker.mjs)

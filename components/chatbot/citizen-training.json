@@ -1,0 +1,821 @@
+{
+  "pages": [
+    {
+      "route": "/",
+      "name": "Landing Page",
+      "sources": [
+        "app/page.tsx"
+      ]
+    },
+    {
+      "route": "/track",
+      "name": "Public Complaint Tracking",
+      "sources": [
+        "app/track/page.tsx"
+      ]
+    },
+    {
+      "route": "/citizen",
+      "name": "Citizen Dashboard",
+      "sources": [
+        "app/citizen/page.tsx",
+        "lib/navigation.ts"
+      ]
+    },
+    {
+      "route": "/citizen/submit",
+      "name": "Raise Complaint",
+      "sources": [
+        "app/citizen/submit/page.tsx",
+        "lib/navigation.ts"
+      ]
+    },
+    {
+      "route": "/citizen/my-complaints",
+      "name": "My Complaints",
+      "sources": [
+        "app/citizen/my-complaints/page.tsx",
+        "lib/navigation.ts"
+      ]
+    },
+    {
+      "route": "/citizen/tracker",
+      "name": "Citizen Complaint Tracker",
+      "sources": [
+        "app/citizen/tracker/page.tsx",
+        "lib/navigation.ts"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "action": "Register or log in as a citizen",
+      "routes": [
+        "/",
+        "/track"
+      ],
+      "triggers": [
+        "Citizen Login / Register card",
+        "Login to view full details button"
+      ],
+      "sources": [
+        "app/page.tsx",
+        "app/track/page.tsx"
+      ]
+    },
+    {
+      "action": "Lodge a complaint",
+      "routes": [
+        "/",
+        "/citizen",
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "Lodge Complaint card",
+        "Raise Complaint button",
+        "Submit Complaint button"
+      ],
+      "sources": [
+        "app/page.tsx",
+        "app/citizen/page.tsx",
+        "app/citizen/submit/page.tsx"
+      ]
+    },
+    {
+      "action": "Track a complaint",
+      "routes": [
+        "/",
+        "/track",
+        "/citizen",
+        "/citizen/tracker",
+        "/citizen/my-complaints"
+      ],
+      "triggers": [
+        "Track Complaint card",
+        "Track Complaint form submit",
+        "Open Tracker button",
+        "Complaint ID search",
+        "View Details button",
+        "View Timeline button"
+      ],
+      "sources": [
+        "app/page.tsx",
+        "app/track/page.tsx",
+        "app/citizen/page.tsx",
+        "app/citizen/tracker/page.tsx",
+        "app/citizen/my-complaints/page.tsx"
+      ]
+    },
+    {
+      "action": "Upload complaint photographs",
+      "routes": [
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "CitizenComplaintPhotoPicker"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx"
+      ]
+    },
+    {
+      "action": "Select department and category",
+      "routes": [
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "Department select",
+        "Category select"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx",
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "action": "Select zone and ward",
+      "routes": [
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "Zone select",
+        "Ward select"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx",
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "action": "Capture live location",
+      "routes": [
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "Fetch Location button"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx"
+      ]
+    },
+    {
+      "action": "Reset complaint form",
+      "routes": [
+        "/citizen/submit"
+      ],
+      "triggers": [
+        "Reset button"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx"
+      ]
+    },
+    {
+      "action": "Search and filter personal complaints",
+      "routes": [
+        "/citizen/my-complaints"
+      ],
+      "triggers": [
+        "Search complaints input",
+        "Filter by status select",
+        "From Date input",
+        "To Date input",
+        "Apply Filter button",
+        "Prev button",
+        "Next button"
+      ],
+      "sources": [
+        "app/citizen/my-complaints/page.tsx"
+      ]
+    },
+    {
+      "action": "Review complaint timeline, assignment, evidence, and feedback",
+      "routes": [
+        "/citizen/tracker"
+      ],
+      "triggers": [
+        "Complaint ID search",
+        "Refresh control",
+        "Download report",
+        "Feedback rating buttons",
+        "Feedback tag buttons",
+        "Submit Feedback button",
+        "Create New Complaint button"
+      ],
+      "sources": [
+        "app/citizen/tracker/page.tsx"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "name": "Landing page citizen flow",
+      "steps": [
+        "Citizen Login / Register",
+        "Lodge Complaint",
+        "Track Complaint"
+      ],
+      "sources": [
+        "app/page.tsx"
+      ]
+    },
+    {
+      "name": "Complaint resolution flow",
+      "steps": [
+        "Register or sign in",
+        "Submit complaint details",
+        "Officer assignment",
+        "Action and updates",
+        "Resolution or escalation"
+      ],
+      "sources": [
+        "app/page.tsx"
+      ]
+    },
+    {
+      "name": "Citizen complaint submission flow",
+      "steps": [
+        "Fill applicant details",
+        "Choose department",
+        "Choose category",
+        "Enter subject and complaint description",
+        "Choose zone",
+        "Choose ward",
+        "Add street or landmark details",
+        "Optionally capture current location",
+        "Upload at least one complaint photo",
+        "Optionally add previous complaint ID",
+        "Submit complaint",
+        "Redirect to /citizen/tracker?id=<complaint_id>"
+      ],
+      "sources": [
+        "app/citizen/submit/page.tsx"
+      ]
+    },
+    {
+      "name": "Public complaint tracking flow",
+      "steps": [
+        "Open /track",
+        "Enter tracking ID",
+        "View public-safe summary",
+        "Login to view full details if needed"
+      ],
+      "sources": [
+        "app/track/page.tsx"
+      ]
+    },
+    {
+      "name": "Citizen tracker and closure flow",
+      "steps": [
+        "Open /citizen/tracker?id=<complaint_id>",
+        "Review complaint summary and timeline",
+        "Review assignment details",
+        "Review work completion evidence",
+        "Submit citizen feedback when resolution is ready",
+        "Refile if complaint expired"
+      ],
+      "sources": [
+        "app/citizen/tracker/page.tsx"
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "name": "Dangerous Hoarding",
+      "department": "Advertisement"
+    },
+    {
+      "name": "Dangerous Unipole",
+      "department": "Advertisement"
+    },
+    {
+      "name": "Illegal Banner",
+      "department": "Advertisement"
+    },
+    {
+      "name": "Illegal Hoarding",
+      "department": "Advertisement"
+    },
+    {
+      "name": "Illegal Unipole",
+      "department": "Advertisement"
+    },
+    {
+      "name": "Burning of Garbage in Open Space",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Dead Animals",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Debris Removal / Construction Material",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Dustbins Not Cleaned",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Garbage Dumps",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Garbage Vehicle Not Arrived",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Improper Disposal of Fecal Waste / Septage",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "No Electricity in Public Toilets",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "No Water Supply in Public Toilets",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Non-Sanitary Condition",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Open Manholes or Drains",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Public Toilet Blockage",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Public Toilet(s) Cleaning",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Sewerage / Storm Water Overflow",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Stagnant Water on Road",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Sweeping Not Done",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Toilet Door Locked",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "Urination in Public / Open Defecation",
+      "department": "Cleanliness (Swachhta)"
+    },
+    {
+      "name": "High Mast / Street Lights Not Working",
+      "department": "Electrical"
+    },
+    {
+      "name": "Repair Electrical Points",
+      "department": "Electrical"
+    },
+    {
+      "name": "Request for New Fans",
+      "department": "Electrical"
+    },
+    {
+      "name": "Request for New High Mast / Street Lights",
+      "department": "Electrical"
+    },
+    {
+      "name": "Request for New Tube Light",
+      "department": "Electrical"
+    },
+    {
+      "name": "Covering of Drain",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Encroachment on Roads / Footpath / Municipal Land",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Manhole Cover Level Issue",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Removal of Malba / Debris",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Removal of Silt from Road",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Repair of Open Storm Water Drain",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Repair of Speed Breaker",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Replacement of Damaged / Missing Manhole Cover",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Road / Footpath Resurfacing",
+      "department": "Engineering Works"
+    },
+    {
+      "name": "Any Other Illegality",
+      "department": "General Branch"
+    },
+    {
+      "name": "Encroachment on Road by Vehicle",
+      "department": "General Branch"
+    },
+    {
+      "name": "End-of-Life Vehicles",
+      "department": "General Branch"
+    },
+    {
+      "name": "Illegal Rehdi-Patri / Tehbazari",
+      "department": "General Branch"
+    },
+    {
+      "name": "Unauthorized Roadside Parking",
+      "department": "General Branch"
+    },
+    {
+      "name": "Cutting of Grass",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Maintenance of Park",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Park Booking",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Park Not Cleaned",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Removal of Dead / Fallen Tree",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Repair of Tubewell in Park",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Trimming / Pruning of Trees",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Watering of Plants",
+      "department": "Horticulture"
+    },
+    {
+      "name": "Aadhaar Enrollment Centre Issues",
+      "department": "IT Department"
+    },
+    {
+      "name": "Birth & Death Certificate Issues",
+      "department": "IT Department"
+    },
+    {
+      "name": "Community Hall Booking & Tehbazari",
+      "department": "IT Department"
+    },
+    {
+      "name": "Community Service Department",
+      "department": "IT Department"
+    },
+    {
+      "name": "Conversion Parking / Cell Tower",
+      "department": "IT Department"
+    },
+    {
+      "name": "Factory License",
+      "department": "IT Department"
+    },
+    {
+      "name": "General Trade License",
+      "department": "IT Department"
+    },
+    {
+      "name": "Health Trade License",
+      "department": "IT Department"
+    },
+    {
+      "name": "LMS (Education / Hawking / School Infra / Hospital Hardware)",
+      "department": "IT Department"
+    },
+    {
+      "name": "Property Tax",
+      "department": "IT Department"
+    },
+    {
+      "name": "Stationery & Contingency",
+      "department": "IT Department"
+    },
+    {
+      "name": "Veterinary Trade License",
+      "department": "IT Department"
+    },
+    {
+      "name": "Overcharging in Authorized Parking",
+      "department": "Parking Cell"
+    },
+    {
+      "name": "Parking Area Not Maintained",
+      "department": "Parking Cell"
+    },
+    {
+      "name": "Parking Staff Not in Uniform",
+      "department": "Parking Cell"
+    },
+    {
+      "name": "Unauthorized / Illegal Parking",
+      "department": "Parking Cell"
+    },
+    {
+      "name": "Encroachment by Eateries",
+      "department": "Public Health"
+    },
+    {
+      "name": "Illegal Dumping of Medical Waste",
+      "department": "Public Health"
+    },
+    {
+      "name": "Illegal Food Hawker",
+      "department": "Public Health"
+    },
+    {
+      "name": "Illegal Gym",
+      "department": "Public Health"
+    },
+    {
+      "name": "Illegal Slaughtering",
+      "department": "Public Health"
+    },
+    {
+      "name": "Improper Transport of Meat / Livestock",
+      "department": "Public Health"
+    },
+    {
+      "name": "Roadside Eateries",
+      "department": "Public Health"
+    },
+    {
+      "name": "Unauthorized Restaurants",
+      "department": "Public Health"
+    },
+    {
+      "name": "Unauthorized Sale of Meat",
+      "department": "Public Health"
+    },
+    {
+      "name": "ECC Refund Issue",
+      "department": "Toll Tax"
+    },
+    {
+      "name": "Overcharge Toll Fee",
+      "department": "Toll Tax"
+    },
+    {
+      "name": "Tag Recharge Issue",
+      "department": "Toll Tax"
+    },
+    {
+      "name": "Toll Staff Behavior Issue",
+      "department": "Toll Tax"
+    },
+    {
+      "name": "Wrong Deduction from RFID Tag",
+      "department": "Toll Tax"
+    },
+    {
+      "name": "Catching of Stray Dogs",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Flies Menace",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Illegal Dairy",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Illegal Meat Shop",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Illegal Slaughtering",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Injured / Sick Animal",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Removal of Dead Animal",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Stray Cattle",
+      "department": "Veterinary"
+    },
+    {
+      "name": "Stray Monkeys",
+      "department": "Veterinary"
+    }
+  ],
+  "departments": [
+    {
+      "name": "Advertisement",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Cleanliness (Swachhta)",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Electrical",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Engineering Works",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "General Branch",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Horticulture",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "IT Department",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Parking Cell",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Public Health",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Toll Tax",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    },
+    {
+      "name": "Veterinary",
+      "sources": [
+        "lib/grievance-mapping.ts"
+      ]
+    }
+  ],
+  "mapping": {
+    "Advertisement": [
+      "Dangerous Hoarding",
+      "Dangerous Unipole",
+      "Illegal Banner",
+      "Illegal Hoarding",
+      "Illegal Unipole"
+    ],
+    "Cleanliness (Swachhta)": [
+      "Burning of Garbage in Open Space",
+      "Dead Animals",
+      "Debris Removal / Construction Material",
+      "Dustbins Not Cleaned",
+      "Garbage Dumps",
+      "Garbage Vehicle Not Arrived",
+      "Improper Disposal of Fecal Waste / Septage",
+      "No Electricity in Public Toilets",
+      "No Water Supply in Public Toilets",
+      "Non-Sanitary Condition",
+      "Open Manholes or Drains",
+      "Public Toilet Blockage",
+      "Public Toilet(s) Cleaning",
+      "Sewerage / Storm Water Overflow",
+      "Stagnant Water on Road",
+      "Sweeping Not Done",
+      "Toilet Door Locked",
+      "Urination in Public / Open Defecation"
+    ],
+    "Electrical": [
+      "High Mast / Street Lights Not Working",
+      "Repair Electrical Points",
+      "Request for New Fans",
+      "Request for New High Mast / Street Lights",
+      "Request for New Tube Light"
+    ],
+    "Engineering Works": [
+      "Covering of Drain",
+      "Encroachment on Roads / Footpath / Municipal Land",
+      "Manhole Cover Level Issue",
+      "Removal of Malba / Debris",
+      "Removal of Silt from Road",
+      "Repair of Open Storm Water Drain",
+      "Repair of Speed Breaker",
+      "Replacement of Damaged / Missing Manhole Cover",
+      "Road / Footpath Resurfacing"
+    ],
+    "General Branch": [
+      "Any Other Illegality",
+      "Encroachment on Road by Vehicle",
+      "End-of-Life Vehicles",
+      "Illegal Rehdi-Patri / Tehbazari",
+      "Unauthorized Roadside Parking"
+    ],
+    "Horticulture": [
+      "Cutting of Grass",
+      "Maintenance of Park",
+      "Park Booking",
+      "Park Not Cleaned",
+      "Removal of Dead / Fallen Tree",
+      "Repair of Tubewell in Park",
+      "Trimming / Pruning of Trees",
+      "Watering of Plants"
+    ],
+    "IT Department": [
+      "Aadhaar Enrollment Centre Issues",
+      "Birth & Death Certificate Issues",
+      "Community Hall Booking & Tehbazari",
+      "Community Service Department",
+      "Conversion Parking / Cell Tower",
+      "Factory License",
+      "General Trade License",
+      "Health Trade License",
+      "LMS (Education / Hawking / School Infra / Hospital Hardware)",
+      "Property Tax",
+      "Stationery & Contingency",
+      "Veterinary Trade License"
+    ],
+    "Parking Cell": [
+      "Overcharging in Authorized Parking",
+      "Parking Area Not Maintained",
+      "Parking Staff Not in Uniform",
+      "Unauthorized / Illegal Parking"
+    ],
+    "Public Health": [
+      "Encroachment by Eateries",
+      "Illegal Dumping of Medical Waste",
+      "Illegal Food Hawker",
+      "Illegal Gym",
+      "Illegal Slaughtering",
+      "Improper Transport of Meat / Livestock",
+      "Roadside Eateries",
+      "Unauthorized Restaurants",
+      "Unauthorized Sale of Meat"
+    ],
+    "Toll Tax": [
+      "ECC Refund Issue",
+      "Overcharge Toll Fee",
+      "Tag Recharge Issue",
+      "Toll Staff Behavior Issue",
+      "Wrong Deduction from RFID Tag"
+    ],
+    "Veterinary": [
+      "Catching of Stray Dogs",
+      "Flies Menace",
+      "Illegal Dairy",
+      "Illegal Meat Shop",
+      "Illegal Slaughtering",
+      "Injured / Sick Animal",
+      "Removal of Dead Animal",
+      "Stray Cattle",
+      "Stray Monkeys"
+    ]
+  }
+}

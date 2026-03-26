@@ -1,5 +1,8 @@
+'use client';
+
 import { BadgeCheck, CircleDot, Clock3, FileCheck2 } from 'lucide-react';
 
+import { useLandingLanguage } from '@/components/landing-language';
 import type { Complaint } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { buildComplaintTrackerSnapshot } from '@/lib/complaint-tracker';
@@ -56,7 +59,16 @@ function getProgressPercent(total: number, activeIndex: number, onFinalStage: bo
 }
 
 export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: ComplaintTrackingTimelineProps) {
-  const tracker = buildComplaintTrackerSnapshot(complaint);
+  const { language } = useLandingLanguage();
+  const tracker = buildComplaintTrackerSnapshot(complaint, language);
+  const getStateLabel = (label: string) =>
+    language === 'hi'
+      ? label === 'Completed'
+        ? 'पूर्ण'
+        : label === 'Live'
+          ? 'सक्रिय'
+          : 'लंबित'
+      : label;
   const explicitCurrentIndex = tracker.timeline.findIndex((step) => step.state === 'current');
   const fallbackActiveIndex = Math.max(0, tracker.timeline.map((step) => step.state).lastIndexOf('completed'));
   const activeIndex = explicitCurrentIndex >= 0 ? explicitCurrentIndex : fallbackActiveIndex;
@@ -78,28 +90,30 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0b3c5d]">
-              Official Progress Log
+              {language === 'hi' ? 'आधिकारिक प्रगति लॉग' : 'Official Progress Log'}
             </div>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950">Live complaint movement tracker</h2>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950">{language === 'hi' ? 'लाइव शिकायत मूवमेंट ट्रैकर' : 'Live complaint movement tracker'}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              This tracker follows 5 official service phases: receipt, review and assignment, field action, completion verification, and closure. Supervisory reminders and escalation notes are kept separate from this main chain.
+              {language === 'hi'
+                ? 'यह ट्रैकर 5 आधिकारिक सेवा चरणों का पालन करता है: प्राप्ति, समीक्षा और आवंटन, मैदानी कार्रवाई, पूर्णता सत्यापन और समापन। पर्यवेक्षी रिमाइंडर और एस्केलेशन नोट्स इस मुख्य श्रृंखला से अलग रखे जाते हैं।'
+                : 'This tracker follows 5 official service phases: receipt, review and assignment, field action, completion verification, and closure. Supervisory reminders and escalation notes are kept separate from this main chain.'}
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[28rem]">
             <div className="rounded-[1.1rem] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Current Stage</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'वर्तमान चरण' : 'Current Stage'}</div>
               <div className="mt-2 text-sm font-semibold text-slate-950">{tracker.currentStageTitle}</div>
             </div>
             <div className="rounded-[1.1rem] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Stages Reached</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'प्राप्त चरण' : 'Stages Reached'}</div>
               <div className="mt-2 text-sm font-semibold text-slate-950">
-                {reachedStages}/{tracker.timeline.length} stages
+                {reachedStages}/{tracker.timeline.length} {language === 'hi' ? 'चरण' : 'stages'}
               </div>
             </div>
             <div className="rounded-[1.1rem] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Last Sync</div>
-              <div className="mt-2 text-sm font-semibold text-slate-950">{lastUpdatedLabel || 'Not yet updated'}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'अंतिम सिंक' : 'Last Sync'}</div>
+              <div className="mt-2 text-sm font-semibold text-slate-950">{lastUpdatedLabel || (language === 'hi' ? 'अभी अपडेट नहीं हुआ' : 'Not yet updated')}</div>
             </div>
           </div>
         </div>
@@ -108,7 +122,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
           <div className="rounded-[1.2rem] border border-[#cfe0ef] bg-[linear-gradient(135deg,#f7fbff_0%,#eef6fb_100%)] px-4 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-[#cfe0ef] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0b3c5d]">
-                Live Status
+                {language === 'hi' ? 'लाइव स्थिति' : 'Live Status'}
               </span>
               <span className="text-sm font-semibold text-slate-950">{tracker.humanStatus}</span>
             </div>
@@ -118,7 +132,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
 
           <div className="rounded-[1.2rem] border border-slate-200 bg-white px-4 py-4">
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-slate-900">Workflow Progress</span>
+              <span className="font-semibold text-slate-900">{language === 'hi' ? 'वर्कफ़्लो प्रगति' : 'Workflow Progress'}</span>
               <span className="font-medium text-slate-600">{progressPercent}%</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
@@ -128,13 +142,13 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
               />
             </div>
             <div className="mt-3 text-sm leading-6 text-slate-600">
-              Active point:
+              {language === 'hi' ? 'सक्रिय बिंदु:' : 'Active point:'}
               {' '}
               <span className="font-semibold text-slate-950">{activeStep.title}</span>
             </div>
             {tracker.citizenJourneyCompleted ? (
               <div className="mt-3 rounded-[0.95rem] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
-                Citizen-facing tracking has been completed for this complaint.
+                {language === 'hi' ? 'इस शिकायत के लिए नागरिक-उन्मुख ट्रैकिंग पूर्ण हो चुकी है।' : 'Citizen-facing tracking has been completed for this complaint.'}
               </div>
             ) : null}
           </div>
@@ -144,8 +158,8 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
       <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-5 sm:px-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-slate-950">Official Phase Chain</div>
-            <div className="mt-1 text-sm text-slate-600">The 5-phase chain below remains fixed while live service activity updates inside the relevant phase.</div>
+            <div className="text-sm font-semibold text-slate-950">{language === 'hi' ? 'आधिकारिक चरण श्रृंखला' : 'Official Phase Chain'}</div>
+            <div className="mt-1 text-sm text-slate-600">{language === 'hi' ? 'नीचे दी गई 5-चरणीय श्रृंखला स्थिर रहती है, जबकि लाइव सेवा गतिविधि संबंधित चरण के अंदर अपडेट होती है।' : 'The 5-phase chain below remains fixed while live service activity updates inside the relevant phase.'}</div>
           </div>
         </div>
 
@@ -171,13 +185,13 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                     </div>
                     <div className="mt-3 text-center">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Step {index + 1}
+                        {language === 'hi' ? 'चरण' : 'Step'} {index + 1}
                       </div>
                       <div className="mt-1 text-sm font-semibold leading-5 text-slate-950">{step.title}</div>
                       <div className="mt-2 text-xs text-slate-500">{step.timestampLabel}</div>
                     </div>
                     <span className={cn('mt-3 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]', style.pill)}>
-                      {style.label}
+                      {getStateLabel(style.label)}
                     </span>
                   </div>
                 </div>
@@ -190,13 +204,13 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
       <div className="px-5 py-5 sm:px-6">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-slate-950">Detailed Tracking Chain</div>
+            <div className="text-sm font-semibold text-slate-950">{language === 'hi' ? 'विस्तृत ट्रैकिंग श्रृंखला' : 'Detailed Tracking Chain'}</div>
             <div className="mt-1 text-sm text-slate-600">
-              Each stage below is recorded as an official movement entry with status, note, and time stamp.
+              {language === 'hi' ? 'नीचे प्रत्येक चरण स्थिति, टिप्पणी और समय-मुद्रा सहित आधिकारिक मूवमेंट प्रविष्टि के रूप में दर्ज है।' : 'Each stage below is recorded as an official movement entry with status, note, and time stamp.'}
             </div>
           </div>
           {lastUpdatedLabel ? (
-            <div className="text-xs font-medium text-slate-500">Last Updated: {lastUpdatedLabel}</div>
+            <div className="text-xs font-medium text-slate-500">{language === 'hi' ? 'अंतिम अपडेट:' : 'Last Updated:'} {lastUpdatedLabel}</div>
           ) : null}
         </div>
 
@@ -241,25 +255,25 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                         </span>
                         <div>
                           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Stage {index + 1}
+                            {language === 'hi' ? 'चरण' : 'Stage'} {index + 1}
                           </div>
                           <div className="mt-0.5 text-sm font-semibold text-slate-950 md:text-[15px]">{step.title}</div>
                         </div>
                         <span className={cn('ml-auto rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', style.pill)}>
-                          {style.label}
+                          {getStateLabel(style.label)}
                         </span>
                       </div>
 
                       <div className="mt-3 grid gap-3 md:grid-cols-[11rem_minmax(0,1fr)]">
                         <div className="rounded-[0.85rem] border border-white/70 bg-white/80 px-3 py-2.5">
                           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Record Type
+                            {language === 'hi' ? 'रिकॉर्ड प्रकार' : 'Record Type'}
                           </div>
-                          <div className="mt-1 text-sm font-medium text-slate-900">Workflow Movement</div>
+                          <div className="mt-1 text-sm font-medium text-slate-900">{language === 'hi' ? 'वर्कफ़्लो मूवमेंट' : 'Workflow Movement'}</div>
                         </div>
                         <div className="rounded-[0.85rem] border border-white/70 bg-white/80 px-3 py-2.5">
                           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Official Note
+                            {language === 'hi' ? 'आधिकारिक टिप्पणी' : 'Official Note'}
                           </div>
                           <div className="mt-1 text-sm leading-6 text-slate-700">{step.description}</div>
                         </div>
@@ -268,7 +282,7 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                       {highlights.length ? (
                         <div className="mt-3 rounded-[0.85rem] border border-white/70 bg-white/80 px-3 py-2.5">
                           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Live Highlights
+                            {language === 'hi' ? 'लाइव हाइलाइट्स' : 'Live Highlights'}
                           </div>
                           <div className="mt-2 space-y-2">
                             {highlights.map((highlight) => (
@@ -283,18 +297,18 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                     </div>
 
                     <div className="border-t border-slate-200/70 bg-white/80 px-4 py-4 lg:border-t-0 lg:border-l lg:px-5">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recorded Time</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'रिकॉर्ड समय' : 'Recorded Time'}</div>
                       <div className="mt-2 text-sm font-semibold leading-6 text-slate-950">{step.timestampLabel}</div>
-                      <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Stage Code</div>
+                      <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'चरण कोड' : 'Stage Code'}</div>
                       <div className="mt-1 text-sm font-medium text-slate-700">{String(index + 1).padStart(2, '0')}</div>
-                      <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Movement State</div>
-                      <div className="mt-1 text-sm font-medium text-slate-700">{style.label}</div>
+                      <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'मूवमेंट स्थिति' : 'Movement State'}</div>
+                      <div className="mt-1 text-sm font-medium text-slate-700">{getStateLabel(style.label)}</div>
                     </div>
                   </div>
 
                   <div className="border-t border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.75)_0%,rgba(255,255,255,0.95)_100%)] px-4 py-2.5 md:px-5">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                      <span>Official municipal tracking entry</span>
+                      <span>{language === 'hi' ? 'आधिकारिक नगर निगम ट्रैकिंग प्रविष्टि' : 'Official municipal tracking entry'}</span>
                       <span className="font-medium text-slate-600">{step.key.replace(/_/g, ' ')}</span>
                     </div>
                   </div>
@@ -307,16 +321,16 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
         <div className="mt-5 overflow-hidden rounded-[1rem] border border-slate-200 bg-white">
           <div className="grid gap-0 md:grid-cols-3">
             <div className="border-b border-slate-200 px-4 py-3 md:border-b-0 md:border-r">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Department</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'विभाग' : 'Department'}</div>
               <div className="mt-1.5 text-sm font-semibold text-slate-950">{tracker.departmentLabel}</div>
             </div>
             <div className="border-b border-slate-200 px-4 py-3 md:border-b-0 md:border-r">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Priority</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'प्राथमिकता' : 'Priority'}</div>
               <div className="mt-1.5 text-sm font-semibold text-slate-950">{tracker.priorityLabel}</div>
             </div>
             <div className="px-4 py-3">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Evidence Status</div>
-              <div className="mt-1.5 text-sm font-semibold text-slate-950">{tracker.proofSubmitted ? 'Submitted' : 'Pending'}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{language === 'hi' ? 'प्रमाण स्थिति' : 'Evidence Status'}</div>
+              <div className="mt-1.5 text-sm font-semibold text-slate-950">{tracker.proofSubmitted ? (language === 'hi' ? 'जमा किया गया' : 'Submitted') : (language === 'hi' ? 'लंबित' : 'Pending')}</div>
             </div>
           </div>
         </div>
@@ -328,17 +342,17 @@ export function ComplaintTrackingTimeline({ complaint, lastUpdatedLabel }: Compl
                 <FileCheck2 className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-slate-950">Resolution verification lane</div>
+                <div className="text-sm font-semibold text-slate-950">{language === 'hi' ? 'निस्तारण सत्यापन पथ' : 'Resolution verification lane'}</div>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   {tracker.feedbackSubmitted
-                    ? 'Citizen feedback has already been added to the official complaint record and remains visible below.'
+                    ? (language === 'hi' ? 'नागरिक फीडबैक पहले ही आधिकारिक शिकायत रिकॉर्ड में जोड़ा जा चुका है और नीचे दिखाई देता है।' : 'Citizen feedback has already been added to the official complaint record and remains visible below.')
                     : tracker.waitingForFeedback
-                      ? 'Work proof has been uploaded. Citizen confirmation can now move the complaint into its final review cycle.'
+                      ? (language === 'hi' ? 'कार्य प्रमाण अपलोड हो चुका है। अब नागरिक पुष्टि शिकायत को अंतिम समीक्षा चक्र में ले जा सकती है।' : 'Work proof has been uploaded. Citizen confirmation can now move the complaint into its final review cycle.')
                       : tracker.proofSubmitted && tracker.isClosed
-                        ? 'Work proof remains stored in the complaint record and no further citizen action is required for this closed complaint.'
+                        ? (language === 'hi' ? 'कार्य प्रमाण शिकायत रिकॉर्ड में सुरक्षित है और इस बंद शिकायत पर किसी अतिरिक्त नागरिक कार्रवाई की आवश्यकता नहीं है।' : 'Work proof remains stored in the complaint record and no further citizen action is required for this closed complaint.')
                         : tracker.proofSubmitted
-                          ? 'Work proof has been recorded in the complaint file and remains available for official review.'
-                          : 'Work proof will appear here automatically once field execution is completed.'}
+                          ? (language === 'hi' ? 'कार्य प्रमाण शिकायत फ़ाइल में दर्ज हो चुका है और आधिकारिक समीक्षा के लिए उपलब्ध है।' : 'Work proof has been recorded in the complaint file and remains available for official review.')
+                          : (language === 'hi' ? 'फील्ड कार्य पूरा होने पर कार्य प्रमाण यहां स्वतः दिखाई देगा।' : 'Work proof will appear here automatically once field execution is completed.')}
                 </p>
               </div>
             </div>

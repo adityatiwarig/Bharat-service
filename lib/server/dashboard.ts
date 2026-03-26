@@ -11,6 +11,90 @@ import type {
   WorkerDashboardSummary,
 } from '@/lib/types';
 
+const COMPLAINT_ISSUE_GROUPING_COLUMNS = [
+  'issue_group_id',
+  'parent_complaint_id',
+  'is_primary',
+] as const;
+
+let complaintIssueGroupingColumnsPromise: Promise<boolean> | null = null;
+let issueGroupsTablePromise: Promise<boolean> | null = null;
+
+function getIssueGroupSelectColumns(issueGroupingEnabled: boolean) {
+  if (!issueGroupingEnabled) {
+    return `
+          NULL::uuid AS issue_group_id,
+          NULL::uuid AS issue_primary_complaint_id,
+          NULL::uuid AS parent_complaint_id,
+          TRUE AS is_primary,
+          NULL::int AS issue_supporter_count,
+          NULL::text AS issue_priority,
+    `;
+  }
+
+  return `
+          c.issue_group_id,
+          ig.primary_complaint_id AS issue_primary_complaint_id,
+          c.parent_complaint_id,
+          c.is_primary,
+          ig.supporter_count AS issue_supporter_count,
+          ig.priority::text AS issue_priority,
+    `;
+}
+
+function getIssueGroupJoinClause(issueGroupingEnabled: boolean) {
+  return issueGroupingEnabled
+    ? 'LEFT JOIN issue_groups ig ON ig.id = c.issue_group_id'
+    : '';
+}
+
+async function complaintsTableHasIssueGroupingColumns() {
+  complaintIssueGroupingColumnsPromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'complaints'
+        AND column_name = ANY($1::text[])
+    `,
+    [COMPLAINT_ISSUE_GROUPING_COLUMNS],
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) === COMPLAINT_ISSUE_GROUPING_COLUMNS.length)
+    .catch((error) => {
+      complaintIssueGroupingColumnsPromise = null;
+      throw error;
+    });
+
+  return complaintIssueGroupingColumnsPromise;
+}
+
+async function issueGroupsTableExists() {
+  issueGroupsTablePromise ??= query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'issue_groups'
+    `,
+  )
+    .then((result) => Number(result.rows[0]?.count || 0) > 0)
+    .catch((error) => {
+      issueGroupsTablePromise = null;
+      throw error;
+    });
+
+  return issueGroupsTablePromise;
+}
+
+async function issueGroupingFeatureAvailable() {
+  const [hasColumns, hasTable] = await Promise.all([
+    complaintsTableHasIssueGroupingColumns(),
+    issueGroupsTableExists(),
+  ]);
+
+  return hasColumns && hasTable;
+}
+
 function getDepartmentScope(user?: User, options?: { zoneId?: number }) {
   if (user?.role !== 'leader') {
     return {
@@ -45,6 +129,7 @@ function getDepartmentScope(user?: User, options?: { zoneId?: number }) {
 
 export async function getAdminDashboardSummary(user?: User, options?: { zoneId?: number }): Promise<ComplaintAnalyticsSummary> {
   await maybeProcessDueComplaintEscalations();
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
 
   const { whereClause, complaintAliasWhereClause, params } = getDepartmentScope(user, options);
 
@@ -133,6 +218,7 @@ export async function getAdminDashboardSummary(user?: User, options?: { zoneId?:
     query<ComplaintRow>(
       `
         SELECT
+          ${getIssueGroupSelectColumns(issueGroupingEnabled)}
           c.id,
           c.complaint_id,
           c.tracking_code,
@@ -184,6 +270,7 @@ export async function getAdminDashboardSummary(user?: User, options?: { zoneId?:
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        ${getIssueGroupJoinClause(issueGroupingEnabled)}
         LEFT JOIN officers o ON o.id = c.assigned_officer_id
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN categories cat ON cat.id = c.category_id
@@ -379,6 +466,7 @@ export async function getLeaderWardComparisonSummary(user: User): Promise<Compla
 
 export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashboardSummary> {
   await maybeProcessDueComplaintEscalations();
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
 
   const [totals, rows] = await Promise.all([
     query<{
@@ -404,6 +492,7 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
     query<ComplaintRow>(
       `
         SELECT
+          ${getIssueGroupSelectColumns(issueGroupingEnabled)}
           c.id,
           c.complaint_id,
           c.tracking_code,
@@ -445,6 +534,7 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        ${getIssueGroupJoinClause(issueGroupingEnabled)}
         INNER JOIN workers assigned_worker ON assigned_worker.id = c.assigned_worker_id
         WHERE assigned_worker.user_id = $1
         ORDER BY
@@ -485,6 +575,7 @@ export async function getWorkerDashboardSummary(user: User): Promise<WorkerDashb
 
 export async function getOfficerDashboardSummary(user: User): Promise<OfficerDashboardSummary> {
   await maybeProcessDueComplaintEscalations();
+  const issueGroupingEnabled = await issueGroupingFeatureAvailable();
 
   if (!user.officer_id) {
     return {
@@ -507,7 +598,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
     }>(
       `
         SELECT
-          COUNT(*)::text AS assigned_total,
+          COUNT(*) FILTER (WHERE c.status NOT IN ('closed', 'rejected', 'expired'))::text AS assigned_total,
           COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed', 'rejected', 'expired'))::text AS assigned_open,
           COUNT(*) FILTER (
             WHERE (
@@ -532,7 +623,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         WHERE (
              $2 = 'L1'
              AND om.l1_officer_id = $1
-             AND c.status NOT IN ('closed', 'rejected', 'expired')
+             AND c.status <> 'rejected'
            )
            OR (
              $2 = 'L2'
@@ -552,6 +643,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
     query<ComplaintRow>(
       `
         SELECT
+          ${getIssueGroupSelectColumns(issueGroupingEnabled)}
           c.id,
           c.complaint_id,
           c.tracking_code,
@@ -608,6 +700,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         FROM complaints c
         INNER JOIN wards w ON w.id = c.ward_id
         INNER JOIN users u ON u.id = c.user_id
+        ${getIssueGroupJoinClause(issueGroupingEnabled)}
         LEFT JOIN officers o ON o.id = c.assigned_officer_id
         LEFT JOIN departments d ON d.id = c.department_id
         LEFT JOIN categories cat ON cat.id = c.category_id
@@ -621,7 +714,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
         WHERE (
              $2 = 'L1'
              AND om.l1_officer_id = $1
-             AND c.status NOT IN ('closed', 'rejected', 'expired')
+             AND c.status <> 'rejected'
            )
            OR (
              $2 = 'L2'
@@ -640,6 +733,8 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
             WHEN c.deadline IS NOT NULL
               AND c.deadline < NOW()
               AND c.status NOT IN ('closed', 'rejected', 'expired') THEN 0
+            WHEN c.status = 'closed' THEN 2
+            WHEN c.status = 'expired' THEN 3
             ELSE 1
           END,
           CASE c.priority
@@ -650,7 +745,7 @@ export async function getOfficerDashboardSummary(user: User): Promise<OfficerDas
           END,
           c.deadline ASC NULLS LAST,
           c.updated_at DESC
-        LIMIT 8
+        LIMIT 18
       `,
       [user.officer_id, user.officer_level],
     ),

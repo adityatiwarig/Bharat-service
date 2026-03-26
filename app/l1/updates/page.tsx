@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, ClipboardCheck, FileImage, LoaderCircle, MapPinned, Send, Upload, Wrench } from 'lucide-react';
+import { Camera, CheckCircle2, ClipboardCheck, FileImage, LoaderCircle, MapPinned, Send, Upload, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
@@ -11,17 +11,21 @@ import { OfficerSupervisoryAlerts } from '@/components/officer-supervisory-alert
 import { PriorityBadge, StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
   closeComplaintByReviewDesk,
   completeComplaintByL1,
+  fetchComplaintById,
   fetchOfficerDashboard,
+  forwardComplaintToNextLevel,
   markComplaintOnSiteByL1,
   markComplaintViewedByL1,
   markComplaintWorkStartedByL1,
   reopenComplaintByReviewDesk,
   uploadComplaintProofByExecutionOfficer,
 } from '@/lib/client/complaints';
+import { createGeoEvidenceDraft, type GeoEvidenceDraft } from '@/lib/client/geo-evidence';
 import type { Complaint, ComplaintAttachment, ComplaintLevel, OfficerDashboardSummary } from '@/lib/types';
 
 function normalizeDashboardLevel(level?: ComplaintLevel | null) {
@@ -33,6 +37,14 @@ function normalizeDashboardLevel(level?: ComplaintLevel | null) {
 }
 
 function getWorkStatus(complaint: Complaint) {
+  if (complaint.status === 'closed') {
+    return 'Completed';
+  }
+
+  if (complaint.status === 'resolved') {
+    return complaint.rating ? 'Citizen Review Received' : 'Awaiting Citizen Feedback';
+  }
+
   return complaint.work_status || 'Pending';
 }
 
@@ -54,6 +66,18 @@ function hasCitizenFeedback(complaint: Complaint) {
       typeof complaint.rating.rating === 'number'
     ),
   );
+}
+
+function hasSatisfiedCitizenFeedback(complaint: Complaint) {
+  if (!complaint.rating) {
+    return false;
+  }
+
+  if (complaint.rating.satisfaction) {
+    return complaint.rating.satisfaction === 'satisfied';
+  }
+
+  return typeof complaint.rating.rating === 'number' && complaint.rating.rating >= 4;
 }
 
 function isDeadlineExpired(complaint: Complaint) {
@@ -106,16 +130,48 @@ function canDirectlyCloseRework(complaint: Complaint) {
     return false;
   }
 
+  const supervisionMessage = `${complaint.department_message || ''}`.toLowerCase();
+
+  if (
+    complaint.current_level === 'L2' &&
+    (
+      supervisionMessage.includes('forwarded by the assigned level 1 officer to level 2 supervision') ||
+      supervisionMessage.includes('under level 2 supervision') ||
+      supervisionMessage.includes('final level 2 review')
+    )
+  ) {
+    return false;
+  }
+
   const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
 
   return !reviewMessage.includes('level 2 review desk') && !reviewMessage.includes('level 3 review desk');
 }
 
+function isComplaintAwaitingHigherDeskReview(complaint: Complaint) {
+  const reviewMessage = `${complaint.department_message || ''} ${complaint.resolution_notes || ''}`.toLowerCase();
+
+  return (
+    complaint.current_level === 'L2' ||
+    complaint.current_level === 'L2_ESCALATED' ||
+    complaint.current_level === 'L3' ||
+    reviewMessage.includes('under level 2 supervision') ||
+    reviewMessage.includes('final level 2 review') ||
+    reviewMessage.includes('level 2 review desk') ||
+    reviewMessage.includes('level 3 review desk') ||
+    reviewMessage.includes('routed to level 2 review') ||
+    reviewMessage.includes('routed to level 3 review')
+  );
+}
+
 export default function L1UpdatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const preferredComplaintCode = searchParams.get('id')?.trim() || '';
+  const preferredComplaintCode = searchParams?.get('id')?.trim() || '';
   const [isPending, startTransition] = useTransition();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<OfficerDashboardSummary | null>(null);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string>('');
@@ -124,24 +180,53 @@ export default function L1UpdatesPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [proofDescription, setProofDescription] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofGeoEvidence, setProofGeoEvidence] = useState<GeoEvidenceDraft | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState('');
+  const [expandedProofPreview, setExpandedProofPreview] = useState(false);
+  const [processingProofEvidence, setProcessingProofEvidence] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
 
   async function loadDesk(preferredCode?: string, preferredId?: string) {
     setLoading(true);
 
     try {
       const data = await fetchOfficerDashboard();
-      const items = data.summary.items;
-      setSummary(data.summary);
+      let items = data.summary.items;
 
       const matchedComplaint = preferredId
         ? items.find((item) => item.id === preferredId)
         : preferredCode
           ? items.find((item) => item.complaint_id === preferredCode)
           : null;
+      let nextComplaint = matchedComplaint || null;
+
+      if (!nextComplaint && (preferredCode || preferredId)) {
+        try {
+          const fetchedComplaint = await fetchComplaintById(preferredCode || preferredId || '', {
+            view: 'full',
+            force: true,
+          });
+
+          if (fetchedComplaint) {
+            items = [fetchedComplaint, ...items.filter((item) => item.id !== fetchedComplaint.id)];
+            nextComplaint = fetchedComplaint;
+          }
+        } catch {
+          // Fall back to the officer queue if this complaint is not directly available.
+        }
+      }
+
       const fallbackComplaint = items[0] || null;
-      const nextComplaint = matchedComplaint || fallbackComplaint;
+      nextComplaint = nextComplaint || fallbackComplaint;
       const nextId = nextComplaint?.id || '';
 
+      setSummary({
+        ...data.summary,
+        items,
+      });
       setSelectedComplaintId(nextId);
 
       if (nextComplaint && nextComplaint.complaint_id !== preferredCode) {
@@ -197,11 +282,172 @@ export default function L1UpdatesPage() {
   }, [selectedComplaint]);
 
   useEffect(() => {
+    resetDraftState();
+  }, [selectedComplaintId]);
+
+  useEffect(() => {
+    return () => {
+      const stream = streamRef.current;
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!proofGeoEvidence) {
+      setProofPreviewUrl('');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(proofGeoEvidence.taggedFile);
+    setProofPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [proofGeoEvidence]);
+
+  function stopCameraStream() {
+    const stream = streamRef.current;
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOpen(false);
+    setCameraLoading(false);
+    setCameraReady(false);
+    setCameraError('');
+  }
+
+  function resetDraftState() {
     setProofFile(null);
+    setProofGeoEvidence(null);
+    setProofPreviewUrl('');
+    setExpandedProofPreview(false);
     setProofDescription('');
     setCompletionNote('');
     setReviewNote('');
-  }, [selectedComplaintId]);
+  }
+
+  async function prepareProofFile(file: File, source: 'camera' | 'upload') {
+    if (!selectedComplaint) {
+      return;
+    }
+
+    setProcessingProofEvidence(true);
+
+    try {
+      const draft = await createGeoEvidenceDraft(file, {
+        source,
+        complaintLocation: {
+          latitude: selectedComplaint.latitude,
+          longitude: selectedComplaint.longitude,
+        },
+      });
+
+      setProofFile(draft.taggedFile);
+      setProofGeoEvidence(draft);
+
+      if (!draft.metadata.location_available) {
+        toast.warning('Location could not be captured. The proof image will show Not Verified.');
+      } else {
+        toast.success('Geo-tagged proof image prepared successfully.');
+      }
+    } catch (error) {
+      console.error('Unable to prepare proof evidence', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to prepare proof image.');
+      setProofFile(null);
+      setProofGeoEvidence(null);
+    } finally {
+      setProcessingProofEvidence(false);
+    }
+  }
+
+  async function openCameraModal() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraOpen(true);
+      setCameraError('Camera access is not available in this browser.');
+      return;
+    }
+
+    stopCameraStream();
+    setCameraOpen(true);
+    setCameraLoading(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.error('Unable to open proof camera', error);
+      setCameraError('Camera permission was denied or camera is unavailable.');
+      setCameraLoading(false);
+      setCameraReady(false);
+    }
+  }
+
+  function handleProofUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+
+    if (!file) {
+      setProofFile(null);
+      setProofGeoEvidence(null);
+      return;
+    }
+
+    void prepareProofFile(file, 'upload');
+    event.target.value = '';
+  }
+
+  function handleCaptureProofPhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || !cameraReady) {
+      return;
+    }
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      toast.error('Unable to capture proof photo.');
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        toast.error('Unable to capture proof photo.');
+        return;
+      }
+
+      const file = new File([blob], `work-proof-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      stopCameraStream();
+      void prepareProofFile(file, 'camera');
+    }, 'image/jpeg', 0.92);
+  }
 
   async function refreshSelected(preferredId?: string) {
     await loadDesk(selectedComplaint?.complaint_id || preferredComplaintCode || undefined, preferredId || selectedComplaintId || undefined);
@@ -213,6 +459,8 @@ export default function L1UpdatesPage() {
     try {
       await action();
       await refreshSelected(complaint.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to process this action right now.');
     } finally {
       setActionId(null);
     }
@@ -230,14 +478,21 @@ export default function L1UpdatesPage() {
 
   const operationalLevel = complaint ? normalizeDashboardLevel(complaint.current_level) : null;
   const feedbackRecorded = complaint ? hasCitizenFeedback(complaint) : false;
+  const feedbackSatisfied = complaint ? hasSatisfiedCitizenFeedback(complaint) : false;
   const workStatus = complaint ? getWorkStatus(complaint) : 'Pending';
   const hasProof = complaint ? hasResolutionProof(complaint) : false;
   const l1DeadlineMissed = complaint ? isL1DeadlineMissed(complaint) : false;
   const directCloseAfterRework = complaint ? canDirectlyCloseRework(complaint) : false;
   const isBusy = complaint ? actionId === complaint.id : false;
+  const awaitingHigherDeskReview = complaint ? isComplaintAwaitingHigherDeskReview(complaint) : false;
+  const isLockedComplaint = Boolean(
+    complaint &&
+    ['closed', 'expired', 'rejected'].includes(complaint.status),
+  );
   const canReviewAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L1' &&
+    !awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     feedbackRecorded &&
     !l1DeadlineMissed
@@ -245,18 +500,19 @@ export default function L1UpdatesPage() {
   const waitingForCitizenAtDesk = Boolean(
     complaint &&
     operationalLevel === 'L1' &&
+    !awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     !feedbackRecorded
   );
   const waitingForCitizenAtHigherDesk = Boolean(
     complaint &&
-    operationalLevel !== 'L1' &&
+    awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     !feedbackRecorded
   );
   const waitingForHigherDeskDecision = Boolean(
     complaint &&
-    operationalLevel !== 'L1' &&
+    awaitingHigherDeskReview &&
     complaint.status === 'resolved' &&
     feedbackRecorded
   );
@@ -267,16 +523,44 @@ export default function L1UpdatesPage() {
     complaint.status !== 'expired' &&
     complaint.status !== 'rejected'
   );
-  const canMarkViewed = Boolean(complaint && canExecuteAtL1 && workStatus === 'Pending');
-  const canMarkOnSite = Boolean(complaint && canExecuteAtL1 && workStatus === 'Viewed by L1');
-  const canMarkWorkStarted = Boolean(complaint && canExecuteAtL1 && workStatus === 'On Site');
+  const reopenedForDirectWorkStart = Boolean(
+    complaint &&
+    complaint.status === 'reopened' &&
+    workStatus === 'Pending',
+  );
+  const canMarkViewed = Boolean(complaint && canExecuteAtL1 && !reopenedForDirectWorkStart && workStatus === 'Pending');
+  const canMarkOnSite = Boolean(complaint && canExecuteAtL1 && !reopenedForDirectWorkStart && workStatus === 'Viewed by L1');
+  const canMarkWorkStarted = Boolean(
+    complaint &&
+    canExecuteAtL1 &&
+    (workStatus === 'On Site' || reopenedForDirectWorkStart),
+  );
   const canUploadProof = Boolean(complaint && canExecuteAtL1 && workStatus === 'Work Started');
   const canSubmitWorkCompletion = Boolean(complaint && canExecuteAtL1 && workStatus === 'Proof Uploaded' && hasProof);
-  const savedProofs = complaint?.proof_images?.length
-    ? complaint.proof_images
-    : complaint?.proof_image
-      ? [complaint.proof_image]
-      : [];
+  const canForwardToL2 = Boolean(
+    complaint &&
+    canExecuteAtL1 &&
+    operationalLevel === 'L1' &&
+    !l1DeadlineMissed &&
+    workStatus !== 'Awaiting Citizen Feedback',
+  );
+  const showSavedProofs = Boolean(
+    complaint &&
+    hasProof &&
+    (
+      workStatus === 'Proof Uploaded' ||
+      workStatus === 'Awaiting Citizen Feedback' ||
+      complaint.status === 'resolved' ||
+      complaint.status === 'closed'
+    ),
+  );
+  const savedProofs = showSavedProofs
+    ? complaint?.proof_images?.length
+      ? complaint.proof_images
+      : complaint?.proof_image
+        ? [complaint.proof_image]
+        : []
+    : [];
 
   return (
     <DashboardLayout title="L1 Update Desk" userRole="worker">
@@ -391,7 +675,11 @@ export default function L1UpdatesPage() {
                     </div>
                   </div>
 
-                  {canReviewAtDesk ? (
+                  {isLockedComplaint ? (
+                    <section className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700">
+                      This complaint has already been finalized in the official record. The L1 update panel is now locked, and no further field updates, review actions, or forwarding can be done from this desk.
+                    </section>
+                  ) : canReviewAtDesk ? (
                     <section className="space-y-4 rounded-[1.35rem] border border-emerald-200 bg-emerald-50/70 p-5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
                         <ClipboardCheck className="h-4 w-4" />
@@ -416,7 +704,7 @@ export default function L1UpdatesPage() {
                         <Button
                           type="button"
                           className="rounded-full bg-[#138808] text-white hover:bg-[#0f6f07]"
-                          disabled={isBusy || isPending}
+                          disabled={isBusy || isPending || !feedbackSatisfied}
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await closeComplaintByReviewDesk(complaint.id, reviewNote.trim() || undefined);
@@ -431,10 +719,11 @@ export default function L1UpdatesPage() {
                           type="button"
                           variant="outline"
                           className="rounded-full"
-                          disabled={isBusy || isPending}
+                          disabled={isBusy || isPending || feedbackSatisfied}
                           onClick={() => {
                             void runAction(complaint, async () => {
                               await reopenComplaintByReviewDesk(complaint.id, reviewNote.trim() || undefined);
+                              resetDraftState();
                               toast.success('Complaint reopened and sent back for fresh action.');
                             });
                           }}
@@ -446,6 +735,17 @@ export default function L1UpdatesPage() {
                   ) : waitingForCitizenAtDesk ? (
                     <section className="rounded-[1.35rem] border border-amber-200 bg-amber-50/80 p-5 text-sm leading-6 text-amber-900">
                       Citizen feedback is still pending. The final `Mark Work Completed` button will only become available after feedback is submitted.
+                    </section>
+                  ) : (
+                    complaint &&
+                    operationalLevel === 'L1' &&
+                    !awaitingHigherDeskReview &&
+                    complaint.status === 'resolved' &&
+                    feedbackRecorded &&
+                    !feedbackSatisfied
+                  ) ? (
+                    <section className="rounded-[1.35rem] border border-rose-200 bg-rose-50/80 p-5 text-sm leading-6 text-rose-900">
+                      Citizen feedback has been received, but the complaint cannot be closed because the citizen did not mark the work as satisfied. Review the note and use `Reopen Complaint` if fresh work is needed.
                     </section>
                   ) : waitingForCitizenAtHigherDesk ? (
                     <section className="rounded-[1.35rem] border border-amber-200 bg-amber-50/80 p-5 text-sm leading-6 text-amber-900">
@@ -460,34 +760,46 @@ export default function L1UpdatesPage() {
                       <div className="text-sm font-semibold text-[#12385b]">Field Execution Flow</div>
 
                       <div className="grid gap-3 md:grid-cols-3">
-                        <Button
-                          type="button"
-                          variant={canMarkViewed ? 'default' : 'outline'}
-                          className="rounded-full"
-                          disabled={!canMarkViewed || isBusy || isPending}
-                          onClick={() => {
-                            void runAction(complaint, async () => {
-                              await markComplaintViewedByL1(complaint.id);
-                              toast.success('Complaint marked as viewed.');
-                            });
-                          }}
-                        >
-                          Mark Viewed
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={canMarkOnSite ? 'default' : 'outline'}
-                          className="rounded-full"
-                          disabled={!canMarkOnSite || isBusy || isPending}
-                          onClick={() => {
-                            void runAction(complaint, async () => {
-                              await markComplaintOnSiteByL1(complaint.id);
-                              toast.success('Complaint marked as on site.');
-                            });
-                          }}
-                        >
-                          Mark On Site
-                        </Button>
+                        {!reopenedForDirectWorkStart ? (
+                          <Button
+                            type="button"
+                            variant={canMarkViewed ? 'default' : 'outline'}
+                            className="rounded-full"
+                            disabled={!canMarkViewed || isBusy || isPending}
+                            onClick={() => {
+                              void runAction(complaint, async () => {
+                                await markComplaintViewedByL1(complaint.id);
+                                toast.success('Complaint marked as viewed.');
+                              });
+                            }}
+                          >
+                            Mark Viewed
+                          </Button>
+                        ) : (
+                          <div className="rounded-full border border-dashed border-[#d7e2eb] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[#60758a]">
+                            Viewed skipped after reopen
+                          </div>
+                        )}
+                        {!reopenedForDirectWorkStart ? (
+                          <Button
+                            type="button"
+                            variant={canMarkOnSite ? 'default' : 'outline'}
+                            className="rounded-full"
+                            disabled={!canMarkOnSite || isBusy || isPending}
+                            onClick={() => {
+                              void runAction(complaint, async () => {
+                                await markComplaintOnSiteByL1(complaint.id);
+                                toast.success('Complaint marked as on site.');
+                              });
+                            }}
+                          >
+                            Mark On Site
+                          </Button>
+                        ) : (
+                          <div className="rounded-full border border-dashed border-[#d7e2eb] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.14em] text-[#60758a]">
+                            On-site skipped after reopen
+                          </div>
+                        )}
                         <Button
                           type="button"
                           variant={canMarkWorkStarted ? 'default' : 'outline'}
@@ -500,9 +812,15 @@ export default function L1UpdatesPage() {
                             });
                           }}
                         >
-                          Start Work
+                          {reopenedForDirectWorkStart ? 'Restart Work' : 'Start Work'}
                         </Button>
                       </div>
+
+                      {reopenedForDirectWorkStart ? (
+                        <div className="rounded-[1rem] border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-sky-900">
+                          This complaint was reopened after review. L1 can restart field work directly from here, and a fresh proof upload will be required for the new rework cycle.
+                        </div>
+                      ) : null}
 
                       <div className="rounded-[1.1rem] border border-[#d7e2eb] bg-[#f8fbff] p-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-[#12385b]">
@@ -514,19 +832,57 @@ export default function L1UpdatesPage() {
                         </div>
 
                         <div className="mt-4 space-y-3">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="block w-full rounded-xl border border-[#d7e2eb] bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-                            disabled={!canUploadProof || isBusy || isPending}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0] || null;
-                              setProofFile(file);
-                            }}
-                          />
-                          <div className="text-xs text-[#60758a]">
-                            {proofFile ? `Selected file: ${proofFile.name}` : 'No file selected'}
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <label className="flex-1 cursor-pointer rounded-xl border border-[#d7e2eb] bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-[#0b3c5d] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                                disabled={!canUploadProof || isBusy || isPending || processingProofEvidence}
+                                onChange={handleProofUploadChange}
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="rounded-full"
+                              disabled={!canUploadProof || isBusy || isPending || processingProofEvidence}
+                              onClick={() => {
+                                void openCameraModal();
+                              }}
+                            >
+                              <Camera className="h-4 w-4" />
+                              Capture Photo
+                            </Button>
                           </div>
+                          <div className="text-xs text-[#60758a]">
+                            {processingProofEvidence
+                              ? 'Preparing geo-tagged proof image...'
+                              : proofGeoEvidence
+                                ? `Selected geo-tagged proof: ${proofGeoEvidence.taggedFile.name}`
+                                : proofFile
+                                  ? `Selected file: ${proofFile.name}`
+                                  : 'No file selected'}
+                          </div>
+
+                          {proofGeoEvidence ? (
+                            <div className="overflow-hidden rounded-[1rem] border border-[#d7e2eb] bg-white">
+                              <button
+                                type="button"
+                                className="block w-full bg-[#f8fbff]"
+                                onClick={() => setExpandedProofPreview(true)}
+                              >
+                                <img
+                                  src={proofPreviewUrl}
+                                  alt="Geo-tagged proof preview"
+                                  className="max-h-[28rem] w-full object-contain"
+                                />
+                              </button>
+                              <div className="border-t border-[#d7e2eb] px-4 py-3 text-xs text-[#60758a]">
+                                Geo-tagged proof preview is ready. Tap the preview to open it in a larger view and verify the full stamped location block.
+                              </div>
+                            </div>
+                          ) : null}
 
                           <Textarea
                             value={proofDescription}
@@ -550,8 +906,10 @@ export default function L1UpdatesPage() {
                                 await uploadComplaintProofByExecutionOfficer(complaint.id, {
                                   image: proofFile,
                                   description: proofDescription.trim() || undefined,
+                                  geo_evidence: proofGeoEvidence || undefined,
                                 });
                                 setProofFile(null);
+                                setProofGeoEvidence(null);
                                 toast.success('Proof submitted successfully.');
                               });
                             }}
@@ -588,6 +946,20 @@ export default function L1UpdatesPage() {
                           <Send className="h-4 w-4" />
                           {complaint.status === 'reopened' && directCloseAfterRework ? 'Complete Rework And Close' : 'Send For Citizen Feedback'}
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={!canForwardToL2 || isBusy || isPending}
+                          onClick={() => {
+                            void runAction(complaint, async () => {
+                              await forwardComplaintToNextLevel(complaint.id);
+                              toast.success('Complaint forwarded to L2 supervision. L1 field work continues under the extended timeline.');
+                            });
+                          }}
+                        >
+                          Forward To L2
+                        </Button>
                         <div className="text-xs text-[#60758a]">
                           {complaint.status === 'reopened' && directCloseAfterRework
                             ? 'This reopened complaint was returned by the L1 review desk, so rework completion will close it directly.'
@@ -595,6 +967,11 @@ export default function L1UpdatesPage() {
                               ? 'This reopened complaint was returned by a higher review desk, so citizen feedback will open again after rework completion.'
                               : 'The final `Mark Work Completed` action is not available here. It appears in the review desk only after citizen feedback is submitted.'}
                         </div>
+                        {canForwardToL2 ? (
+                          <div className="text-xs text-[#60758a]">
+                            If this work is not manageable at L1, forward it to Level 2 before the L1 deadline. The deadline will extend, L2 supervision will activate, and the final close decision will move to L2 after citizen feedback.
+                          </div>
+                        ) : null}
                       </div>
                     </section>
                   )}
@@ -627,6 +1004,81 @@ export default function L1UpdatesPage() {
           </Card>
         </div>
       </div>
+      <Dialog open={cameraOpen} onOpenChange={(open) => {
+        if (!open) {
+          stopCameraStream();
+        }
+      }}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Capture Work Proof</DialogTitle>
+            <DialogDescription>
+              Capture the proof photograph here. Geo-location will be added automatically, and the camera will switch off right after capture.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#d7e2eb] bg-slate-950">
+              {cameraError ? (
+                <div className="flex min-h-[18rem] items-center justify-center px-6 text-center text-sm text-white/80">
+                  {cameraError}
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  className="h-[18rem] w-full object-cover sm:h-[24rem]"
+                  autoPlay
+                  playsInline
+                  muted
+                  onCanPlay={() => {
+                    setCameraLoading(false);
+                    setCameraReady(true);
+                  }}
+                />
+              )}
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-[#60758a]">
+                {cameraLoading ? 'Starting camera preview...' : cameraReady ? 'Camera is ready for proof capture.' : 'Waiting for camera access.'}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" className="rounded-full" onClick={stopCameraStream}>
+                  <X className="h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-full"
+                  disabled={!cameraReady || Boolean(cameraError)}
+                  onClick={handleCaptureProofPhoto}
+                >
+                  <Camera className="h-4 w-4" />
+                  Capture
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={expandedProofPreview} onOpenChange={setExpandedProofPreview}>
+        <DialogContent className="sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Geo-tagged Proof Preview</DialogTitle>
+            <DialogDescription>
+              Review the full stamped proof image before submitting it.
+            </DialogDescription>
+          </DialogHeader>
+          {proofPreviewUrl ? (
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#d7e2eb] bg-[#f8fbff] p-3">
+              <img
+                src={proofPreviewUrl}
+                alt="Expanded geo-tagged proof preview"
+                className="max-h-[75vh] w-full object-contain"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

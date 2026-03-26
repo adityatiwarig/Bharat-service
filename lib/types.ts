@@ -27,6 +27,7 @@ export type ComplaintDepartment =
   | 'streetlight';
 
 export type ComplaintPriority = 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+export type IssueGroupPriority = 'low' | 'medium' | 'high';
 export type ComplaintLevel = 'L1' | 'L2' | 'L3' | 'L2_ESCALATED';
 export type OfficerLevel = 'L1' | 'L2' | 'L3';
 export type OfficerRole = OfficerLevel | 'ADMIN';
@@ -57,6 +58,8 @@ export interface Ward {
   city: string;
   zone_id?: number | null;
   zone_name?: string | null;
+  lat?: number;
+  lng?: number;
   code?: string;
   population?: number;
   created_at?: string;
@@ -178,6 +181,30 @@ export interface ComplaintAttachment {
   url: string;
   content_type: string;
   size: number;
+  original_url?: string | null;
+  geo_tagged_url?: string | null;
+  geo?: GeoEvidenceMetadata | null;
+}
+
+export type GeoVerificationStatus =
+  | 'geo_verified'
+  | 'location_captured'
+  | 'location_mismatch'
+  | 'not_verified';
+
+export interface GeoEvidenceMetadata {
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  city?: string | null;
+  area?: string | null;
+  captured_at?: string | null;
+  source?: 'camera' | 'upload' | 'unknown';
+  location_available?: boolean;
+  verification_status?: GeoVerificationStatus;
+  verification_label?: string | null;
+  distance_from_complaint_meters?: number | null;
+  accepted_radius_meters?: number | null;
 }
 
 export interface ComplaintUpdate {
@@ -293,6 +320,14 @@ export interface Complaint {
   complaint_id: string;
   tracking_code: string;
   user_id: string;
+  issue_group_id?: string | null;
+  issue_primary_complaint_id?: string | null;
+  parent_complaint_id?: string | null;
+  is_primary?: boolean;
+  joined_issue?: boolean;
+  shared_issue_access?: boolean;
+  issue_supporter_count?: number | null;
+  issue_priority?: IssueGroupPriority | null;
   citizen_id?: string;
   applicant_name?: string | null;
   applicant_mobile?: string | null;
@@ -441,5 +476,46 @@ export interface ComplaintWardComparisonSummary {
     complaints_last_24_hours: number;
     hotspot_watch: boolean;
   }>;
+  generated_at: string;
+}
+
+export interface WardHeatmapPoint {
+  ward_id: number;
+  ward: string;
+  count: number;
+  lat: number | null;
+  lng: number | null;
+  zone_name?: string | null;
+  point_count?: number;
+  normalized_intensity?: number;
+  resolution?: 'low' | 'mid' | 'high' | 'detail';
+  kind?: 'cell' | 'ward';
+}
+
+export interface WardHeatmapResponse {
+  points: WardHeatmapPoint[];
+  zoom_tier: 'low' | 'mid' | 'high' | 'detail';
+  normalization_cap: number;
+  data_version: string;
+  generated_at: string;
+}
+
+export interface PublicWardComplaintDistributionRow {
+  ward_id: number;
+  ward_name: string;
+  zone_id?: number | null;
+  zone_name?: string | null;
+  city?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  count: number;
+}
+
+export interface PublicWardComplaintDistributionSummary {
+  wards: PublicWardComplaintDistributionRow[];
+  total_complaints: number;
+  active_wards: number;
+  max_count: number;
+  data_version: string;
   generated_at: string;
 }

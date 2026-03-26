@@ -15,7 +15,7 @@ interface AppHeaderProps {
 }
 
 export function Header({ onMenuClick }: AppHeaderProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? '/'
   const { active, roleMeta } = getPageMeta(pathname)
 
   const today = new Intl.DateTimeFormat('en-IN', {
