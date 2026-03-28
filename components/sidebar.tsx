@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   ArrowUpRight,
   BarChart3,
+  CircleHelp,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -90,6 +91,7 @@ export function Sidebar({
       : getLegacyNavigation(language)[userRole]
   const meta = getRoleMeta(language)[userRole]
   const isAdmin = userRole === 'admin'
+  const isCitizen = userRole === 'citizen'
 
   const adminSections = [
     {
@@ -302,7 +304,7 @@ export function Sidebar({
         >
           <aside
             className={cn(
-              'fixed left-0 top-0 z-30 h-screen overflow-hidden transition-all duration-300 ease-in-out',
+              'fixed left-0 top-0 z-40 h-screen overflow-hidden transition-all duration-300 ease-in-out',
               isOpen ? 'w-[244px] translate-x-0 opacity-100' : 'w-[72px] translate-x-0 opacity-100',
             )}
           >
@@ -333,9 +335,9 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen border-r border-slate-200 bg-[#f3f5f7] transition-[width,transform] duration-300 md:sticky md:self-start md:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 w-64 overflow-hidden border-r border-slate-200 bg-[#f3f5f7] transition-[width,transform] duration-300',
           collapsed ? 'md:w-20' : 'md:w-64',
-          isOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64',
+          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
       >
         <div className="flex h-full flex-col">
@@ -366,19 +368,26 @@ export function Sidebar({
               </Button>
             </div>
 
-            <div className={cn('mt-6 rounded-md border border-slate-200 bg-white p-4', collapsed ? 'md:hidden' : '')}>
-              <Badge className="rounded-md bg-[#1d4f91] text-white hover:bg-[#1d4f91]">
-                {meta.signal}
-              </Badge>
-              <p className="mt-3 text-sm leading-6 text-slate-700">{meta.summary}</p>
-            </div>
+            {!isCitizen ? (
+              <div className={cn('mt-6 rounded-md border border-slate-200 bg-white p-4', collapsed ? 'md:hidden' : '')}>
+                <Badge className="rounded-md bg-[#1d4f91] text-white hover:bg-[#1d4f91]">
+                  {meta.signal}
+                </Badge>
+                <p className="mt-3 text-sm leading-6 text-slate-700">{meta.summary}</p>
+              </div>
+            ) : null}
           </div>
 
-          <div className="flex-1 px-4 py-5">
+          <div
+            className={cn(
+              'gov-scrollbar min-h-0 flex-1 overflow-y-auto',
+              isCitizen ? 'px-3 py-4' : 'px-4 py-5',
+            )}
+          >
             <div className={cn('px-2 text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase', collapsed ? 'md:hidden' : '')}>
               {language === 'hi' ? 'नागरिक सेवाएं' : 'Citizen Services'}
             </div>
-            <nav className="mt-4 space-y-2">
+            <nav className={cn(isCitizen ? 'mt-3 space-y-1.5' : 'mt-4 space-y-2')}>
               {nav.map((item) => {
                 const Icon = item.icon
                 const isDashboardRoot = item.href === '/citizen'
@@ -392,18 +401,24 @@ export function Sidebar({
                     href={item.href}
                     onClick={onClose}
                     className={cn(
-                      'group relative flex items-start gap-3 rounded-md border border-transparent px-3 py-3 transition duration-200',
+                      'group relative flex items-start gap-3 rounded-md border border-transparent transition duration-200',
+                      isCitizen ? 'px-3 py-2.5' : 'px-3 py-3',
                       isActive
-                        ? 'border-l-4 border-l-[#1d4f91] bg-blue-50 text-[#1d3557]'
-                        : 'bg-transparent text-slate-700 hover:border-slate-200 hover:bg-white',
+                        ? isCitizen
+                          ? 'border-blue-100 bg-blue-50 text-[#1d4f91]'
+                          : 'border-l-4 border-l-[#1d4f91] bg-blue-50 text-[#1d3557]'
+                        : isCitizen
+                          ? 'bg-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-950'
+                          : 'bg-transparent text-slate-700 hover:border-slate-200 hover:bg-white',
                       collapsed ? 'md:justify-center md:px-2' : '',
                     )}
                     title={collapsed ? item.label : undefined}
                   >
-                    {isActive && !collapsed ? <span className="absolute inset-y-2 left-0 w-1 bg-[#1d4f91]" /> : null}
+                    {isActive && !collapsed && !isCitizen ? <span className="absolute inset-y-2 left-0 w-1 bg-[#1d4f91]" /> : null}
                     <div
                       className={cn(
-                        'mt-0.5 flex h-10 w-10 items-center justify-center rounded-md',
+                        'mt-0.5 flex items-center justify-center rounded-md',
+                        isCitizen ? 'h-9 w-9' : 'h-10 w-10',
                         isActive
                           ? 'bg-blue-100 text-[#1d4f91]'
                           : 'bg-slate-200 text-slate-700 group-hover:bg-slate-300',
@@ -429,7 +444,27 @@ export function Sidebar({
             </nav>
           </div>
 
-          <div className={cn('border-t border-slate-200/80 p-4', collapsed ? 'md:hidden' : '')}>
+          {isCitizen ? (
+            <div className={cn('border-t border-slate-200/80 px-4 py-3', collapsed ? 'md:hidden' : '')}>
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+                >
+                  <LifeBuoy className="h-4 w-4" />
+                  <span>{language === 'hi' ? 'Support Guide' : 'Support Guide'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+                >
+                  <CircleHelp className="h-4 w-4" />
+                  <span>{language === 'hi' ? 'Help' : 'Help'}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={cn('border-t border-slate-200/80 p-4', collapsed ? 'md:hidden' : '')}>
             <div className="rounded-md border border-slate-200 bg-white p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-100 text-slate-950">
@@ -459,7 +494,8 @@ export function Sidebar({
                 <LifeBuoy className="h-4 w-4" />
               </Button>
             </div>
-          </div>
+            </div>
+          )}
         </div>
       </aside>
     </>

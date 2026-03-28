@@ -3,18 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Download, RefreshCw, Star } from 'lucide-react';
+import { Check, Download, RefreshCw, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ComplaintTrackingTimeline } from '@/components/complaint-tracking-timeline';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { useLandingLanguage } from '@/components/landing-language';
 import { LoadingSummary, TrackerDetailsSkeleton } from '@/components/loading-skeletons';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   buildComplaintTrackerSnapshot,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/complaint-tracker';
 import { fetchComplaintById, fetchComplaints, rateComplaint } from '@/lib/client/complaints';
 import type { Complaint } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 const FEEDBACK_TAGS = {
   en: ['Good Service', 'Quick Response', 'Delay', 'Issue Not Fixed', 'Need Follow-up'],
@@ -176,6 +178,21 @@ const TRACKER_PAGE_TEXT = {
     submitting: 'Submitting...',
     updateFeedback: 'Update Feedback',
     submitFeedback: 'Submit Feedback',
+    progress: 'Progress',
+    progressPercent: 'Progress %',
+    tabTimeline: 'Timeline',
+    tabDetails: 'Complaint Details',
+    tabAssignment: 'Assignment Details',
+    tabEvidence: 'Evidence',
+    tabLogs: 'Logs / Subtimeline',
+    viewMore: 'View More',
+    viewLess: 'View Less',
+    officialTimeline: 'Official Timeline',
+    officialTimelineDescription: 'Compact stage-wise complaint movement record.',
+    quickSummary: 'Quick Summary',
+    logsAndGuidance: 'Logs And Guidance',
+    noDescription: 'No note is available for this record.',
+    currentStageCompact: 'Current Stage',
   },
   hi: {
     feedbackSubmittedSuccess: 'फीडबैक सफलतापूर्वक जमा किया गया।',
@@ -706,18 +723,18 @@ function buildComplaintReportPdf({
 
 function SummaryField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-slate-200 bg-white px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-slate-950">{value}</div>
+    <div className="min-w-[8.5rem] flex-1 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 text-[13px] font-semibold text-slate-950">{value}</div>
     </div>
   );
 }
 
 function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="border-b border-slate-200 px-5 py-4">
-      <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-      {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+    <div className="border-b border-[#E5E7EB] px-4 py-3">
+      <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
+      {description ? <p className="mt-1 text-[13px] leading-5 text-slate-600">{description}</p> : null}
     </div>
   );
 }
@@ -756,12 +773,110 @@ function isOperationalSubtimelineEntry(entry: { kind: 'update' | 'routing'; titl
 
 function DetailSkeletonBlock({ title }: { title: string }) {
   return (
-    <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
+    <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
       <SectionHeading title={title} description="Fetching latest updates..." />
-      <CardContent className="px-5 py-5">
+      <CardContent className="px-4 py-4">
         <TrackerDetailsSkeleton />
       </CardContent>
     </Card>
+  );
+}
+
+function getComplaintProgressPercent(tracker: ComplaintTrackerSnapshot) {
+  const explicitCurrentIndex = tracker.timeline.findIndex((step) => step.state === 'current');
+  const fallbackIndex = Math.max(0, tracker.timeline.map((step) => step.state).lastIndexOf('completed'));
+  const activeIndex = explicitCurrentIndex >= 0 ? explicitCurrentIndex : fallbackIndex;
+
+  if (tracker.citizenJourneyCompleted) {
+    return 100;
+  }
+
+  if (tracker.timeline.length <= 1) {
+    return 100;
+  }
+
+  if (activeIndex === tracker.timeline.length - 1) {
+    return 92;
+  }
+
+  return Math.min(100, Math.round((Math.max(0, activeIndex) / (tracker.timeline.length - 1)) * 100));
+}
+
+function DetailCell({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={cn('rounded-lg border border-[#E5E7EB] bg-white px-3 py-3', className)}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1.5 text-sm text-slate-700">{value}</div>
+    </div>
+  );
+}
+
+function CompactProgressTracker({
+  tracker,
+  language,
+}: {
+  tracker: ComplaintTrackerSnapshot;
+  language: 'en' | 'hi';
+}) {
+  const progressPercent = getComplaintProgressPercent(tracker);
+
+  return (
+    <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">
+            {language === 'hi' ? 'à¤ªà¥à¤°à¤—à¤¤à¤¿' : 'Progress'}
+          </div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">{tracker.currentStageTitle}</div>
+        </div>
+        <div className="rounded-md border border-[#DBEAFE] bg-[#F8FBFF] px-2.5 py-1 text-xs font-semibold text-[#1E3A8A]">
+          {progressPercent}%
+        </div>
+      </div>
+
+      <div className="overflow-x-auto pb-1">
+        <div
+          className="grid min-w-[560px] gap-2"
+          style={{ gridTemplateColumns: `repeat(${tracker.timeline.length}, minmax(0, 1fr))` }}
+        >
+          {tracker.timeline.map((step, index) => {
+            const isComplete = step.state === 'completed';
+            const isCurrent = step.state === 'current';
+            const isUpcoming = step.state === 'upcoming';
+
+            return (
+              <div key={step.key} className="relative flex flex-col items-center text-center">
+                {index < tracker.timeline.length - 1 ? (
+                  <div className="absolute left-1/2 right-[-50%] top-2.5 h-px bg-slate-200">
+                    <div
+                      className={cn('h-full', isComplete || isCurrent ? 'bg-[#1E3A8A]' : 'bg-transparent')}
+                    />
+                  </div>
+                ) : null}
+                <div
+                  className={cn(
+                    'relative z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-semibold',
+                    isComplete
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : isCurrent
+                        ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1E3A8A]'
+                        : 'border-[#E5E7EB] bg-white text-slate-500',
+                  )}
+                >
+                  {isComplete ? <Check className="h-3 w-3" /> : index + 1}
+                </div>
+                <div className="hidden">
+                  {language === 'hi' ? 'à¤šà¤°à¤£' : 'Step'} {index + 1}
+                </div>
+                <div className={cn('mt-1 text-[11px] leading-4', isUpcoming ? 'text-slate-500' : 'text-slate-800')}>
+                  {step.title}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -783,6 +898,8 @@ export default function TrackerPage() {
   const [savingRating, setSavingRating] = useState(false);
   const [selectedFeedbackTags, setSelectedFeedbackTags] = useState<string[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('timeline');
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const complaintIdPattern = /^[A-Z]{2,5}-\d{4,8}-\d{3,}$/;
@@ -855,6 +972,8 @@ export default function TrackerPage() {
 
   useEffect(() => {
     setSelectedFeedbackTags([]);
+    setExpandedNotes({});
+    setActiveTab('timeline');
   }, [complaint?.id]);
 
   useEffect(() => {
@@ -1012,67 +1131,113 @@ function handleExportReport() {
     : canRateResolution
       ? uiText.citizenConfirmationPending
       : uiText.notYetSubmitted;
+  const progressPercent = tracker ? getComplaintProgressPercent(tracker) : 0;
+
+  function toggleExpandedNote(key: string) {
+    setExpandedNotes((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  }
+
+  const tabLabels = {
+    timeline: language === 'hi' ? 'à¤¸à¤®à¤¯à¤°à¥‡à¤–à¤¾' : 'Timeline',
+    details: language === 'hi' ? 'à¤¶à¤¿à¤•à¤¾à¤¯à¤¤ à¤µà¤¿à¤µà¤°à¤£' : 'Complaint Details',
+    assignment: language === 'hi' ? 'à¤†à¤µà¤‚à¤Ÿà¤¨ à¤µà¤¿à¤µà¤°à¤£' : 'Assignment Details',
+    evidence: language === 'hi' ? 'à¤ªà¥à¤°à¤®à¤¾à¤£' : 'Evidence',
+    logs: language === 'hi' ? 'à¤²à¥‰à¤— / à¤‰à¤ª-à¤¸à¤®à¤¯à¤°à¥‡à¤–à¤¾' : 'Logs / Subtimeline',
+  } as const;
+  const viewMoreLabel = language === 'hi' ? 'à¤”à¤° à¤¦à¥‡à¤–à¥‡à¤‚' : 'View More';
+  const viewLessLabel = language === 'hi' ? 'à¤•à¤® à¤¦à¥‡à¤–à¥‡à¤‚' : 'View Less';
+  const timelineTitle = language === 'hi' ? 'à¤†à¤§à¤¿à¤•à¤¾à¤°à¤¿à¤• à¤¸à¤®à¤¯à¤°à¥‡à¤–à¤¾' : 'Official Timeline';
+  const timelineDescription = language === 'hi' ? 'à¤šà¤°à¤£-à¤†à¤§à¤¾à¤°à¤¿à¤¤ à¤¶à¤¿à¤•à¤¾à¤¯à¤¤ à¤ªà¥à¤°à¤—à¤¤à¤¿ à¤•à¤¾ à¤¸à¤‚à¤•à¥à¤·à¤¿à¤ªà¥à¤¤ à¤°à¤¿à¤•à¥‰à¤°à¥à¤¡à¥¤' : 'Compact stage-wise complaint movement record.';
+  const quickSummaryLabel = language === 'hi' ? 'à¤¤à¥à¤µà¤°à¤¿à¤¤ à¤¸à¤¾à¤°à¤¾à¤‚à¤¶' : 'Quick Summary';
+  const logsAndGuidanceLabel = language === 'hi' ? 'à¤²à¥‰à¤— à¤”à¤° à¤®à¤¾à¤°à¥à¤—à¤¦à¤°à¥à¤¶à¤¨' : 'Logs And Guidance';
+  const noDescriptionLabel = language === 'hi' ? 'à¤‡à¤¸ à¤°à¤¿à¤•à¥‰à¤°à¥à¤¡ à¤•à¥‡ à¤²à¤¿à¤ à¤•à¥‹à¤ˆ à¤Ÿà¤¿à¤ªà¥à¤ªà¤£à¥€ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤' : 'No note is available for this record.';
+  const currentStageCompactLabel = language === 'hi' ? 'à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤šà¤°à¤£' : 'Current Stage';
 
   return (
     <DashboardLayout title="Complaint Tracker" compactCitizenHeader>
-      <div className="space-y-6">
-        <section className="border border-slate-300 bg-white">
-          <div className="grid h-1.5 w-full grid-cols-3 overflow-hidden">
-            <div className="bg-[#ff9933]" />
-            <div className="bg-white" />
-            <div className="bg-[#138808]" />
-          </div>
-
-          <div className="space-y-4 px-5 py-5">
+      <div className="space-y-4 bg-[#F8FAFC]">
+        <section className="sticky top-3 z-20 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC]/95 backdrop-blur">
+          <div className="space-y-3 px-3 py-3">
             <div className="text-xs text-slate-500">{text.breadcrumb}</div>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex flex-col gap-1">
               <div>
-                <h1 className="text-2xl font-semibold text-slate-950">{text.title}</h1>
-                <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+                <h1 className="text-xl font-semibold text-slate-950">{text.title}</h1>
+                <p className="mt-1 max-w-4xl text-[13px] leading-5 text-slate-600">
                   {text.subtitle}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleExportReport}
-                disabled={!complaint || loading || detailsLoading}
-                className="rounded-none border-slate-300 text-slate-700"
-                >
-                  <Download className="h-4 w-4" />
-                {text.exportPdf}
-                </Button>
-              </div>
+            </div>
 
-            <form onSubmit={handleSearch} className="flex flex-col gap-3 sm:flex-row">
+            <form onSubmit={handleSearch} className="flex flex-col gap-2 lg:flex-row lg:items-center">
               <Input
-                  ref={searchInputRef}
-                  value={lookupId}
-                  onChange={(event) => setLookupId(event.target.value)}
-                  placeholder={text.enterComplaintIdPlaceholder}
-                  className="h-11 rounded-none border-slate-300"
-                />
-                <Button type="submit" className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]">
+                ref={searchInputRef}
+                value={lookupId}
+                onChange={(event) => setLookupId(event.target.value)}
+                placeholder={text.enterComplaintIdPlaceholder}
+                className="h-9 rounded-md border-[#E5E7EB] bg-white lg:flex-1"
+              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="submit" className="h-9 rounded-md bg-[#1E3A8A] px-4 text-white hover:bg-[#1A3478]">
                 {text.trackComplaint}
                 </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void loadComplaintSummary(complaint?.complaint_id || complaintId || lookupId, true)}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void loadComplaintSummary(complaint?.complaint_id || complaintId || lookupId, true)}
                   disabled={refreshing || loading || detailsLoading}
-                  className="rounded-none"
+                  className="h-9 rounded-md border-[#E5E7EB] bg-white px-4 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]"
                 >
-                {refreshing ? <Spinner label={text.refreshing} size="sm" /> : <><RefreshCw className="h-4 w-4" /> {text.refreshData}</>}
+                  {refreshing ? <Spinner label={text.refreshing} size="sm" /> : <><RefreshCw className="h-4 w-4" /> {text.refreshData}</>}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleExportReport}
+                  disabled={!complaint || loading || detailsLoading}
+                  className="h-9 rounded-md border-[#E5E7EB] bg-white px-4 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]"
+                >
+                  <Download className="h-4 w-4" />
+                  {text.exportPdf}
+                </Button>
+              </div>
               </form>
 
               {loading ? (
-                <LoadingSummary label={text.fetchingUpdates} description={text.complaintSummaryLoading} className="rounded-none" />
+                <LoadingSummary label={text.fetchingUpdates} description={text.complaintSummaryLoading} className="rounded-lg border border-[#E5E7EB] bg-white" />
               ) : null}
 
             {error ? (
-              <div className="border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {error}
+              </div>
+            ) : null}
+
+            {complaint && tracker ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-semibold text-[#1E3A8A]">
+                    {tracker.humanStatus}
+                  </Badge>
+                  {complaint.joined_issue ? (
+                    <Badge className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                      {text.joinedIssue}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <SummaryField label={text.complaintId} value={complaint.complaint_id} />
+                  <SummaryField label={uiText.status} value={tracker.humanStatus} />
+                  <SummaryField label={uiText.currentStage} value={tracker.currentStageTitle} />
+                  <SummaryField label={uiText.department} value={tracker.departmentLabel} />
+                  <SummaryField
+                    label={text.lastUpdated}
+                    value={tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : text.notYetUpdated}
+                  />
+                  <SummaryField label={language === 'hi' ? 'प्रगति %' : 'Progress %'} value={`${progressPercent}%`} />
+                </div>
               </div>
             ) : null}
           </div>
@@ -1081,26 +1246,26 @@ function handleExportReport() {
         {loading ? (
           <TrackerDetailsSkeleton />
         ) : complaint && tracker ? (
-            <div className="space-y-6">
-              <section className="border border-slate-300 bg-white">
+            <div className="space-y-4">
+              <section className="rounded-lg border border-[#E5E7EB] bg-white">
               <SectionHeading title={text.complaintSummaryPanel} description={text.complaintSummaryDescription} />
-                <div className="space-y-4 px-5 py-5">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge className="rounded-none border border-[#cfe0ef] bg-[#eef6fb] px-3 py-1 text-sm font-semibold text-[#0b3c5d]">
+                <div className="space-y-3 px-4 py-4">
+                <div className="hidden">
+                  <Badge className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-semibold text-[#1E3A8A]">
                     {tracker.humanStatus}
                   </Badge>
                     {complaint.joined_issue ? (
-                      <Badge className="rounded-none border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800">
+                      <Badge className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
                       {text.joinedIssue}
                       </Badge>
                     ) : null}
-                    <span className="text-sm text-slate-600">
+                    <span className="text-xs text-slate-600">
                     {text.lastUpdated}: {tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : text.notYetUpdated}
                     </span>
                   </div>
 
                 {complaint.shared_issue_access || (complaint.issue_supporter_count || 0) > 1 ? (
-                  <div className="border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     <div className="font-semibold">
                       {complaint.joined_issue
                         ? uiText.joinedIssueTitle
@@ -1116,7 +1281,7 @@ function handleExportReport() {
                   </div>
                 ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="hidden">
                   <SummaryField label={text.complaintId} value={complaint.complaint_id} />
                     <SummaryField label={uiText.department} value={tracker.departmentLabel} />
                     <SummaryField
@@ -1129,368 +1294,458 @@ function handleExportReport() {
                     label={text.lastUpdated}
                       value={tracker.latestEventAt ? formatTrackerDateTime(tracker.latestEventAt) : text.notYetUpdated}
                     />
+                    <SummaryField label={language === 'hi' ? 'à¤ªà¥à¤°à¤—à¤¤à¤¿ %' : 'Progress %'} value={`${progressPercent}%`} />
                   {(complaint.issue_supporter_count || 0) > 1 ? (
                     <SummaryField label={uiText.affectedCitizens} value={String(complaint.issue_supporter_count || 1)} />
                   ) : null}
                 </div>
+                <CompactProgressTracker tracker={tracker} language={language} />
               </div>
             </section>
 
-            {detailsLoading ? (
-              <DetailSkeletonBlock title="Official Progress Log" />
-            ) : (
-              <ComplaintTrackingTimeline
-                complaint={complaint}
-                lastUpdatedLabel={lastSyncedAt ? formatTrackerDateTime(lastSyncedAt) : undefined}
-              />
-            )}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3">
+              <div className="rounded-lg border border-[#E5E7EB] bg-white p-2">
+                <TabsList className="h-auto w-full flex-wrap justify-start rounded-md bg-[#F8FAFC] p-1">
+                  <TabsTrigger value="timeline" className="rounded-md px-3 py-1.5 text-xs data-[state=active]:border-[#DBEAFE] data-[state=active]:bg-white data-[state=active]:text-[#1E3A8A]">
+                    {tabLabels.timeline}
+                  </TabsTrigger>
+                  <TabsTrigger value="details" className="rounded-md px-3 py-1.5 text-xs data-[state=active]:border-[#DBEAFE] data-[state=active]:bg-white data-[state=active]:text-[#1E3A8A]">
+                    {tabLabels.details}
+                  </TabsTrigger>
+                  <TabsTrigger value="assignment" className="rounded-md px-3 py-1.5 text-xs data-[state=active]:border-[#DBEAFE] data-[state=active]:bg-white data-[state=active]:text-[#1E3A8A]">
+                    {tabLabels.assignment}
+                  </TabsTrigger>
+                  <TabsTrigger value="evidence" className="rounded-md px-3 py-1.5 text-xs data-[state=active]:border-[#DBEAFE] data-[state=active]:bg-white data-[state=active]:text-[#1E3A8A]">
+                    {tabLabels.evidence}
+                  </TabsTrigger>
+                  <TabsTrigger value="logs" className="rounded-md px-3 py-1.5 text-xs data-[state=active]:border-[#DBEAFE] data-[state=active]:bg-white data-[state=active]:text-[#1E3A8A]">
+                    {tabLabels.logs}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
-            <section className="border border-slate-300 bg-white">
-              <SectionHeading
-                title={uiText.operationalSubtimeline}
-                description={uiText.operationalSubtimelineDescription}
-              />
-              <div className="space-y-3 px-5 py-5">
-                {operationalSubtimeline.length ? (
-                  operationalSubtimeline.map((entry) => {
-                    const tone = getOperationalLogTone(entry);
-                    const toneClasses =
-                      tone === 'amber'
-                        ? 'border-amber-200 bg-amber-50 text-amber-900'
-                        : tone === 'rose'
-                          ? 'border-rose-200 bg-rose-50 text-rose-900'
-                          : tone === 'sky'
-                            ? 'border-sky-200 bg-sky-50 text-sky-900'
-                            : 'border-slate-200 bg-slate-50 text-slate-900';
+              <TabsContent value="timeline" className="mt-0 rounded-lg border border-[#E5E7EB] bg-white">
+                <SectionHeading title={timelineTitle} description={timelineDescription} />
+                <div className="space-y-2 px-4 py-4">
+                  {tracker.timeline.map((step, index) => {
+                    const noteKey = `timeline-${step.key}`;
+                    const noteText = step.description || noDescriptionLabel;
+                    const isExpanded = Boolean(expandedNotes[noteKey]);
+                    const isLong = noteText.length > 140;
+                    const displayText = isLong && !isExpanded ? `${noteText.slice(0, 140).trim()}...` : noteText;
+                    const stateLabel = step.state === 'completed' ? 'Completed' : step.state === 'current' ? 'Active' : 'Pending';
+                    const highlights = tracker.phaseHighlights[step.key] || [];
 
                     return (
-                      <div key={entry.id} className={`border px-4 py-4 ${toneClasses}`}>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <div className="text-sm font-semibold">{entry.title}</div>
-                            <div className="mt-2 text-sm leading-6">{entry.detail || uiText.administrativeMovementRecorded}</div>
-                          </div>
-                          <div className="shrink-0 text-xs font-medium opacity-80">
-                            {formatTrackerDateTime(entry.timestamp)}
+                      <div key={step.key} className="relative pl-6">
+                        {index < tracker.timeline.length - 1 ? (
+                          <div className="absolute bottom-[-10px] left-[8px] top-5 w-px bg-[#E5E7EB]" />
+                        ) : null}
+                        <div
+                          className={cn(
+                            'absolute left-0 top-1 h-4 w-4 rounded-full border',
+                            step.state === 'completed'
+                              ? 'border-emerald-200 bg-emerald-50'
+                              : step.state === 'current'
+                                ? 'border-[#BFDBFE] bg-[#EFF6FF]'
+                                : 'border-[#E5E7EB] bg-white',
+                          )}
+                        />
+                        <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3">
+                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-sm font-semibold text-slate-900">{step.title}</div>
+                                <span
+                                  className={cn(
+                                    'rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                                    step.state === 'completed'
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                      : step.state === 'current'
+                                        ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1E3A8A]'
+                                        : 'border-[#E5E7EB] bg-[#F8FAFC] text-slate-500',
+                                  )}
+                                >
+                                  {stateLabel}
+                                </span>
+                              </div>
+                              <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_11rem]">
+                                <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2.5">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {language === 'hi' ? 'आधिकारिक टिप्पणी' : 'Official Note'}
+                                  </div>
+                                  <div className="mt-1 text-[13px] leading-5 text-slate-700">{displayText}</div>
+                                  {isLong ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpandedNote(noteKey)}
+                                      className="mt-1 text-[11px] font-semibold text-[#1E3A8A]"
+                                    >
+                                      {isExpanded ? viewLessLabel : viewMoreLabel}
+                                    </button>
+                                  ) : null}
+                                </div>
+                                <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {language === 'hi' ? 'स्टेज कोड' : 'Stage Code'}
+                                  </div>
+                                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                                    {String(index + 1).padStart(2, '0')}
+                                  </div>
+                                  <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {language === 'hi' ? 'रिकॉर्ड प्रकार' : 'Record Type'}
+                                  </div>
+                                  <div className="mt-1 text-[13px] leading-5 text-slate-700">
+                                    {language === 'hi' ? 'वर्कफ़्लो मूवमेंट' : 'Workflow Movement'}
+                                  </div>
+                                </div>
+                              </div>
+                              {highlights.length ? (
+                                <div className="mt-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {language === 'hi' ? 'लाइव हाइलाइट्स' : 'Live Highlights'}
+                                  </div>
+                                  <div className="mt-1 space-y-1.5">
+                                    {highlights.map((highlight) => (
+                                      <div key={highlight} className="flex items-start gap-2 text-[13px] leading-5 text-slate-700">
+                                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                        <span>{highlight}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="shrink-0 text-[11px] font-medium text-slate-500">{step.timestampLabel}</div>
                           </div>
                         </div>
                       </div>
                     );
-                  })
-                ) : (
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    {uiText.noOperationalUpdates}
-                  </div>
-                )}
-              </div>
-            </section>
+                  })}
+                </div>
+              </TabsContent>
 
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.85fr)]">
-              <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                <SectionHeading title={uiText.complaintDescription} description={uiText.complaintDescriptionSubtitle} />
-                <CardContent className="space-y-5 px-5 py-5">
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
-                    {complaint.text || text.notYetUpdated}
-                  </div>
-
-                  {complaint.location_address ? (
-                    <div className="border border-slate-200 bg-white px-4 py-4">
-                      <div className="text-sm font-semibold text-slate-950">{uiText.location}</div>
-                      <div className="mt-2 text-sm text-slate-600">{complaint.location_address}</div>
-                    </div>
-                  ) : null}
-
-                  <div className="border border-slate-200 bg-white px-4 py-4">
-                    <div className="text-sm font-semibold text-slate-950">{uiText.citizenSubmittedPhotos}</div>
-                    <div className="mt-2 text-sm text-slate-600">
-                      {submittedAttachments.length
-                        ? `${submittedAttachments.length} ${submittedAttachments.length > 1 ? uiText.photoCountPlural : uiText.photoCountSingular}`
-                        : uiText.noComplaintPhotos}
-                    </div>
-
-                    {submittedAttachments.length ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {submittedAttachments.map((attachment, index) => (
-                          <a
-                            key={attachment.id || `${attachment.url}-${index}`}
-                            href={attachment.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="border border-slate-200 bg-slate-50 p-2"
-                          >
-                            <img
-                              src={attachment.url}
-                              alt={`${uiText.submittedEvidenceAlt} ${index + 1}`}
-                              className="max-h-72 w-full object-cover"
-                            />
-                          </a>
-                        ))}
+              <TabsContent value="details" className="mt-0 rounded-lg border border-[#E5E7EB] bg-white">
+                <SectionHeading title={tabLabels.details} description={uiText.complaintDescriptionSubtitle} />
+                <div className="grid grid-cols-1 gap-4 px-4 py-4 md:grid-cols-2">
+                  <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
+                    <SectionHeading title={uiText.complaintDescription} />
+                    <CardContent className="px-4 py-4">
+                      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm leading-6 text-slate-700">
+                        {complaint.text || text.notYetUpdated}
                       </div>
-                    ) : null}
-                  </div>
-
-                </CardContent>
-              </Card>
-
-              <div className="space-y-6">
-                <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title={uiText.assignmentDetails} description={uiText.assignmentDetailsSubtitle} />
-                  <CardContent className="px-5 py-5">
-                    {detailsLoading ? (
-                      <LoadingSummary label={text.fetchingUpdates} description={text.handlingDeskLoading} className="rounded-none" />
-                    ) : (
-                      <div className="border border-slate-200 bg-slate-50">
-                        <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">{uiText.handlingDesk}</div>
-                          <div className="text-slate-700">{tracker.assignmentLabel || uiText.notAssigned}</div>
-                        </div>
-                        <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">{uiText.department}</div>
-                          <div className="text-slate-700">{tracker.departmentLabel}</div>
-                        </div>
-                        <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">{uiText.status}</div>
-                          <div className="text-slate-700">{tracker.assignmentStatusLabel}</div>
-                        </div>
-                        <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
-                          <div className="font-semibold text-slate-900">{uiText.assignmentNote}</div>
-                          <div className="text-slate-700">{tracker.assignmentDescription || text.notYetUpdated}</div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                  <SectionHeading title={uiText.workCompletionEvidence} description={uiText.workCompletionEvidenceSubtitle} />
-                  <CardContent className="space-y-4 px-5 py-5">
-                    {detailsLoading ? (
-                      <LoadingSummary label={text.fetchingUpdates} description={text.evidenceLoading} className="rounded-none" />
-                    ) : tracker.proofSubmitted ? (
-                      <>
-                          <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
-                            <div className="text-sm font-semibold text-slate-950">{uiText.citizenVerificationStatus}</div>
-                            <div className="mt-2 text-sm leading-6 text-slate-700">
-                              {complaint.rating
-                                ? uiText.verificationSubmitted
-                                : tracker.waitingForFeedback
-                                ? tracker.feedbackDeskDescription || uiText.verificationReady
-                                : tracker.feedbackDeskDescription || uiText.uploadedEvidenceAvailable}
-                            </div>
-                          </div>
-
-                        <div className="border border-slate-200 bg-slate-50">
-                          <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                            <div className="font-semibold text-slate-900">{uiText.description}</div>
-                            <div className="text-slate-700">{complaint.proof_text || text.notYetUpdated}</div>
-                          </div>
-                          <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
-                            <div className="font-semibold text-slate-900">{uiText.submittedTimestamp}</div>
-                            <div className="text-slate-700">{formatTrackerDateTime(proofSubmittedAt)}</div>
-                          </div>
-                        </div>
-
-                        {tracker.feedbackDeskLabel ? (
-                          <div className="border border-slate-200 bg-white">
-                            <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                              <div className="font-semibold text-slate-900">{uiText.reviewDesk}</div>
-                              <div className="text-slate-700">{tracker.feedbackDeskLabel}</div>
-                            </div>
-                            <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
-                              <div className="font-semibold text-slate-900">{uiText.reviewNote}</div>
-                              <div className="text-slate-700">{tracker.feedbackDeskDescription || text.notYetUpdated}</div>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {proofImages.length ? (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {proofImages.map((image, index) => (
-                              <a
-                                key={image.id || `${image.url}-${index}`}
-                                href={image.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="border border-slate-200 bg-white p-2"
-                              >
-                                <img
-                                  src={image.url}
-                                  alt={`${uiText.workEvidenceAlt} ${index + 1}`}
-                                  className="max-h-72 w-full object-cover"
-                                />
-                              </a>
-                            ))}
-                          </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                        {uiText.noWorkEvidence}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {isExpiredComplaint ? (
-                  <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                    <SectionHeading title={uiText.complaintExpired} description={uiText.complaintExpiredSubtitle} />
-                    <CardContent className="space-y-4 px-5 py-5">
-                      <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                        {uiText.complaintExpiredBody}
-                      </div>
-                      <Button asChild className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]">
-                        <Link href="/citizen/submit">{uiText.createNewComplaint}</Link>
-                      </Button>
                     </CardContent>
                   </Card>
-                ) : (complaint.rating || canRateResolution) ? (
-                  <Card className="rounded-none border border-slate-300 bg-white py-0 shadow-none">
-                    <SectionHeading title={uiText.citizenFeedback} description={uiText.citizenFeedbackSubtitle} />
-                    <CardContent className="space-y-5 px-5 py-5">
+
+                  <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
+                    <SectionHeading title={uiText.location} />
+                    <CardContent className="grid grid-cols-1 gap-3 px-4 py-4">
+                      <DetailCell label={uiText.location} value={complaint.location_address || text.notYetUpdated} />
+                      <DetailCell label={uiText.status} value={tracker.humanStatus} />
+                      <DetailCell label={uiText.currentStage} value={tracker.currentStageTitle} />
+                      <DetailCell label={text.currentHandlingDesk} value={tracker.assignmentLabel || uiText.notAssigned} />
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="assignment" className="mt-0 rounded-lg border border-[#E5E7EB] bg-white">
+                <SectionHeading title={uiText.assignmentDetails} description={uiText.assignmentDetailsSubtitle} />
+                <div className="px-4 py-4">
+                  <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
+                    <CardContent className="px-4 py-4">
                       {detailsLoading ? (
-                        <LoadingSummary label={text.fetchingUpdates} description={text.feedbackLoading} className="rounded-none" />
+                        <LoadingSummary label={text.fetchingUpdates} description={text.handlingDeskLoading} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC]" />
                       ) : (
-                        <>
-                          <div className="border border-[#cfe0ef] bg-[linear-gradient(135deg,#f8fbff_0%,#eef6fb_100%)] px-4 py-4">
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{uiText.verificationStatus}</div>
-                                <div className="mt-2 text-sm font-semibold text-slate-950">{citizenRatingLabel}</div>
-                              </div>
-                              <div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{uiText.trackingStatus}</div>
-                                <div className="mt-2 text-sm font-semibold text-slate-950">
-                                  {tracker?.citizenJourneyCompleted
-                                    ? uiText.citizenTrackingCompleted
-                                    : tracker?.waitingForFeedback
-                                      ? uiText.waitingForCitizenFeedback
-                                      : tracker?.feedbackDeskLabel || uiText.underOfficialProcessing}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {tracker?.feedbackDeskLabel ? (
-                            <div className="border border-slate-200 bg-white">
-                              <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                                <div className="font-semibold text-slate-900">{uiText.currentReviewDesk}</div>
-                                <div className="text-slate-700">{tracker.feedbackDeskLabel}</div>
-                              </div>
-                              <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
-                                <div className="font-semibold text-slate-900">{uiText.reviewNote}</div>
-                                <div className="text-slate-700">{tracker.feedbackDeskDescription || text.notYetUpdated}</div>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {complaint.rating ? (
-                            <div className="border border-slate-200 bg-slate-50">
-                              <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                                <div className="font-semibold text-slate-900">{uiText.submittedRating}</div>
-                                <div className="text-slate-700">{complaint.rating.rating}/5</div>
-                              </div>
-                              <div className="grid grid-cols-[11rem_1fr] border-b border-slate-200 px-4 py-3 text-sm">
-                                <div className="font-semibold text-slate-900">{uiText.assessment}</div>
-                                <div className="text-slate-700">{complaint.rating.rating >= 4 ? uiText.satisfied : uiText.reviewRequired}</div>
-                              </div>
-                              <div className="grid grid-cols-[11rem_1fr] px-4 py-3 text-sm">
-                                <div className="font-semibold text-slate-900">{uiText.feedbackNote}</div>
-                                <div className="text-slate-700">{complaint.rating.feedback || text.notYetUpdated}</div>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {canRateResolution ? (
-                            <>
-                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
-                                {tracker?.feedbackDeskDescription || uiText.feedbackHelp}
-                              </div>
-
-                              <div className="grid grid-cols-5 gap-2">
-                                {[1, 2, 3, 4, 5].map((value) => (
-                                  <Button
-                                    key={value}
-                                    type="button"
-                                    variant={rating === value ? 'default' : 'outline'}
-                                    onClick={() => setRating(value)}
-                                    className="rounded-none"
-                                  >
-                                    <Star className={rating >= value ? 'fill-current' : ''} />
-                                    {value}
-                                  </Button>
-                                ))}
-                              </div>
-
-                              <div className="flex flex-wrap gap-2">
-                                {FEEDBACK_TAGS[language].map((tag) => {
-                                  const active = selectedFeedbackTags.includes(tag);
-
-                                  return (
-                                    <button
-                                      key={tag}
-                                      type="button"
-                                      onClick={() => toggleFeedbackTag(tag)}
-                                      className={active
-                                        ? 'border border-[#cfe0ef] bg-[#eef6fb] px-3 py-2 text-sm font-medium text-[#0b3c5d]'
-                                        : 'border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700'}
-                                    >
-                                      {tag}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              <Textarea
-                                value={feedback}
-                                onChange={(event) => setFeedback(event.target.value)}
-                                rows={4}
-                                placeholder={uiText.feedbackPlaceholder}
-                                className="rounded-none border-slate-300"
-                              />
-
-                              <Button
-                                onClick={handleRating}
-                                disabled={savingRating}
-                                className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]"
-                              >
-                                {savingRating ? <Spinner label={uiText.submitting} size="sm" /> : complaint.rating ? uiText.updateFeedback : uiText.submitFeedback}
-                              </Button>
-                            </>
-                          ) : null}
-                        </>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <DetailCell label={uiText.handlingDesk} value={tracker.assignmentLabel || uiText.notAssigned} />
+                          <DetailCell label={uiText.department} value={tracker.departmentLabel} />
+                          <DetailCell label={uiText.status} value={tracker.assignmentStatusLabel} />
+                          <DetailCell label={uiText.assignmentNote} value={tracker.assignmentDescription || text.notYetUpdated} />
+                        </div>
                       )}
                     </CardContent>
                   </Card>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="border border-slate-300 bg-white">
-              <SectionHeading title={text.trackerGuidance} description={text.trackerGuidanceDescription} />
-                <div className="grid gap-3 px-5 py-5 md:grid-cols-2">
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  {text.guidanceOne}
-                  </div>
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                    {text.guidanceTwo}
-                  </div>
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  {text.guidanceThree}
-                  </div>
-                  <div className="border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  {text.guidanceFour}
-                  </div>
                 </div>
-              </section>
+              </TabsContent>
+
+              <TabsContent value="evidence" className="mt-0 rounded-lg border border-[#E5E7EB] bg-white">
+                <SectionHeading title={tabLabels.evidence} description={uiText.workCompletionEvidenceSubtitle} />
+                <div className="grid grid-cols-1 gap-4 px-4 py-4 md:grid-cols-2">
+                  <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
+                    <SectionHeading title={uiText.citizenSubmittedPhotos} />
+                    <CardContent className="space-y-3 px-4 py-4">
+                      <div className="text-sm text-slate-600">
+                        {submittedAttachments.length
+                          ? `${submittedAttachments.length} ${submittedAttachments.length > 1 ? uiText.photoCountPlural : uiText.photoCountSingular}`
+                          : uiText.noComplaintPhotos}
+                      </div>
+
+                      {submittedAttachments.length ? (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {submittedAttachments.map((attachment, index) => (
+                            <a
+                              key={attachment.id || `${attachment.url}-${index}`}
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-2"
+                            >
+                              <img
+                                src={attachment.url}
+                                alt={`${uiText.submittedEvidenceAlt} ${index + 1}`}
+                                className="max-h-60 w-full rounded-md object-cover"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none">
+                    <SectionHeading title={uiText.workCompletionEvidence} />
+                    <CardContent className="space-y-3 px-4 py-4">
+                      {detailsLoading ? (
+                        <LoadingSummary label={text.fetchingUpdates} description={text.evidenceLoading} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC]" />
+                      ) : tracker.proofSubmitted ? (
+                        <>
+                          <div className="rounded-lg border border-[#DBEAFE] bg-[#F8FAFC] px-3 py-3">
+                            <div className="text-sm font-semibold text-slate-950">{uiText.citizenVerificationStatus}</div>
+                            <div className="mt-1 text-sm leading-5 text-slate-700">
+                              {complaint.rating
+                                ? uiText.verificationSubmitted
+                                : tracker.waitingForFeedback
+                                  ? tracker.feedbackDeskDescription || uiText.verificationReady
+                                  : tracker.feedbackDeskDescription || uiText.uploadedEvidenceAvailable}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3">
+                            <DetailCell label={uiText.description} value={complaint.proof_text || text.notYetUpdated} />
+                            <DetailCell label={uiText.submittedTimestamp} value={formatTrackerDateTime(proofSubmittedAt)} />
+                            {tracker.feedbackDeskLabel ? <DetailCell label={uiText.reviewDesk} value={tracker.feedbackDeskLabel} /> : null}
+                            {tracker.feedbackDeskLabel ? (
+                              <DetailCell label={uiText.reviewNote} value={tracker.feedbackDeskDescription || text.notYetUpdated} />
+                            ) : null}
+                          </div>
+
+                          {proofImages.length ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {proofImages.map((image, index) => (
+                                <a
+                                  key={image.id || `${image.url}-${index}`}
+                                  href={image.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-2"
+                                >
+                                  <img
+                                    src={image.url}
+                                    alt={`${uiText.workEvidenceAlt} ${index + 1}`}
+                                    className="max-h-60 w-full rounded-md object-cover"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-600">
+                          {uiText.noWorkEvidence}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {isExpiredComplaint ? (
+                    <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none md:col-span-2">
+                      <SectionHeading title={uiText.complaintExpired} description={uiText.complaintExpiredSubtitle} />
+                      <CardContent className="space-y-3 px-4 py-4">
+                        <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-700">
+                          {uiText.complaintExpiredBody}
+                        </div>
+                        <Button asChild className="h-9 rounded-md bg-[#1E3A8A] text-white hover:bg-[#1A3478]">
+                          <Link href="/citizen/submit">{uiText.createNewComplaint}</Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : (complaint.rating || canRateResolution) ? (
+                    <Card className="rounded-lg border border-[#E5E7EB] bg-white py-0 shadow-none md:col-span-2">
+                      <SectionHeading title={uiText.citizenFeedback} description={uiText.citizenFeedbackSubtitle} />
+                      <CardContent className="space-y-4 px-4 py-4">
+                        {detailsLoading ? (
+                          <LoadingSummary label={text.fetchingUpdates} description={text.feedbackLoading} className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC]" />
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <DetailCell label={uiText.verificationStatus} value={citizenRatingLabel} />
+                              <DetailCell
+                                label={uiText.trackingStatus}
+                                value={
+                                  tracker?.citizenJourneyCompleted
+                                    ? uiText.citizenTrackingCompleted
+                                    : tracker?.waitingForFeedback
+                                      ? uiText.waitingForCitizenFeedback
+                                      : tracker?.feedbackDeskLabel || uiText.underOfficialProcessing
+                                }
+                              />
+                            </div>
+
+                            {tracker?.feedbackDeskLabel ? (
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <DetailCell label={uiText.currentReviewDesk} value={tracker.feedbackDeskLabel} />
+                                <DetailCell label={uiText.reviewNote} value={tracker.feedbackDeskDescription || text.notYetUpdated} />
+                              </div>
+                            ) : null}
+
+                            {complaint.rating ? (
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <DetailCell label={uiText.submittedRating} value={`${complaint.rating.rating}/5`} />
+                                <DetailCell label={uiText.assessment} value={complaint.rating.rating >= 4 ? uiText.satisfied : uiText.reviewRequired} />
+                                <DetailCell label={uiText.feedbackNote} value={complaint.rating.feedback || text.notYetUpdated} className="md:col-span-2" />
+                              </div>
+                            ) : null}
+
+                            {canRateResolution ? (
+                              <>
+                                <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm leading-6 text-slate-700">
+                                  {tracker?.feedbackDeskDescription || uiText.feedbackHelp}
+                                </div>
+
+                                <div className="grid grid-cols-5 gap-2">
+                                  {[1, 2, 3, 4, 5].map((value) => (
+                                    <Button
+                                      key={value}
+                                      type="button"
+                                      variant={rating === value ? 'default' : 'outline'}
+                                      onClick={() => setRating(value)}
+                                      className={cn(
+                                        'h-9 rounded-md border-[#E5E7EB]',
+                                        rating === value
+                                          ? 'bg-[#1E3A8A] text-white hover:bg-[#1A3478]'
+                                          : 'bg-white text-slate-700 hover:border-[#1E3A8A] hover:text-[#1E3A8A]',
+                                      )}
+                                    >
+                                      <Star className={rating >= value ? 'fill-current' : ''} />
+                                      {value}
+                                    </Button>
+                                  ))}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {FEEDBACK_TAGS[language].map((tag) => {
+                                    const active = selectedFeedbackTags.includes(tag);
+
+                                    return (
+                                      <button
+                                        key={tag}
+                                        type="button"
+                                        onClick={() => toggleFeedbackTag(tag)}
+                                        className={active
+                                          ? 'rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-1.5 text-sm font-medium text-[#1E3A8A]'
+                                          : 'rounded-md border border-[#E5E7EB] bg-white px-3 py-1.5 text-sm font-medium text-slate-700'}
+                                      >
+                                        {tag}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <Textarea
+                                  value={feedback}
+                                  onChange={(event) => setFeedback(event.target.value)}
+                                  rows={4}
+                                  placeholder={uiText.feedbackPlaceholder}
+                                  className="rounded-md border-[#E5E7EB]"
+                                />
+
+                                <Button
+                                  onClick={handleRating}
+                                  disabled={savingRating}
+                                  className="h-9 rounded-md bg-[#1E3A8A] text-white hover:bg-[#1A3478]"
+                                >
+                                  {savingRating ? <Spinner label={uiText.submitting} size="sm" /> : complaint.rating ? uiText.updateFeedback : uiText.submitFeedback}
+                                </Button>
+                              </>
+                            ) : null}
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="logs" className="mt-0 rounded-lg border border-[#E5E7EB] bg-white">
+                <SectionHeading title={logsAndGuidanceLabel} description={uiText.operationalSubtimelineDescription} />
+                <div className="px-4 py-4">
+                  <Accordion type="multiple" className="space-y-3">
+                    <AccordionItem value="subtimeline" className="rounded-lg border border-[#E5E7EB] bg-white px-3">
+                      <AccordionTrigger className="py-3 text-sm font-semibold text-slate-950 hover:no-underline">
+                        {uiText.operationalSubtimeline}
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-2 pb-3">
+                        {operationalSubtimeline.length ? (
+                          operationalSubtimeline.map((entry) => {
+                            const tone = getOperationalLogTone(entry);
+                            const toneClasses =
+                              tone === 'amber'
+                                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                : tone === 'rose'
+                                  ? 'border-rose-200 bg-rose-50 text-rose-900'
+                                  : tone === 'sky'
+                                    ? 'border-sky-200 bg-sky-50 text-sky-900'
+                                    : 'border-[#E5E7EB] bg-[#F8FAFC] text-slate-900';
+
+                            return (
+                              <div key={entry.id} className={`rounded-lg border px-3 py-3 ${toneClasses}`}>
+                                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <div className="text-sm font-semibold">{entry.title}</div>
+                                    <div className="mt-1 text-sm leading-5">{entry.detail || uiText.administrativeMovementRecorded}</div>
+                                  </div>
+                                  <div className="shrink-0 text-[11px] font-medium opacity-80">
+                                    {formatTrackerDateTime(entry.timestamp)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-600">
+                            {uiText.noOperationalUpdates}
+                          </div>
+                        )}
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="guidance" className="rounded-lg border border-[#E5E7EB] bg-white px-3">
+                      <AccordionTrigger className="py-3 text-sm font-semibold text-slate-950 hover:no-underline">
+                        {text.trackerGuidance}
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-3">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-700">{text.guidanceOne}</div>
+                          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-700">{text.guidanceTwo}</div>
+                          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-700">{text.guidanceThree}</div>
+                          <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-sm text-slate-700">{text.guidanceFour}</div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         ) : (
-          <section className="border border-slate-300 bg-white px-6 py-12 text-center">
+          <section className="rounded-lg border border-[#E5E7EB] bg-white px-6 py-12 text-center">
             <div className="text-lg font-semibold text-slate-950">{text.recordNotAvailable}</div>
             <p className="mt-2 text-sm text-slate-600">
               {text.recordNotAvailableDescription}
             </p>
             <div className="mt-5">
-              <Button asChild className="rounded-none bg-[#0b3c5d] text-white hover:bg-[#082d46]">
+              <Button asChild className="h-9 rounded-md bg-[#1E3A8A] text-white hover:bg-[#1A3478]">
                 <Link href="/citizen/my-complaints">{text.goToMyComplaints}</Link>
               </Button>
             </div>

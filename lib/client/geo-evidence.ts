@@ -208,10 +208,10 @@ async function stampImage(file: File, metadata: GeoEvidenceMetadata) {
   context.fillRect(0, overlayTop, canvas.width, overlayHeight);
 
   const mapImage = new Image();
-  mapImage.src = buildMapPreviewDataUrl(metadata);
   await new Promise((resolve) => {
     mapImage.onload = resolve;
     mapImage.onerror = resolve;
+    mapImage.src = buildMapPreviewDataUrl(metadata);
   });
   context.drawImage(mapImage, padding, overlayTop + padding, mapWidth, mapHeight);
 

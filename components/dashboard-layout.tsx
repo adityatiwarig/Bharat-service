@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { useLandingLanguage } from '@/components/landing-language'
 import { useOptionalAdminWorkspace } from '@/components/admin-workspace'
@@ -69,13 +69,23 @@ export function DashboardLayout({
   const isAdmin = resolvedRole === 'admin'
   const resolvedTitle = TITLE_TRANSLATIONS[title]?.[language] ?? title
 
+  useEffect(() => {
+    document.documentElement.classList.add('dashboard-shell-active')
+    document.body.classList.add('dashboard-shell-active')
+
+    return () => {
+      document.documentElement.classList.remove('dashboard-shell-active')
+      document.body.classList.remove('dashboard-shell-active')
+    }
+  }, [])
+
   if (isAdmin) {
     if (!workspace) {
       throw new Error('Admin dashboard layout requires an AdminWorkspaceProvider')
     }
 
     return (
-      <div className="gov-shell flex min-h-screen flex-col bg-[#e8edf3] text-[#12385b]">
+      <div className="gov-shell flex h-screen flex-col overflow-hidden bg-[#e8edf3] text-[#12385b]">
         <AdminIdentityBar isExpanded={workspace.isSidebarExpanded} />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar
@@ -87,7 +97,7 @@ export function DashboardLayout({
             onHoverStart={workspace.expandSidebarPreview}
             onHoverEnd={workspace.collapseSidebarPreview}
           />
-          <div className="flex min-h-0 flex-1 flex-col bg-transparent">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-transparent">
             <Header
               title={resolvedTitle}
               userRole={resolvedRole}
@@ -95,7 +105,7 @@ export function DashboardLayout({
               onMenuClick={workspace.toggleSidebar}
               adminSidebarVisible={workspace.isSidebarExpanded}
             />
-            <main className="gov-scrollbar flex-1 overflow-auto bg-transparent">
+            <main className="gov-scrollbar flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-transparent">
               <div
                 className={cn(
                   'mx-auto w-full transition-[padding,max-width] duration-300 ease-in-out',
@@ -114,7 +124,7 @@ export function DashboardLayout({
   }
 
   return (
-    <div className={cn('gov-shell flex min-h-screen', isAdmin ? 'bg-[#f4f6f8] text-[#1e3a5f]' : '')}>
+    <div className="gov-shell flex h-screen overflow-hidden">
       <Sidebar
         userRole={resolvedRole}
         isOpen={sidebarOpen}
@@ -122,7 +132,12 @@ export function DashboardLayout({
         onToggleCollapse={() => setSidebarCollapsed((collapsed) => !collapsed)}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className={cn('flex min-h-screen flex-1 flex-col', isAdmin ? 'bg-[#f4f6f8]' : '')}>
+      <div
+        className={cn(
+          'flex h-screen min-w-0 flex-1 flex-col overflow-hidden transition-[padding-left] duration-300 ease-in-out',
+          sidebarCollapsed ? 'md:pl-20' : 'md:pl-64',
+        )}
+      >
         <Header
           title={resolvedTitle}
           userRole={resolvedRole}
@@ -132,12 +147,9 @@ export function DashboardLayout({
           onToggleSidebarCollapse={() => setSidebarCollapsed((collapsed) => !collapsed)}
           compactCitizenHeader={compactCitizenHeader}
         />
-        <main className={cn('flex-1 overflow-auto', isAdmin ? 'bg-[#f4f6f8]' : '')}>
+        <main className="gov-scrollbar flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
           <div
-            className={cn(
-              'gov-fade-in mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8',
-              isAdmin ? 'max-w-[1440px] lg:px-10 lg:py-10' : 'max-w-7xl',
-            )}
+            className="gov-fade-in mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
           >
             {children}
           </div>

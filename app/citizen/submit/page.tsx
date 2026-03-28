@@ -243,10 +243,10 @@ const TEXT = {
 } satisfies Record<Language, Record<string, string>>;
 
 const shellClassName =
-  'w-full rounded-xl border border-[#CBD5E1] bg-white px-4 py-3 text-sm text-slate-800 transition-all duration-200 placeholder:text-slate-400 focus-visible:border-[#1E3A8A] focus-visible:ring-2 focus-visible:ring-[#BFDBFE] focus-visible:ring-offset-0';
+  'min-h-10 w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-[13px] text-slate-800 transition-colors placeholder:text-slate-400 focus-visible:border-[#1D4ED8] focus-visible:ring-1 focus-visible:ring-[#1D4ED8] focus-visible:ring-offset-0';
 
 const selectClassName =
-  'w-full rounded-xl border border-[#CBD5E1] bg-white px-4 py-3 text-sm text-slate-800 focus:ring-2 focus:ring-[#BFDBFE] focus:ring-offset-0 focus:border-[#1E3A8A]';
+  'h-10 w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-[#1D4ED8] focus:ring-1 focus:ring-[#1D4ED8] focus:ring-offset-0';
 
 function createInitialForm(session?: { name?: string | null; phone?: string | null; email?: string | null }) {
   return {
@@ -270,30 +270,47 @@ function createInitialForm(session?: { name?: string | null; phone?: string | nu
 
 function SectionTitle({ step, title, helper }: { step: string; title: string; helper: string }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 border-b border-[#E5E7EB] pb-5 md:flex-row md:items-start md:justify-between">
+    <div className="mb-4 flex flex-col gap-2 border-b border-[#E5E7EB] pb-3 md:flex-row md:items-start md:justify-between">
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]/75">{step}</div>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">{title}</h2>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#1E3A8A]">{step}</div>
+        <h2 className="mt-1 text-base font-semibold text-slate-900">{title}</h2>
       </div>
-      <p className="max-w-2xl text-sm leading-6 text-slate-500">{helper}</p>
+      <p className="max-w-2xl text-[13px] leading-5 text-slate-500">{helper}</p>
     </div>
   );
 }
 
 function LabelText({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <FieldLabel className="mb-2 block text-sm font-medium text-slate-700">
+    <FieldLabel className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
       {children}
       {required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}
     </FieldLabel>
   );
 }
 
-function StepChip({ label, index, complete }: { label: string; index: number; complete: boolean }) {
+function StepChip({ label, index, complete, active }: { label: string; index: number; complete: boolean; active: boolean }) {
+  const stateClassName = complete
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : active
+      ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1E3A8A]'
+      : 'border-[#E5E7EB] bg-white text-slate-500';
+
+  const badgeClassName = complete
+    ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
+    : active
+      ? 'border-[#BFDBFE] bg-white text-[#1E3A8A]'
+      : 'border-[#E5E7EB] bg-[#F8FAFC] text-slate-500';
+
   return (
-    <div className={`rounded-2xl border px-4 py-3 transition-all duration-200 ${complete ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1E3A8A]' : 'border-[#E5E7EB] bg-white text-slate-500'}`}>
-      <div className="text-xs font-semibold uppercase tracking-[0.14em]">Step {index}</div>
-      <div className="mt-1 text-sm font-semibold">{label}</div>
+    <div className={`flex items-center gap-3 rounded-md border px-3 py-2 transition-colors ${stateClassName}`}>
+      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${badgeClassName}`}>
+        {complete ? <Check className="h-3.5 w-3.5" /> : index}
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em]">Step {index}</div>
+        <div className="truncate text-[13px] font-semibold">{label}</div>
+      </div>
     </div>
   );
 }
@@ -827,18 +844,17 @@ function ComplaintSubmissionSuccessOverlay({
       aria-modal="true"
       aria-live="polite"
     >
-      <div className="w-[min(94vw,32rem)] overflow-hidden rounded-[28px] border border-emerald-200/90 bg-white text-slate-900 shadow-[0_28px_90px_rgba(15,23,42,0.22)]">
-        <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-lime-400" />
-        <div className="bg-[linear-gradient(180deg,rgba(236,253,245,0.82)_0%,rgba(255,255,255,1)_40%)] p-5 sm:p-6">
+      <div className="w-[min(94vw,32rem)] overflow-hidden rounded-lg border border-emerald-200 bg-white text-slate-900 shadow-[0_12px_36px_rgba(15,23,42,0.16)]">
+        <div className="border-b border-emerald-100 bg-[#F8FBFF] p-4 sm:p-5">
           <div className="flex items-start gap-4">
-            <div className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-100 text-emerald-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <CheckCircle2 className="h-6 w-6" />
+            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+              <CheckCircle2 className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Complaint Registered</div>
-                  <p className="mt-1 text-base font-semibold leading-6 text-slate-900">Your complaint has been successfully submitted</p>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-slate-900">Your complaint has been successfully submitted</p>
                 </div>
                 <button
                   type="button"
@@ -850,9 +866,9 @@ function ComplaintSubmissionSuccessOverlay({
                 </button>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-emerald-200 bg-white/95 p-4 shadow-[0_8px_24px_rgba(16,185,129,0.08)]">
+              <div className="mt-4 rounded-md border border-emerald-200 bg-white p-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Complaint ID</div>
-                <div className="mt-2 break-all rounded-xl bg-emerald-50 px-3 py-3 text-center font-mono text-sm font-bold tracking-[0.08em] text-emerald-950">
+                <div className="mt-2 break-all rounded-md bg-emerald-50 px-3 py-2.5 text-center font-mono text-sm font-bold tracking-[0.08em] text-emerald-950">
                   {complaintId}
                 </div>
               </div>
@@ -1039,6 +1055,10 @@ export default function SubmitComplaintPage() {
   }, [evidenceItems.length, form]);
 
   const completedSteps = stepCompletion.filter(Boolean).length;
+  const activeStep = useMemo(() => {
+    const firstIncompleteIndex = stepCompletion.findIndex((value) => !value);
+    return firstIncompleteIndex === -1 ? stepCompletion.length : firstIncompleteIndex + 1;
+  }, [stepCompletion]);
   const genderOptions = GENDER_VALUES.map((value) => ({ value, label: text[value] }));
 
   useEffect(() => {
@@ -1391,36 +1411,36 @@ export default function SubmitComplaintPage() {
         onApply={handleVoiceAssistantApply}
       />
       <div className="min-h-screen bg-[#F8FAFC]">
-        <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-8 px-4 py-6 md:px-6 lg:px-8">
-          <div className="rounded-[28px] border border-[#E5E7EB] bg-white px-6 py-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#1E3A8A]">
-                  <Landmark className="h-7 w-7" />
+        <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-4 py-4 md:px-5 lg:px-6">
+          <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-md border border-[#DBEAFE] bg-[#F8FBFF] text-[#1E3A8A]">
+                  <Landmark className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.16em] text-[#1E3A8A]">{text.subtitle}</div>
-                  <h1 className="mt-2 text-2xl font-semibold text-slate-900 md:text-[2rem]">{text.title}</h1>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{text.lead}</p>
-                  <div className="mt-3 text-sm font-medium text-slate-600">{text.helpline}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">{text.subtitle}</div>
+                  <h1 className="mt-1 text-xl font-semibold text-slate-900 md:text-[1.65rem]">{text.title}</h1>
+                  <p className="mt-1 max-w-3xl text-[13px] leading-5 text-slate-500">{text.lead}</p>
+                  <div className="mt-2 text-[13px] font-medium text-slate-600">{text.helpline}</div>
                 </div>
               </div>
 
-              <div className="flex w-full max-w-[360px] flex-col items-stretch gap-3 lg:items-end">
-                <div className="rounded-[24px] border border-[#C7D2FE] bg-[linear-gradient(180deg,#F8FBFF_0%,#EEF4FF_100%)] p-4 shadow-[0_12px_28px_rgba(30,58,138,0.08)]">
+              <div className="flex w-full max-w-[320px] flex-col items-stretch gap-2 lg:items-end">
+                <div className="rounded-lg border border-[#DBEAFE] bg-[#F8FBFF] p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">Voice Assistant</div>
-                  <div className="mt-2 text-sm font-semibold text-slate-900">Speak complaint details and fill the form faster</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                  <div className="mt-1 text-[13px] font-semibold text-slate-900">Speak complaint details and fill the form faster</div>
+                  <p className="mt-1 text-[12px] leading-5 text-slate-600">
                     Detects category, zone, ward, optional gender hint, and can submit directly after photo upload.
                   </p>
                   <VoiceAssistantButton
                     onClick={() => setVoiceAssistantOpen(true)}
                     disabled={loadingMapping}
-                    className="mt-4 h-11 w-full justify-center rounded-xl px-4 lg:self-end"
+                    className="mt-3 h-10 w-full justify-center rounded-md px-3 lg:self-end"
                   />
                 </div>
-                <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] p-1.5 shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
-                  <div className="mb-2 flex items-center gap-2 px-3 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-1.5">
+                  <div className="mb-1 flex items-center gap-2 px-2.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                     <Globe className="h-3.5 w-3.5" />
                     {text.language}
                   </div>
@@ -1428,14 +1448,14 @@ export default function SubmitComplaintPage() {
                     <button
                       type="button"
                       onClick={() => setLanguage('en')}
-                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'en' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
+                      className={`rounded-md px-3 py-2 text-[12px] transition ${language === 'en' ? 'bg-[#1E3A8A] font-semibold text-white' : 'font-medium text-slate-600 hover:bg-white'}`}
                     >
                       {text.english}
                     </button>
                     <button
                       type="button"
                       onClick={() => setLanguage('hi')}
-                      className={`rounded-xl px-4 py-2 text-sm transition ${language === 'hi' ? 'bg-[#0b3c5d] font-bold text-white shadow-sm ring-1 ring-[#0b3c5d]' : 'font-medium text-slate-600 hover:bg-white'}`}
+                      className={`rounded-md px-3 py-2 text-[12px] transition ${language === 'hi' ? 'bg-[#1E3A8A] font-semibold text-white' : 'font-medium text-slate-600 hover:bg-white'}`}
                     >
                       {text.hindi}
                     </button>
@@ -1445,28 +1465,28 @@ export default function SubmitComplaintPage() {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-col gap-4 border-b border-[#E5E7EB] pb-6 md:flex-row md:items-end md:justify-between">
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+            <div className="flex flex-col gap-3 border-b border-[#E5E7EB] pb-4 md:flex-row md:items-end md:justify-between">
               <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.16em] text-[#1E3A8A]">{text.progress}</div>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{text.progressHelp}</p>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">{text.progress}</div>
+                <p className="mt-1 text-[13px] leading-5 text-slate-500">{text.progressHelp}</p>
               </div>
-              <div className="rounded-2xl bg-[#EFF6FF] px-4 py-3 text-sm font-semibold text-[#1E3A8A]">{completedSteps}/5</div>
+              <div className="rounded-md border border-[#DBEAFE] bg-[#F8FBFF] px-3 py-2 text-[13px] font-semibold text-[#1E3A8A]">{completedSteps}/5</div>
             </div>
 
-            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <StepChip label={text.applicant} index={1} complete={stepCompletion[0]} />
-              <StepChip label={text.classification} index={2} complete={stepCompletion[1]} />
-              <StepChip label={text.location} index={3} complete={stepCompletion[2]} />
-              <StepChip label={text.evidence} index={4} complete={stepCompletion[3]} />
-              <StepChip label={text.additional} index={5} complete={stepCompletion[4]} />
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <StepChip label={text.applicant} index={1} complete={stepCompletion[0]} active={activeStep === 1} />
+              <StepChip label={text.classification} index={2} complete={stepCompletion[1]} active={activeStep === 2} />
+              <StepChip label={text.location} index={3} complete={stepCompletion[2]} active={activeStep === 3} />
+              <StepChip label={text.evidence} index={4} complete={stepCompletion[3]} active={activeStep === 4} />
+              <StepChip label={text.additional} index={5} complete={stepCompletion[4]} active={activeStep === 5} />
             </div>
 
-            <div className="mt-4 text-sm text-slate-500">{text.requiredHint}</div>
+            <div className="mt-3 text-[12px] text-slate-500">{text.requiredHint}</div>
           </div>
 
-          <div className="rounded-[28px] border border-[#E5E7EB] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-            <div className="p-6 md:p-8">
+          <div className="rounded-lg border border-[#E5E7EB] bg-white">
+            <div className="p-4 md:p-5">
               {submitting ? (
                 <LoadingSummary
                   label="Processing..."
@@ -1474,10 +1494,10 @@ export default function SubmitComplaintPage() {
                 />
               ) : null}
 
-              <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
-                <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
+              <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
+                <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                   <SectionTitle step="Step 1" title={text.applicant} helper={text.applicantHelp} />
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FieldGroup>
                       <Field>
                         <LabelText required>{text.name}</LabelText>
@@ -1516,15 +1536,15 @@ export default function SubmitComplaintPage() {
                     <FieldGroup className="md:col-span-2">
                       <Field>
                         <LabelText required>{text.address}</LabelText>
-                        <Textarea value={form.applicant_address} onChange={(event) => setForm((current) => ({ ...current, applicant_address: event.target.value }))} rows={4} placeholder={text.addressPlaceholder} className={shellClassName} required />
+                        <Textarea value={form.applicant_address} onChange={(event) => setForm((current) => ({ ...current, applicant_address: event.target.value }))} rows={3} placeholder={text.addressPlaceholder} className={shellClassName} required />
                       </Field>
                     </FieldGroup>
                   </div>
                 </section>
 
-                <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
+                <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                   <SectionTitle step="Step 2" title={text.classification} helper={text.classificationHelp} />
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FieldGroup>
                       <Field>
                         <LabelText required>{text.department}</LabelText>
@@ -1568,15 +1588,15 @@ export default function SubmitComplaintPage() {
                     <FieldGroup className="md:col-span-2">
                       <Field>
                         <LabelText required>{text.description}</LabelText>
-                        <Textarea value={form.text} onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))} rows={6} placeholder={text.descriptionPlaceholder} className={shellClassName} required />
+                        <Textarea value={form.text} onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))} rows={4} placeholder={text.descriptionPlaceholder} className={shellClassName} required />
                       </Field>
                     </FieldGroup>
                   </div>
                 </section>
 
-                <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
+                <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                   <SectionTitle step="Step 3" title={text.location} helper={text.locationHelp} />
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FieldGroup>
                       <Field>
                         <LabelText required>{text.zone}</LabelText>
@@ -1614,27 +1634,27 @@ export default function SubmitComplaintPage() {
                     <FieldGroup className="md:col-span-2">
                       <Field>
                         <LabelText>{text.street}</LabelText>
-                        <Textarea value={form.street_address} onChange={(event) => setForm((current) => ({ ...current, street_address: event.target.value }))} rows={3} placeholder={text.streetPlaceholder} className={shellClassName} />
+                        <Textarea value={form.street_address} onChange={(event) => setForm((current) => ({ ...current, street_address: event.target.value }))} rows={2} placeholder={text.streetPlaceholder} className={shellClassName} />
                       </Field>
                     </FieldGroup>
                   </div>
 
-                  <div className="mt-6 rounded-2xl border border-[#DBEAFE] bg-[#F8FBFF] p-5">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="mt-4 rounded-lg border border-[#DBEAFE] bg-[#F8FBFF] p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <div className="flex items-center gap-2 text-sm font-semibold text-[#1E3A8A]">
+                        <div className="flex items-center gap-2 text-[13px] font-semibold text-[#1E3A8A]">
                           <LocateFixed className="h-4 w-4" />
                           {text.locateTitle}
                         </div>
-                        <div className="mt-2 text-sm leading-6 text-slate-500">{text.locateHelp}</div>
+                        <div className="mt-1 text-[12px] leading-5 text-slate-500">{text.locateHelp}</div>
                       </div>
-                      <Button type="button" variant="outline" className="h-11 rounded-xl border-[#BFDBFE] bg-white px-5 text-[#1E3A8A] hover:border-[#1E3A8A] hover:bg-[#EFF6FF]" onClick={handleCaptureLocation} disabled={capturingLocation}>
+                      <Button type="button" variant="outline" className="h-10 rounded-md border-[#BFDBFE] bg-white px-4 text-[#1E3A8A] hover:border-[#1E3A8A] hover:bg-[#EFF6FF]" onClick={handleCaptureLocation} disabled={capturingLocation}>
                         {capturingLocation ? <Spinner label={text.fetchingLocation} size="sm" /> : (<><Crosshair className="h-4 w-4" />{text.fetchLocation}</>)}
                       </Button>
                     </div>
 
                     {form.latitude && form.longitude ? (
-                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <div className="mt-3 rounded-md border border-emerald-200 bg-white px-3 py-2.5 text-[13px] text-slate-700">
                         <div className="font-semibold text-emerald-700">{text.locationSuccess}</div>
                         <div className="mt-1">Latitude: {form.latitude}, Longitude: {form.longitude}</div>
                       </div>
@@ -1642,7 +1662,7 @@ export default function SubmitComplaintPage() {
                   </div>
 
                   {(selectedZone || selectedWard || selectedDepartment || selectedCategory) ? (
-                    <div className="mt-6 rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] px-5 py-4 text-sm text-slate-600">
+                    <div className="mt-4 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-[13px] text-slate-600">
                       <div>
                         {text.selectedLocation}:{' '}
                         <span className="font-semibold text-slate-800">{[selectedWard?.name, selectedZone?.name].filter(Boolean).join(', ') || text.notSelected}</span>
@@ -1655,48 +1675,48 @@ export default function SubmitComplaintPage() {
                   ) : null}
                 </section>
 
-                <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
+                <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                   <SectionTitle step="Step 4" title={text.evidence} helper={text.evidenceHelp} />
 
-                  <div className="rounded-2xl border border-[#DBEAFE] bg-[#F8FBFF] p-5">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="rounded-lg border border-[#DBEAFE] bg-[#F8FBFF] p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <LabelText required>{text.photos}</LabelText>
-                        <p className="text-sm text-slate-500">{text.photosHelp}</p>
+                        <p className="text-[12px] leading-5 text-slate-500">{text.photosHelp}</p>
                       </div>
-                      <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-[#1E3A8A] shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
+                      <div className="rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-[13px] font-semibold text-[#1E3A8A]">
                         {evidenceItems.length}/{MAX_FILES} {text.imagesAdded}
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                      <Button type="button" className="h-11 rounded-xl bg-[#1E3A8A] px-5 text-white hover:bg-[#1A3478]" onClick={() => void openCameraModal()} disabled={submitting || processingEvidence || evidenceItems.length >= MAX_FILES}>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" className="h-10 rounded-md bg-[#1E3A8A] px-4 text-white hover:bg-[#1A3478]" onClick={() => void openCameraModal()} disabled={submitting || processingEvidence || evidenceItems.length >= MAX_FILES}>
                         <Camera className="h-4 w-4" />
                         {text.capturePhoto}
                       </Button>
-                      <Button type="button" variant="outline" className="h-11 rounded-xl border-[#CBD5E1] bg-white px-5 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={() => uploadInputRef.current?.click()} disabled={submitting || processingEvidence || evidenceItems.length >= MAX_FILES}>
+                      <Button type="button" variant="outline" className="h-10 rounded-md border-[#CBD5E1] bg-white px-4 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={() => uploadInputRef.current?.click()} disabled={submitting || processingEvidence || evidenceItems.length >= MAX_FILES}>
                         <Upload className="h-4 w-4" />
                         {text.uploadPhoto}
                       </Button>
                     </div>
 
                     <input ref={uploadInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadChange} />
-                    <div className="mt-4 text-sm text-slate-500">{text.imageLimit}</div>
+                    <div className="mt-2 text-[12px] text-slate-500">{text.imageLimit}</div>
                     {processingEvidence ? (
-                      <div className="mt-3 rounded-xl border border-[#BFDBFE] bg-white px-4 py-3 text-sm text-[#1E3A8A]">
+                      <div className="mt-2 rounded-md border border-[#BFDBFE] bg-white px-3 py-2 text-[12px] text-[#1E3A8A]">
                         Preparing geo-tagged evidence...
                       </div>
                     ) : null}
                   </div>
 
                   {evidenceItems.length ? (
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {filePreviews.map((preview, index) => (
-                        <div key={preview.id} className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] p-3 shadow-[0_4px_12px_rgba(15,23,42,0.03)]">
+                        <div key={preview.id} className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-3">
                           <button
                             type="button"
                             onClick={() => preview.url && setExpandedImageUrl(preview.url)}
-                            className="relative flex h-28 w-full items-center justify-center overflow-hidden rounded-xl bg-white"
+                            className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md bg-white"
                           >
                             {preview.isImage && preview.url ? (
                               <img src={preview.url} alt={preview.name} className="h-full w-full object-cover" />
@@ -1706,7 +1726,7 @@ export default function SubmitComplaintPage() {
                                 <div className="text-xs">{text.previewUnavailable}</div>
                               </div>
                             )}
-                            <img src={preview.mapUrl} alt="Map preview" className="absolute bottom-2 left-2 h-10 w-16 rounded-md border border-white/30 object-cover shadow" />
+                            <img src={preview.mapUrl} alt="Map preview" className="absolute bottom-2 left-2 h-9 w-14 rounded-sm border border-white/30 object-cover" />
                           </button>
                           <div className="mt-3">
                             <div className="truncate text-sm font-medium text-slate-800">{preview.name}</div>
@@ -1726,40 +1746,40 @@ export default function SubmitComplaintPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="mt-6 rounded-2xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-5 py-8 text-center text-sm text-slate-500">{text.noImages}</div>
+                    <div className="mt-4 rounded-md border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-5 text-center text-[13px] text-slate-500">{text.noImages}</div>
                   )}
                 </section>
 
-                <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.03)] transition-all duration-300">
+                <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                   <SectionTitle step="Step 5" title={text.additional} helper={text.additionalHelp} />
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FieldGroup>
                       <Field>
                         <LabelText>{text.previousComplaintId}</LabelText>
                         <Input value={form.previous_complaint_id} onChange={(event) => setForm((current) => ({ ...current, previous_complaint_id: event.target.value }))} placeholder={text.previousComplaintPlaceholder} className={shellClassName} />
                       </Field>
                     </FieldGroup>
-                    <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] px-5 py-4 text-sm text-slate-500">
+                    <div className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-[13px] text-slate-500">
                       <div className="font-semibold text-slate-800">{text.optional}</div>
-                      <div className="mt-2 leading-6">{text.additionalHelp}</div>
+                      <div className="mt-1 leading-5">{text.additionalHelp}</div>
                     </div>
                   </div>
                 </section>
 
-                <div className="rounded-2xl border border-[#E5E7EB] bg-[#F8FAFC] px-5 py-4 text-sm leading-6 text-slate-600">
+                <div className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-[13px] leading-5 text-slate-600">
                   {text.note} <span className="font-semibold text-slate-800">{text.myComplaints}</span>.
                 </div>
 
                 {detectingIssue ? (
-                  <div className="rounded-2xl border border-[#DBEAFE] bg-[#F8FBFF] px-5 py-4 text-sm text-[#1E3A8A]">
+                  <div className="rounded-md border border-[#DBEAFE] bg-[#F8FBFF] px-4 py-3 text-[13px] text-[#1E3A8A]">
                     Checking for similar community issues in your ward...
                   </div>
                 ) : activeDetectedIssue ? (
-                  <div className="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,#fffdf5_0%,#fff8e6_100%)] px-5 py-5 shadow-[0_8px_24px_rgba(217,119,6,0.08)]">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="rounded-md border border-amber-200 bg-[#FFFDF5] px-4 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">{text.communityIssueTitle}</div>
-                        <div className="mt-2 text-base font-semibold text-slate-900">
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
                           {activeDetectedIssue.supporter_count}{' '}
                           {activeDetectedIssue.supporter_count === 1
                             ? language === 'hi'
@@ -1767,16 +1787,16 @@ export default function SubmitComplaintPage() {
                               : 'person has already reported a similar issue in your area.'
                             : text.communityIssueExists}
                         </div>
-                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{text.communityIssueHelp}</p>
-                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
-                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                        <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-600">{text.communityIssueHelp}</p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-700">
+                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1">
                             {text.issuePriority}: {activeDetectedIssue.priority.toUpperCase()}
                           </span>
-                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                          <span className="rounded-full border border-amber-200 bg-white px-3 py-1">
                             {text.affectedCitizens}: {activeDetectedIssue.supporter_count}
                           </span>
                           {activeDetectedIssue.title ? (
-                            <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
+                            <span className="rounded-full border border-amber-200 bg-white px-3 py-1">
                               {activeDetectedIssue.title}
                             </span>
                           ) : null}
@@ -1786,11 +1806,11 @@ export default function SubmitComplaintPage() {
                         ) : null}
                       </div>
 
-                      <div className="flex w-full flex-col gap-2 lg:max-w-[15rem]">
+                      <div className="flex w-full flex-col gap-2 lg:max-w-[14rem]">
                         {activeDetectedIssue.already_joined && activeDetectedIssue.joined_tracking_code ? (
                           <Button
                             type="button"
-                            className="h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                            className="h-10 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
                             onClick={() => router.push(`/citizen/tracker?id=${encodeURIComponent(activeDetectedIssue.joined_tracking_code || '')}`)}
                           >
                             {text.openJoinedIssue}
@@ -1798,7 +1818,7 @@ export default function SubmitComplaintPage() {
                         ) : (
                           <Button
                             type="button"
-                            className="h-11 rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+                            className="h-10 rounded-md bg-amber-600 text-white hover:bg-amber-700"
                             onClick={() => void handleJoinDetectedIssue()}
                             disabled={joiningIssue}
                           >
@@ -1808,7 +1828,7 @@ export default function SubmitComplaintPage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-11 rounded-xl border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
+                          className="h-10 rounded-md border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
                           onClick={() => setIgnoredIssueKey(activeDetectedIssue.issue_group_id || (activeDetectedIssue.primary_complaint_id ? `primary:${activeDetectedIssue.primary_complaint_id}` : 'ignore'))}
                         >
                           {text.reportSeparately}
@@ -1819,7 +1839,7 @@ export default function SubmitComplaintPage() {
                 ) : null}
 
                 {submitted ? (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
                     <div className="flex items-center gap-2 font-semibold">
                       <CheckCircle2 className="h-4 w-4" />
                       {text.submitted}
@@ -1828,11 +1848,11 @@ export default function SubmitComplaintPage() {
                   </div>
                 ) : null}
 
-                <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" className="h-12 flex-1 rounded-xl bg-[#1E3A8A] text-white hover:bg-[#1A3478]" disabled={submitting || joiningIssue || loadingMapping}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button type="submit" className="h-10 w-full flex-1 rounded-md bg-[#1E3A8A] text-white hover:bg-[#1A3478]" disabled={submitting || joiningIssue || loadingMapping}>
                     {submitting ? <Spinner label={text.submitting} /> : (<><Send className="h-4 w-4" />{text.submit}</>)}
                   </Button>
-                  <Button type="button" variant="outline" className="h-12 rounded-xl border-[#CBD5E1] bg-white px-5 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={handleReset} disabled={submitting || joiningIssue}>
+                  <Button type="button" variant="outline" className="h-10 rounded-md border-[#CBD5E1] bg-white px-4 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={handleReset} disabled={submitting || joiningIssue}>
                     {text.reset}
                   </Button>
                 </div>
@@ -1842,14 +1862,14 @@ export default function SubmitComplaintPage() {
         </div>
 
         <Dialog open={cameraOpen} onOpenChange={(open) => { if (!open) stopCameraStream(); }}>
-          <DialogContent className="max-w-3xl rounded-[28px] border border-[#E5E7EB] bg-white p-0 shadow-[0_16px_50px_rgba(15,23,42,0.16)]" showCloseButton={false}>
-            <div className="p-6 md:p-7">
+          <DialogContent className="max-w-3xl rounded-lg border border-[#E5E7EB] bg-white p-0 shadow-[0_12px_36px_rgba(15,23,42,0.12)]" showCloseButton={false}>
+            <div className="p-4 md:p-5">
               <DialogHeader>
-                <DialogTitle className="text-xl font-semibold text-slate-900">{text.cameraTitle}</DialogTitle>
-                <DialogDescription className="mt-2 text-sm leading-6 text-slate-500">{text.cameraText}</DialogDescription>
+                <DialogTitle className="text-lg font-semibold text-slate-900">{text.cameraTitle}</DialogTitle>
+                <DialogDescription className="mt-1 text-[13px] leading-5 text-slate-500">{text.cameraText}</DialogDescription>
               </DialogHeader>
 
-              <div className="mt-5 overflow-hidden rounded-[24px] border border-[#E5E7EB] bg-slate-950">
+              <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E7EB] bg-slate-950">
                 {cameraError ? (
                   <div className="flex min-h-[320px] items-center justify-center px-6 text-center text-sm text-white">{cameraError}</div>
                 ) : (
@@ -1857,15 +1877,15 @@ export default function SubmitComplaintPage() {
                 )}
               </div>
 
-              <div className="mt-4 rounded-2xl bg-[#F8FAFC] px-4 py-3 text-sm text-slate-500">
+              <div className="mt-3 rounded-md bg-[#F8FAFC] px-3 py-2 text-[13px] text-slate-500">
                 {cameraLoading ? text.cameraOpening : cameraError ? text.cameraUnavailable : text.cameraReady}
               </div>
 
-              <DialogFooter className="mt-6">
-                <Button type="button" variant="outline" className="h-11 rounded-xl border-[#CBD5E1] bg-white px-5 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={stopCameraStream}>
+              <DialogFooter className="mt-4">
+                <Button type="button" variant="outline" className="h-10 rounded-md border-[#CBD5E1] bg-white px-4 text-slate-700 hover:border-[#1E3A8A] hover:bg-[#EFF6FF] hover:text-[#1E3A8A]" onClick={stopCameraStream}>
                   {text.cancel}
                 </Button>
-                <Button type="button" className="h-11 rounded-xl bg-[#1E3A8A] px-5 text-white hover:bg-[#1A3478]" onClick={handleCapturePhoto} disabled={!cameraReady || Boolean(cameraError)}>
+                <Button type="button" className="h-10 rounded-md bg-[#1E3A8A] px-4 text-white hover:bg-[#1A3478]" onClick={handleCapturePhoto} disabled={!cameraReady || Boolean(cameraError)}>
                   <Camera className="h-4 w-4" />
                   {text.capture}
                 </Button>
@@ -1875,8 +1895,8 @@ export default function SubmitComplaintPage() {
         </Dialog>
 
         <Dialog open={Boolean(expandedImageUrl)} onOpenChange={(open) => { if (!open) setExpandedImageUrl(''); }}>
-          <DialogContent className="max-w-5xl rounded-[28px] border border-[#E5E7EB] bg-white p-4 shadow-[0_16px_50px_rgba(15,23,42,0.16)]">
-            {expandedImageUrl ? <img src={expandedImageUrl} alt="Expanded geo evidence" className="max-h-[80vh] w-full rounded-[20px] object-contain" /> : null}
+          <DialogContent className="max-w-5xl rounded-lg border border-[#E5E7EB] bg-white p-3 shadow-[0_12px_36px_rgba(15,23,42,0.12)]">
+            {expandedImageUrl ? <img src={expandedImageUrl} alt="Expanded geo evidence" className="max-h-[80vh] w-full rounded-md object-contain" /> : null}
           </DialogContent>
         </Dialog>
         <canvas ref={canvasRef} className="hidden" />

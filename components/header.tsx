@@ -315,7 +315,7 @@ export function Header({
     ] as const
 
     return (
-      <header className="sticky top-0 z-20 border-b border-[#082F73] bg-[#0B3D91] text-white">
+      <header className="sticky top-0 z-30 shrink-0 border-b border-[#082F73] bg-[#0B3D91]/95 text-white backdrop-blur-md">
         <div className="px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-3">
@@ -386,7 +386,7 @@ export function Header({
 
   if (compactCitizenHeader) {
     return (
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-30 shrink-0 border-b border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <Button
@@ -440,7 +440,7 @@ export function Header({
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-slate-200 bg-white/90 backdrop-blur-md">
       <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
