@@ -1,4 +1,4 @@
-# SmartCRM
+# Bharat_service_SmartCRM
 
 SmartCRM is a civic grievance platform built with Next.js, React, Prisma, and PostgreSQL. The current product flow is officer-first: citizens submit complaints, the system classifies and routes them, mapped `L1` officers handle field execution, `L2` and `L3` officers supervise delays and review citizen feedback, and admins monitor the full command view.
 
